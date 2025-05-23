@@ -28,6 +28,13 @@ jobs:
           npm run build --if-present
           popd
 
+      - name: 'Verify Function Structure'
+        shell: bash
+        run: |
+          echo "Verifying deployment package structure:"
+          ls -la src/functions/
+          ls -la src/functions/btcImportFunction/
+
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1
         id: fa
