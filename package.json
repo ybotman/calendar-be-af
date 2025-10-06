@@ -1,16 +1,27 @@
 {
-  "name": "",
+  "name": "calendar-be-af",
   "version": "1.0.0",
-  "description": "",
-  "main": "src/functions/*.js",
+  "description": "Master Calendar Backend - Azure Functions",
+  "main": "src/app.js",
   "scripts": {
     "start": "func start",
-    "test": "echo \"No tests yet...\""
+    "dev": "func start --verbose",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "deploy": "func azure functionapp publish calendar-be-af"
   },
   "dependencies": {
-    "@azure/functions": "^4.0.0"
+    "@azure/functions": "^4.5.1",
+    "@azure/cosmos": "^4.0.0",
+    "@azure/service-bus": "^7.9.4",
+    "uuid": "^9.0.1",
+    "joi": "^17.11.0"
   },
   "devDependencies": {
-    "azure-functions-core-tools": "^4.x"
+    "jest": "^29.7.0",
+    "@azure/functions-core-tools": "^4.0.5455"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
