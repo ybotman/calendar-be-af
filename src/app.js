@@ -6,23 +6,12 @@ require('./functions/calendar-maintenance');
 require('./functions/calendar-events');
 require('./functions/API_Docs');
 
-// Health check endpoint
-app.http('health', {
-    methods: ['GET'],
-    authLevel: 'anonymous',
-    route: 'health',
-    handler: async (request, context) => {
-        context.log('Health check requested');
-        
-        return {
-            status: 200,
-            body: {
-                status: 'healthy',
-                timestamp: new Date().toISOString(),
-                service: 'calendar-backend-functions'
-            }
-        };
-    }
-});
+// Import standalone function files
+require('./functions/Health_Basic');
+require('./functions/Metrics_Get');
+require('./functions/Category_Get');
+require('./functions/Role_List');
+
+// Note: Health endpoint is in Health_Basic.js, not duplicated here
 
 module.exports = { app };
