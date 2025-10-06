@@ -8,20 +8,33 @@
     "dev": "func start --verbose",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/functions --ext .js",
     "deploy": "func azure functionapp publish calendar-be-af"
   },
   "dependencies": {
     "@azure/functions": "^4.5.1",
     "@azure/cosmos": "^4.0.0",
     "@azure/service-bus": "^7.9.4",
+    "mongodb": "^6.3.0",
     "uuid": "^9.0.1",
     "joi": "^17.11.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "@azure/functions-core-tools": "^4.0.5455"
+    "@azure/functions-core-tools": "^4.0.5455",
+    "@jest/globals": "^29.7.0",
+    "eslint": "^8.56.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/functions/**/*.js",
+      "!src/functions/**/*.test.js"
+    ]
   }
 }
