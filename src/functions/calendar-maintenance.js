@@ -32,15 +32,18 @@ app.timer('calendarMaintenance', {
 });
 
 // Service Bus triggered function for handling calendar events
+// TODO: Uncomment for production deployment with Service Bus configured
+// Commented out for local development - Service Bus extensions require additional dependencies
+/*
 app.serviceBusQueue('processCalendarMessages', {
     connection: 'SERVICE_BUS_CONNECTION_STRING',
     queueName: 'calendar-events',
     handler: async (message, context) => {
         context.log('Processing calendar message:', message);
-        
+
         try {
             const messageBody = typeof message === 'string' ? JSON.parse(message) : message;
-            
+
             switch (messageBody.type) {
                 case 'event_created':
                     await handleEventCreated(messageBody.data, context);
@@ -57,15 +60,16 @@ app.serviceBusQueue('processCalendarMessages', {
                 default:
                     context.log.warn(`Unknown message type: ${messageBody.type}`);
             }
-            
+
             context.log('Message processed successfully');
-            
+
         } catch (error) {
             context.log.error('Error processing message:', error);
             throw error; // This will put the message back on the queue for retry
         }
     }
 });
+*/
 
 // HTTP endpoint for manual maintenance trigger (for testing/admin)
 app.http('triggerMaintenance', {

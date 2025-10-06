@@ -88,7 +88,7 @@ class MetricsCollector {
       },
       byFunction: this._groupByFunction(recentRequests),
       byStatusCode: this._groupByStatusCode(recentRequests),
-      slowestEndpoints: this._getSlowes tEndpoints(recentRequests, 10)
+      slowestEndpoints: this._getSlowestEndpoints(recentRequests, 10)
     };
   }
 

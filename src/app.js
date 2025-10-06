@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 require('./functions/calendar-api');
 require('./functions/calendar-maintenance');
 require('./functions/calendar-events');
+require('./functions/API_Docs');
 
 // Health check endpoint
 app.http('health', {

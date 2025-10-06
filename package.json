@@ -22,7 +22,6 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "@azure/functions-core-tools": "^4.0.5455",
     "@jest/globals": "^29.7.0",
     "eslint": "^8.56.0"
   },
