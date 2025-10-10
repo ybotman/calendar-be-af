@@ -14,8 +14,6 @@ require('./functions/Health_MongoDB_Test');
 require('./functions/Health_MongoDB_Prod');
 require('./functions/Metrics_Get');
 require('./functions/Category_Get');
-require('./functions/Role_List');
-require('./functions/Venue_Create');
-require('./functions/Venue_Delete');
+// Note: Role_List, Venue_Create, Venue_Delete not yet committed - add when ready
 
 module.exports = { app };
