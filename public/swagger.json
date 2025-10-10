@@ -78,6 +78,118 @@
         }
       }
     },
+    "/api/health/version": {
+      "get": {
+        "summary": "Service version information",
+        "description": "Returns detailed version and environment information",
+        "tags": ["System"],
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Version information retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/mongodb": {
+      "get": {
+        "summary": "MongoDB health check",
+        "description": "Verifies connection to default MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                },
+                "example": {
+                  "status": "healthy",
+                  "environment": "default",
+                  "database": "tangotiempo",
+                  "connected": true,
+                  "responseTime": "45ms",
+                  "timestamp": "2025-10-10T03:00:00.000Z"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB is unhealthy or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                },
+                "example": {
+                  "status": "unhealthy",
+                  "environment": "default",
+                  "error": "Connection timeout",
+                  "connected": false,
+                  "responseTime": "5001ms",
+                  "timestamp": "2025-10-10T03:00:00.000Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/mongodb/test": {
+      "get": {
+        "summary": "MongoDB TEST environment health check",
+        "description": "Verifies connection to TEST MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBTestHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB TEST is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB TEST is unhealthy or unavailable"
+          }
+        }
+      }
+    },
+    "/api/health/mongodb/prod": {
+      "get": {
+        "summary": "MongoDB PROD environment health check",
+        "description": "Verifies connection to PRODUCTION MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBProdHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB PROD is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB PROD is unhealthy or unavailable"
+          }
+        }
+      }
+    },
     "/api/metrics": {
       "get": {
         "summary": "Get metrics summary",
@@ -549,6 +661,93 @@
           }
         },
         "required": ["status", "timestamp", "service"]
+      },
+      "VersionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy"],
+            "description": "Health status"
+          },
+          "version": {
+            "type": "string",
+            "description": "Application version from package.json"
+          },
+          "name": {
+            "type": "string",
+            "description": "Application name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Application description"
+          },
+          "node": {
+            "type": "string",
+            "description": "Node.js version"
+          },
+          "azureFunctions": {
+            "type": "string",
+            "description": "Azure Functions runtime version"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of version check"
+          },
+          "environment": {
+            "type": "object",
+            "properties": {
+              "NODE_ENV": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "functionApp": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": ["status", "version", "timestamp"]
+      },
+      "MongoDBHealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "unhealthy", "error"],
+            "description": "MongoDB connection status"
+          },
+          "environment": {
+            "type": "string",
+            "enum": ["default", "test", "production"],
+            "description": "MongoDB environment"
+          },
+          "database": {
+            "type": "string",
+            "description": "Database name"
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Connection status"
+          },
+          "responseTime": {
+            "type": "string",
+            "description": "Response time in milliseconds"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of health check"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if unhealthy"
+          }
+        },
+        "required": ["status", "environment", "connected", "timestamp"]
       },
       "MetricsResponse": {
         "type": "object",

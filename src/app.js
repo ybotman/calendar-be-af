@@ -8,10 +8,14 @@ require('./functions/API_Docs');
 
 // Import standalone function files
 require('./functions/Health_Basic');
+require('./functions/Health_Version');
+require('./functions/Health_MongoDB');
+require('./functions/Health_MongoDB_Test');
+require('./functions/Health_MongoDB_Prod');
 require('./functions/Metrics_Get');
 require('./functions/Category_Get');
 require('./functions/Role_List');
-
-// Note: Health endpoint is in Health_Basic.js, not duplicated here
+require('./functions/Venue_Create');
+require('./functions/Venue_Delete');
 
 module.exports = { app };
