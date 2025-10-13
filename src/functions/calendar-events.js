@@ -4,12 +4,11 @@ const { app } = require('@azure/functions');
 app.http('getEvents', {
     methods: ['GET'],
     authLevel: 'function',
-    route: 'calendars/{calendarId}/events',
+    route: 'events',
     handler: async (request, context) => {
-        const calendarId = request.params.calendarId;
         const query = request.query;
-        
-        context.log(`Get events for calendar ${calendarId} requested`);
+
+        context.log('Get events requested');
         
         try {
             // Parse query parameters
@@ -21,7 +20,6 @@ app.http('getEvents', {
             const mockEvents = [
                 {
                     id: '1',
-                    calendarId: calendarId,
                     title: 'Team Meeting',
                     description: 'Weekly team sync',
                     startTime: '2025-10-06T10:00:00Z',
@@ -32,7 +30,6 @@ app.http('getEvents', {
                 },
                 {
                     id: '2',
-                    calendarId: calendarId,
                     title: 'Project Deadline',
                     description: 'Submit final project deliverables',
                     startTime: '2025-10-10T23:59:59Z',
@@ -49,7 +46,6 @@ app.http('getEvents', {
                     success: true,
                     data: mockEvents,
                     metadata: {
-                        calendarId,
                         count: mockEvents.length,
                         filters: { startDate, endDate, limit }
                     },
@@ -57,7 +53,7 @@ app.http('getEvents', {
                 }
             };
         } catch (error) {
-            context.log.error(`Error fetching events for calendar ${calendarId}:`, error);
+            context.log.error('Error fetching events:', error);
             return {
                 status: 500,
                 body: {
@@ -73,10 +69,9 @@ app.http('getEvents', {
 app.http('createEvent', {
     methods: ['POST'],
     authLevel: 'function',
-    route: 'calendars/{calendarId}/events',
+    route: 'events',
     handler: async (request, context) => {
-        const calendarId = request.params.calendarId;
-        context.log(`Create event for calendar ${calendarId} requested`);
+        context.log('Create event requested');
         
         try {
             const requestBody = await request.json();
@@ -85,7 +80,6 @@ app.http('createEvent', {
             // TODO: Replace with actual database insert
             const newEvent = {
                 id: Date.now().toString(),
-                calendarId: calendarId,
                 title: requestBody.title,
                 description: requestBody.description || '',
                 startTime: requestBody.startTime,
@@ -105,7 +99,7 @@ app.http('createEvent', {
                 }
             };
         } catch (error) {
-            context.log.error(`Error creating event for calendar ${calendarId}:`, error);
+            context.log.error('Error creating event:', error);
             return {
                 status: 500,
                 body: {
@@ -121,18 +115,16 @@ app.http('createEvent', {
 app.http('getEventById', {
     methods: ['GET'],
     authLevel: 'function',
-    route: 'calendars/{calendarId}/events/{eventId}',
+    route: 'events/{eventId}',
     handler: async (request, context) => {
-        const calendarId = request.params.calendarId;
         const eventId = request.params.eventId;
-        
-        context.log(`Get event ${eventId} from calendar ${calendarId} requested`);
+
+        context.log(`Get event ${eventId} requested`);
         
         try {
             // TODO: Replace with actual database query
             const mockEvent = {
                 id: eventId,
-                calendarId: calendarId,
                 title: 'Sample Event',
                 description: 'A sample event',
                 startTime: '2025-10-06T10:00:00Z',
@@ -167,12 +159,11 @@ app.http('getEventById', {
 app.http('updateEvent', {
     methods: ['PUT'],
     authLevel: 'function',
-    route: 'calendars/{calendarId}/events/{eventId}',
+    route: 'events/{eventId}',
     handler: async (request, context) => {
-        const calendarId = request.params.calendarId;
         const eventId = request.params.eventId;
-        
-        context.log(`Update event ${eventId} in calendar ${calendarId} requested`);
+
+        context.log(`Update event ${eventId} requested`);
         
         try {
             const requestBody = await request.json();
@@ -181,7 +172,6 @@ app.http('updateEvent', {
             // TODO: Replace with actual database update
             const updatedEvent = {
                 id: eventId,
-                calendarId: calendarId,
                 title: requestBody.title,
                 description: requestBody.description,
                 startTime: requestBody.startTime,
@@ -217,12 +207,11 @@ app.http('updateEvent', {
 app.http('deleteEvent', {
     methods: ['DELETE'],
     authLevel: 'function',
-    route: 'calendars/{calendarId}/events/{eventId}',
+    route: 'events/{eventId}',
     handler: async (request, context) => {
-        const calendarId = request.params.calendarId;
         const eventId = request.params.eventId;
-        
-        context.log(`Delete event ${eventId} from calendar ${calendarId} requested`);
+
+        context.log(`Delete event ${eventId} requested`);
         
         try {
             // TODO: Replace with actual database delete

@@ -1,8 +1,6 @@
 const { app } = require('@azure/functions');
 
 // Import function modules
-require('./functions/calendar-api');
-require('./functions/calendar-maintenance');
 require('./functions/calendar-events');
 require('./functions/API_Docs');
 
