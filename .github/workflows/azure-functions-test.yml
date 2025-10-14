@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: TEST
+    environment: TESTING
     
     steps:
       - name: 'Checkout GitHub Action'
