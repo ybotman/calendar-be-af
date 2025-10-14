@@ -23,14 +23,14 @@ async function firebaseAuth(request, context) {
         const authHeader = request.headers.get('authorization');
 
         if (!authHeader) {
-            context.log.warn('Missing Authorization header');
+            context.log('Missing Authorization header');
             return null;
         }
 
         // Extract Bearer token
         const parts = authHeader.split(' ');
         if (parts.length !== 2 || parts[0] !== 'Bearer') {
-            context.log.warn('Invalid Authorization header format. Expected: Bearer <token>');
+            context.log('Invalid Authorization header format. Expected: Bearer <token>');
             return null;
         }
 
@@ -39,17 +39,17 @@ async function firebaseAuth(request, context) {
         // Verify Firebase ID token
         const decodedToken = await verifyIdToken(token);
 
-        context.log.info(`User authenticated: ${decodedToken.uid}`);
+        context.log(`User authenticated: ${decodedToken.uid}`);
 
         return decodedToken;
 
     } catch (error) {
         if (error.code === 'auth/id-token-expired') {
-            context.log.warn('Firebase token expired');
+            context.log('Firebase token expired');
         } else if (error.code === 'auth/argument-error') {
-            context.log.warn('Invalid Firebase token format');
+            context.log('Invalid Firebase token format');
         } else {
-            context.log.error('Firebase token verification failed:', error.message);
+            context.log('Firebase token verification failed:', error.message);
         }
         return null;
     }
@@ -65,11 +65,11 @@ function unauthorizedResponse(message = 'Unauthorized - Valid Firebase token req
         headers: {
             'Content-Type': 'application/json'
         },
-        body: {
+        body: JSON.stringify({
             success: false,
             error: message,
             timestamp: new Date().toISOString()
-        }
+        })
     };
 }
 

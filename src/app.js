@@ -14,9 +14,11 @@ require('./functions/Metrics_Get');
 require('./functions/Category_Get');
 require('./functions/Event_GetById');
 
-// MapCenter API - User location storage
-require('./functions/MapCenter_Get');
-require('./functions/MapCenter_Save');
+// MapCenter API - User location storage (combined GET/PUT)
+require('./functions/MapCenter');
+
+// Venue API
+require('./functions/Venue_Get');
 
 // Note: Role_List, Venue_Create, Venue_Delete exist locally but not in git - commit them first
 
