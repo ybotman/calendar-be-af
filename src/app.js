@@ -13,6 +13,11 @@ require('./functions/Health_MongoDB_Prod');
 require('./functions/Metrics_Get');
 require('./functions/Category_Get');
 require('./functions/Event_GetById');
+
+// MapCenter API - User location storage
+require('./functions/MapCenter_Get');
+require('./functions/MapCenter_Save');
+
 // Note: Role_List, Venue_Create, Venue_Delete exist locally but not in git - commit them first
 
 module.exports = { app };
