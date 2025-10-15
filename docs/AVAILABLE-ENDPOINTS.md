@@ -29,9 +29,10 @@
 - `DELETE /api/events/{eventId}` - Delete event
 - `GET /api/events/id/{id}` - Get event by ID (for social sharing)
 
-### MapCenter API (NEW - Requires Firebase Auth) 🆕
+### MapCenter API (Requires Firebase Auth) ✅
 - `GET /api/mapcenter` - Get user's saved map center
 - `PUT /api/mapcenter` - Save user's map center
+- **Documented in Swagger:** Yes (as of 2025-10-15)
 
 ### Documentation
 - `GET /api/docs` - Swagger UI
