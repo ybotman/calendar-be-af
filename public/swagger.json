@@ -47,6 +47,10 @@
     {
       "name": "Events",
       "description": "Calendar events management"
+    },
+    {
+      "name": "User Preferences",
+      "description": "User settings and preferences"
     }
   ],
   "paths": {
@@ -626,6 +630,165 @@
           }
         }
       }
+    },
+    "/api/mapcenter": {
+      "get": {
+        "summary": "Get user's map center",
+        "description": "Retrieve the authenticated user's saved map center location and search radius",
+        "tags": ["User Preferences"],
+        "operationId": "getUserMapCenter",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map center retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapCenterResponse"
+                },
+                "examples": {
+                  "withData": {
+                    "summary": "User has saved map center",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "lat": 42.923246,
+                        "lng": -73.256836,
+                        "zoom": 10,
+                        "radiusMiles": 50,
+                        "updatedAt": "2025-10-13T20:45:00.000Z"
+                      },
+                      "timestamp": "2025-10-13T20:45:01.234Z"
+                    }
+                  },
+                  "noData": {
+                    "summary": "User has no saved map center",
+                    "value": {
+                      "success": true,
+                      "data": null,
+                      "timestamp": "2025-10-13T20:45:01.234Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "Unauthorized - Valid Firebase token required",
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save user's map center",
+        "description": "Save the authenticated user's map center location and search radius to MongoDB",
+        "tags": ["User Preferences"],
+        "operationId": "saveUserMapCenter",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapCenterInput"
+              },
+              "example": {
+                "lat": 42.923246,
+                "lng": -73.256836,
+                "zoom": 10,
+                "radiusMiles": 50
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Map center saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapCenterResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "lat": 42.923246,
+                    "lng": -73.256836,
+                    "zoom": 10,
+                    "radiusMiles": 50,
+                    "updatedAt": "2025-10-13T20:45:00.000Z"
+                  },
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error - Invalid coordinates or parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "\"lat\" must be less than or equal to 90",
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -983,6 +1146,97 @@
             "description": "Total number of pages"
           }
         }
+      },
+      "MapCenterResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MapCenterData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Map center data or null if not saved"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "MapCenterData": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude coordinate"
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude coordinate"
+          },
+          "zoom": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Map zoom level (visual)"
+          },
+          "radiusMiles": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 200,
+            "description": "Search radius in miles"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": ["lat", "lng"]
+      },
+      "MapCenterInput": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude coordinate"
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude coordinate"
+          },
+          "zoom": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Map zoom level (optional, defaults to 10)"
+          },
+          "radiusMiles": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 200,
+            "description": "Search radius in miles (optional, defaults to 50)"
+          }
+        },
+        "required": ["lat", "lng"]
       },
       "ErrorResponse": {
         "type": "object",
