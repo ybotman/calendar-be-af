@@ -61,8 +61,8 @@ function getLocalTime(utcDate, timezoneOffsetMinutes) {
     if (timezoneOffsetMinutes === null) return null;
 
     // timezoneOffset is minutes from UTC (e.g., -240 for EDT = UTC-4)
-    // JavaScript getTimezoneOffset returns opposite sign, so we negate
-    const localTime = new Date(utcDate.getTime() - (timezoneOffsetMinutes * 60000));
+    // To convert UTC to local time, ADD the offset (negative value subtracts)
+    const localTime = new Date(utcDate.getTime() + (timezoneOffsetMinutes * 60000));
     return {
         dayOfWeek: getDayOfWeek(localTime),
         hourOfDay: localTime.getHours()

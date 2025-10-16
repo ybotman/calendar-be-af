@@ -56,6 +56,19 @@ function stripPortFromIP(ip) {
     return ip.split(':')[0].trim();
 }
 
+// Helper: Calculate local time from UTC and timezone offset
+function getLocalTime(utcDate, timezoneOffsetMinutes) {
+    if (timezoneOffsetMinutes === null) return null;
+
+    // timezoneOffset is minutes from UTC (e.g., -240 for EDT = UTC-4)
+    // To convert UTC to local time, ADD the offset (negative value subtracts)
+    const localTime = new Date(utcDate.getTime() + (timezoneOffsetMinutes * 60000));
+    return {
+        dayOfWeek: getDayOfWeek(localTime),
+        hourOfDay: localTime.getHours()
+    };
+}
+
 async function visitorTrackHandler(request, context) {
     context.log('VisitorTrack: POST request received');
 
@@ -77,6 +90,8 @@ async function visitorTrackHandler(request, context) {
         // Parse request body
         const requestBody = await request.json();
         const page = requestBody.page || '/calendar';
+        const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
+        const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
 
         // Extract IP address from CloudFlare headers or X-Forwarded-For
         const rawIp = request.headers.get('CF-Connecting-IP')
@@ -197,10 +212,15 @@ async function visitorTrackHandler(request, context) {
         const userAgent = request.headers.get('User-Agent') || 'unknown';
         const deviceType = getDeviceType(userAgent);
 
-        // Temporal data for analytics
+        // Temporal data for analytics (UTC/Zulu time)
         const visitTime = new Date();
-        const dayOfWeek = getDayOfWeek(visitTime);
-        const hourOfDay = visitTime.getHours();
+        const dayOfWeekZulu = getDayOfWeek(visitTime);
+        const hourOfDayZulu = visitTime.getHours();
+
+        // Calculate local time if timezone provided
+        const localTime = getLocalTime(visitTime, timezoneOffset);
+        const dayOfWeekLocal = localTime?.dayOfWeek || null;
+        const hourOfDayLocal = localTime?.hourOfDay || null;
 
         // 1. INSERT: Raw visit event (immutable audit trail)
         const visitEvent = {
@@ -209,9 +229,18 @@ async function visitorTrackHandler(request, context) {
             page: page,
             userAgent: userAgent,
             deviceType: deviceType,
-            dayOfWeek: dayOfWeek,
-            hourOfDay: hourOfDay,
-            ...geoData, // Spread geo data (city, region, country, lat, lng, etc.)
+
+            // UTC/Zulu time
+            dayOfWeekZulu: dayOfWeekZulu,
+            hourOfDayZulu: hourOfDayZulu,
+
+            // Local browser time (if provided)
+            dayOfWeekLocal: dayOfWeekLocal,
+            hourOfDayLocal: hourOfDayLocal,
+            timezone: userTimezone,
+            timezoneOffset: timezoneOffset,
+
+            ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
             createdAt: new Date()
         };
 
@@ -242,8 +271,14 @@ async function visitorTrackHandler(request, context) {
                 totalVisits: 1,
                 [`pagesVisited.${page}`]: 1,
                 [`devices.${deviceType}`]: 1,
-                [`visitsByDayOfWeek.${dayOfWeek}`]: 1,
-                [`visitsByHour.${hourOfDay}`]: 1
+
+                // UTC/Zulu analytics
+                [`visitsByDayOfWeekZulu.${dayOfWeekZulu}`]: 1,
+                [`visitsByHourZulu.${hourOfDayZulu}`]: 1,
+
+                // Local time analytics (if provided)
+                ...(dayOfWeekLocal && { [`visitsByDayOfWeekLocal.${dayOfWeekLocal}`]: 1 }),
+                ...(hourOfDayLocal !== null && { [`visitsByHourLocal.${hourOfDayLocal}`]: 1 })
             },
             $min: {
                 firstVisitAt: visitTime
