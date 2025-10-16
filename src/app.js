@@ -17,6 +17,10 @@ require('./functions/Event_GetById');
 // MapCenter API - User location storage (combined GET/PUT)
 require('./functions/MapCenter');
 
+// Analytics Tracking - Login and Visitor tracking
+require('./functions/UserLoginTrack');
+require('./functions/VisitorTrack');
+
 // Venue API
 require('./functions/Venue_Get');
 

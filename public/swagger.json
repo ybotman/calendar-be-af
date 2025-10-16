@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.0.0",
+    "version": "1.3.0",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -51,6 +51,10 @@
     {
       "name": "User Preferences",
       "description": "User settings and preferences"
+    },
+    {
+      "name": "Analytics",
+      "description": "User analytics and tracking"
     }
   ],
   "paths": {
@@ -789,6 +793,142 @@
           }
         }
       }
+    },
+    "/api/user/login-track": {
+      "post": {
+        "summary": "Track user login",
+        "description": "Tracks user login events with IP geolocation data for analytics, heatmaps, and targeted outreach. Captures city-level location data using ipinfo.io.",
+        "tags": ["Analytics"],
+        "operationId": "trackUserLogin",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login event tracked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginTrackResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "loginId": "507f1f77bcf86cd799439011",
+                    "timestamp": "2025-10-15T14:30:00.000Z"
+                  },
+                  "timestamp": "2025-10-15T14:30:00.123Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "Unauthorized - Valid Firebase token required",
+                  "timestamp": "2025-10-15T14:30:00.123Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/visitor/track": {
+      "post": {
+        "summary": "Track anonymous visitor",
+        "description": "Tracks anonymous visitors on /calendar routes with IP geolocation. Captures once per day per IP to avoid noise. No authentication required.",
+        "tags": ["Analytics"],
+        "operationId": "trackVisitor",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitorTrackInput"
+              },
+              "example": {
+                "page": "/calendar/boston"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Visitor tracked successfully or already tracked today",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorTrackResponse"
+                },
+                "examples": {
+                  "tracked": {
+                    "summary": "New visitor tracked",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "tracked": true,
+                        "message": "Visitor tracked successfully",
+                        "visitId": "507f1f77bcf86cd799439011"
+                      },
+                      "timestamp": "2025-10-15T14:30:00.123Z"
+                    }
+                  },
+                  "alreadyTracked": {
+                    "summary": "Already tracked today",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "tracked": false,
+                        "message": "Already tracked today"
+                      },
+                      "timestamp": "2025-10-15T14:30:00.123Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unable to determine IP address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1238,6 +1378,80 @@
         },
         "required": ["lat", "lng"]
       },
+      "LoginTrackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "loginId": {
+                "type": "string",
+                "description": "MongoDB document ID of the login event"
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp of login event"
+              }
+            },
+            "required": ["loginId", "timestamp"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "VisitorTrackInput": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "Calendar page URL path",
+            "example": "/calendar/boston"
+          }
+        },
+        "required": ["page"]
+      },
+      "VisitorTrackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "tracked": {
+                "type": "boolean",
+                "description": "Whether visitor was tracked (false if already tracked today)"
+              },
+              "message": {
+                "type": "string",
+                "description": "Status message"
+              },
+              "visitId": {
+                "type": "string",
+                "description": "MongoDB document ID of visit event (only if tracked=true)"
+              }
+            },
+            "required": ["tracked", "message"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -1258,6 +1472,14 @@
             "format": "date-time"
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "firebaseAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Firebase Authentication JWT token. Include in Authorization header as: Bearer <token>"
       }
     }
   }
