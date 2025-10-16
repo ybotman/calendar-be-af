@@ -48,6 +48,26 @@ function getDayOfWeek(date) {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[date.getDay()];
 }
+
+// Helper: Strip port from IP address
+function stripPortFromIP(ip) {
+    if (!ip || ip === 'unknown') return ip;
+    // Remove port if present (e.g., "71.232.30.16:52525" → "71.232.30.16")
+    return ip.split(':')[0].trim();
+}
+
+// Helper: Calculate local time from UTC and timezone offset
+function getLocalTime(utcDate, timezoneOffsetMinutes) {
+    if (timezoneOffsetMinutes === null) return null;
+
+    // timezoneOffset is minutes from UTC (e.g., -240 for EDT = UTC-4)
+    // JavaScript getTimezoneOffset returns opposite sign, so we negate
+    const localTime = new Date(utcDate.getTime() - (timezoneOffsetMinutes * 60000));
+    return {
+        dayOfWeek: getDayOfWeek(localTime),
+        hourOfDay: localTime.getHours()
+    };
+}
 async function loginTrackHandler(request, context) {
     context.log('UserLoginTrack: POST request received');
 
@@ -75,11 +95,29 @@ async function loginTrackHandler(request, context) {
         const firebaseUid = user.uid;
         context.log(`Tracking login for user: ${firebaseUid}`);
 
+        // Parse request body for timezone data (optional)
+        let requestBody = {};
+        try {
+            const text = await request.text();
+            if (text) {
+                requestBody = JSON.parse(text);
+            }
+        } catch (parseError) {
+            // Body is optional, continue without it
+            context.log('No request body or invalid JSON');
+        }
+
+        const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
+        const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
+
         // Extract IP address from CloudFlare headers or X-Forwarded-For
-        const userIp = request.headers.get('CF-Connecting-IP')
-                     || request.headers.get('X-Forwarded-For')?.split(',')[0]
-                     || request.headers.get('X-Real-IP')
-                     || 'unknown';
+        const rawIp = request.headers.get('CF-Connecting-IP')
+                   || request.headers.get('X-Forwarded-For')?.split(',')[0]
+                   || request.headers.get('X-Real-IP')
+                   || 'unknown';
+
+        // Strip port number if present (Azure sometimes includes port)
+        const userIp = stripPortFromIP(rawIp);
 
         context.log(`User IP: ${userIp}`);
 
@@ -130,10 +168,15 @@ async function loginTrackHandler(request, context) {
         const userAgent = request.headers.get('User-Agent') || 'unknown';
         const deviceType = getDeviceType(userAgent);
 
-        // Temporal data for analytics
+        // Temporal data for analytics (UTC/Zulu time)
         const loginTime = new Date();
-        const dayOfWeek = getDayOfWeek(loginTime);
-        const hourOfDay = loginTime.getHours();
+        const dayOfWeekZulu = getDayOfWeek(loginTime);
+        const hourOfDayZulu = loginTime.getHours();
+
+        // Calculate local time if timezone provided
+        const localTime = getLocalTime(loginTime, timezoneOffset);
+        const dayOfWeekLocal = localTime?.dayOfWeek || null;
+        const hourOfDayLocal = localTime?.hourOfDay || null;
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
@@ -155,9 +198,18 @@ async function loginTrackHandler(request, context) {
             ip: userIp,
             userAgent: userAgent,
             deviceType: deviceType,
-            dayOfWeek: dayOfWeek,
-            hourOfDay: hourOfDay,
-            ...geoData, // Spread geo data (city, region, country, lat, lng, etc.)
+
+            // UTC/Zulu time
+            dayOfWeekZulu: dayOfWeekZulu,
+            hourOfDayZulu: hourOfDayZulu,
+
+            // Local browser time (if provided)
+            dayOfWeekLocal: dayOfWeekLocal,
+            hourOfDayLocal: hourOfDayLocal,
+            timezone: userTimezone,
+            timezoneOffset: timezoneOffset,
+
+            ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
             createdAt: new Date()
         };
 
@@ -190,8 +242,14 @@ async function loginTrackHandler(request, context) {
             $inc: {
                 totalLogins: 1,
                 [`devices.${deviceType}`]: 1,
-                [`loginsByDayOfWeek.${dayOfWeek}`]: 1,
-                [`loginsByHour.${hourOfDay}`]: 1
+
+                // UTC/Zulu analytics
+                [`loginsByDayOfWeekZulu.${dayOfWeekZulu}`]: 1,
+                [`loginsByHourZulu.${hourOfDayZulu}`]: 1,
+
+                // Local time analytics (if provided)
+                ...(dayOfWeekLocal && { [`loginsByDayOfWeekLocal.${dayOfWeekLocal}`]: 1 }),
+                ...(hourOfDayLocal !== null && { [`loginsByHourLocal.${hourOfDayLocal}`]: 1 })
             },
             $min: {
                 firstLoginAt: loginTime

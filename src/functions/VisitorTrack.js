@@ -49,6 +49,13 @@ function getDayOfWeek(date) {
     return days[date.getDay()];
 }
 
+// Helper: Strip port from IP address
+function stripPortFromIP(ip) {
+    if (!ip || ip === 'unknown') return ip;
+    // Remove port if present (e.g., "71.232.30.16:52525" → "71.232.30.16")
+    return ip.split(':')[0].trim();
+}
+
 async function visitorTrackHandler(request, context) {
     context.log('VisitorTrack: POST request received');
 
@@ -72,10 +79,13 @@ async function visitorTrackHandler(request, context) {
         const page = requestBody.page || '/calendar';
 
         // Extract IP address from CloudFlare headers or X-Forwarded-For
-        const userIp = request.headers.get('CF-Connecting-IP')
-                     || request.headers.get('X-Forwarded-For')?.split(',')[0]
-                     || request.headers.get('X-Real-IP')
-                     || 'unknown';
+        const rawIp = request.headers.get('CF-Connecting-IP')
+                   || request.headers.get('X-Forwarded-For')?.split(',')[0]
+                   || request.headers.get('X-Real-IP')
+                   || 'unknown';
+
+        // Strip port number if present (Azure sometimes includes port)
+        const userIp = stripPortFromIP(rawIp);
 
         if (userIp === 'unknown') {
             context.log('Unable to determine visitor IP');
