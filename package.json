@@ -1,6 +1,6 @@
 {
   "name": "calendar-be-af",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Master Calendar Backend - Azure Functions",
   "main": "src/app.js",
   "scripts": {
@@ -28,13 +28,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "coverageDirectory": "coverage",
-    "collectCoverageFrom": [
-      "src/functions/**/*.js",
-      "!src/functions/**/*.test.js"
-    ]
   }
 }
