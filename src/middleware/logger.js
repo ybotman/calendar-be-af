@@ -65,7 +65,7 @@ class Logger {
    */
   warn(message, metadata = {}) {
     const formatted = this._formatLog(LogLevel.WARN, message, metadata);
-    this.context.log.warn(formatted);
+    this.context.log(formatted);  // Azure Functions v4: use context.log() for all levels
   }
 
   /**
@@ -83,7 +83,7 @@ class Logger {
       ...metadata
     });
 
-    this.context.log.error(formatted);
+    this.context.log(formatted);  // Azure Functions v4: use context.log() for all levels
   }
 
   /**

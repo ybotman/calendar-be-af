@@ -20,8 +20,8 @@ const { standardMiddleware } = require('../middleware');
  */
 
 // Handler function
-async function venueGetHandler(request, context) {
-    context.log('Venue_Get: Request received');
+async function venuesGetHandler(request, context) {
+    context.log('Venues_Get: Request received');
 
     let mongoClient;
 
@@ -144,9 +144,9 @@ async function venueGetHandler(request, context) {
 }
 
 // Register function with standard middleware
-app.http('Venue_Get', {
+app.http('Venues_Get', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'venues',
-    handler: standardMiddleware(venueGetHandler)
+    handler: standardMiddleware(venuesGetHandler)
 });
