@@ -1,36 +1,8 @@
 // src/functions/Events.js
-// Domain: Events - All event CRUD operations
+// Domain: Events - All event CRUD operations with MongoDB integration
 const { app } = require('@azure/functions');
-
-// ============================================
-// SHARED HELPERS
-// ============================================
-
-// Mock data - TODO: Replace with actual database queries
-function getMockEvents() {
-    return [
-        {
-            id: '1',
-            title: 'Team Meeting',
-            description: 'Weekly team sync',
-            startTime: '2025-10-06T10:00:00Z',
-            endTime: '2025-10-06T11:00:00Z',
-            isAllDay: false,
-            location: 'Conference Room A',
-            attendees: ['user1@example.com', 'user2@example.com']
-        },
-        {
-            id: '2',
-            title: 'Project Deadline',
-            description: 'Submit final project deliverables',
-            startTime: '2025-10-10T23:59:59Z',
-            endTime: '2025-10-10T23:59:59Z',
-            isAllDay: true,
-            location: '',
-            attendees: []
-        }
-    ];
-}
+const { MongoClient, ObjectId } = require('mongodb');
+const { standardMiddleware } = require('../middleware');
 
 // ============================================
 // FUNCTION 1: GET /api/events
@@ -40,53 +12,140 @@ function getMockEvents() {
  * GET /api/events
  * List all events with optional filtering
  *
- * @param {string} startDate - Filter events from date
- * @param {string} endDate - Filter events to date
- * @param {number} limit - Max results (default: 50)
+ * Query Parameters:
+ * - appId: Application ID (1=TangoTiempo, 2=HarmonyJunction) (required)
+ * - startDate: Filter events from date (ISO format)
+ * - endDate: Filter events to date (ISO format)
+ * - categoryId: Filter by category
+ * - venueId: Filter by venue
+ * - limit: Results per page (default: 100, max: 500)
+ * - page: Page number (default: 1)
+ *
+ * Response: { events: [...], pagination: { total, page, limit, pages } }
  */
 async function eventsGetHandler(request, context) {
-    const query = request.query;
-    context.log('Events_Get: Request received');
+    // Extract query parameters
+    const appId = request.query.get('appId');
+    const startDate = request.query.get('startDate');
+    const endDate = request.query.get('endDate');
+    const categoryId = request.query.get('categoryId');
+    const venueId = request.query.get('venueId');
+    const page = request.query.get('page') || '1';
+    const limit = request.query.get('limit') || '100';
+
+    // Log request details
+    context.log('Events_Get: Request received', {
+        appId,
+        startDate,
+        endDate,
+        categoryId,
+        venueId,
+        page,
+        limit
+    });
+
+    // Validate required parameters
+    if (!appId) {
+        context.log('Missing appId in events request');
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'appId is required' })
+        };
+    }
+
+    let mongoClient;
 
     try {
-        // Parse query parameters
-        const startDate = query.get('startDate');
-        const endDate = query.get('endDate');
-        const limit = parseInt(query.get('limit')) || 50;
+        // Parse and validate pagination parameters
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(500, Math.max(1, parseInt(limit) || 100));
+        const skip = (pageNum - 1) * limitNum;
 
-        // TODO: Replace with actual database query
-        const mockEvents = getMockEvents();
+        context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('Events');
+
+        // Build MongoDB query filter
+        const filter = { appId };
+
+        // Add date range filtering if provided
+        if (startDate || endDate) {
+            filter.startTime = {};
+            if (startDate) {
+                filter.startTime.$gte = new Date(startDate);
+            }
+            if (endDate) {
+                filter.startTime.$lte = new Date(endDate);
+            }
+        }
+
+        // Add category filter if provided
+        if (categoryId) {
+            filter.categoryId = categoryId;
+        }
+
+        // Add venue filter if provided
+        if (venueId) {
+            filter.venueId = venueId;
+        }
+
+        // Build MongoDB query
+        const eventQuery = collection
+            .find(filter)
+            .sort({ startTime: 1 }) // Sort by start time ascending
+            .skip(skip)
+            .limit(limitNum);
+
+        // Execute queries in parallel for better performance
+        const [events, total] = await Promise.all([
+            eventQuery.toArray(),
+            collection.countDocuments(filter)
+        ]);
+
+        context.log(`Found ${events.length} events for appId: ${appId} (page ${pageNum}/${Math.ceil(total/limitNum)})`);
+
+        // Return response with pagination info
         return {
             status: 200,
-            body: {
-                success: true,
-                data: mockEvents,
-                metadata: {
-                    count: mockEvents.length,
-                    filters: { startDate, endDate, limit }
-                },
-                timestamp: new Date().toISOString()
-            }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                events: events || [],
+                pagination: {
+                    total,
+                    page: pageNum,
+                    limit: limitNum,
+                    pages: Math.ceil(total / limitNum)
+                }
+            })
         };
+
     } catch (error) {
-        context.log.error('Events_Get: Error fetching events:', error);
-        return {
-            status: 500,
-            body: {
-                success: false,
-                error: 'Failed to fetch events',
-                timestamp: new Date().toISOString()
-            }
-        };
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
     }
 }
 
+// Register function with standard middleware
 app.http('Events_Get', {
     methods: ['GET'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events',
-    handler: eventsGetHandler
+    handler: standardMiddleware(eventsGetHandler)
 });
 
 // ============================================
@@ -97,51 +156,69 @@ app.http('Events_Get', {
  * GET /api/events/{eventId}
  * Get single event by ID
  *
- * @param {string} eventId - Event ID
+ * @param {string} eventId - Event ID (MongoDB ObjectId)
  */
 async function eventsGetByIdHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_GetById: Request for event ${eventId}`);
 
+    let mongoClient;
+
     try {
-        // TODO: Replace with actual database query
-        const mockEvent = {
-            id: eventId,
-            title: 'Sample Event',
-            description: 'A sample event',
-            startTime: '2025-10-06T10:00:00Z',
-            endTime: '2025-10-06T11:00:00Z',
-            isAllDay: false,
-            location: 'Sample Location',
-            attendees: []
-        };
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('Events');
+
+        // Find event by ID
+        const event = await collection.findOne({ _id: new ObjectId(eventId) });
+
+        if (!event) {
+            context.log(`Event not found: ${eventId}`);
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Event not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log(`Event found: ${eventId}`);
 
         return {
             status: 200,
-            body: {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 success: true,
-                data: mockEvent,
+                data: event,
                 timestamp: new Date().toISOString()
-            }
+            })
         };
     } catch (error) {
-        context.log.error(`Events_GetById: Error fetching event ${eventId}:`, error);
-        return {
-            status: 500,
-            body: {
-                success: false,
-                error: 'Failed to fetch event',
-                timestamp: new Date().toISOString()
-            }
-        };
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
     }
 }
 
 app.http('Events_GetById', {
     methods: ['GET'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/{eventId}',
-    handler: eventsGetByIdHandler
+    handler: standardMiddleware(eventsGetByIdHandler)
 });
 
 // ============================================
@@ -153,45 +230,93 @@ app.http('Events_GetById', {
  * Create new event
  *
  * @body {object} event - Event data
+ * Required fields: appId, title, startTime, endTime
  */
 async function eventsCreateHandler(request, context) {
     context.log('Events_Create: Request received');
 
+    let mongoClient;
+
     try {
         const requestBody = await request.json();
 
-        // TODO: Add validation with Joi
-        // TODO: Replace with actual database insert
+        // Validate required fields
+        if (!requestBody.appId) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'appId is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        if (!requestBody.title || !requestBody.startTime || !requestBody.endTime) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'title, startTime, and endTime are required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('Events');
+
+        // Build new event document
         const newEvent = {
-            id: Date.now().toString(),
+            appId: requestBody.appId,
             title: requestBody.title,
             description: requestBody.description || '',
-            startTime: requestBody.startTime,
-            endTime: requestBody.endTime,
+            startTime: new Date(requestBody.startTime),
+            endTime: new Date(requestBody.endTime),
             isAllDay: requestBody.isAllDay || false,
             location: requestBody.location || '',
+            categoryId: requestBody.categoryId || null,
+            venueId: requestBody.venueId || null,
             attendees: requestBody.attendees || [],
-            createdAt: new Date().toISOString()
+            createdAt: new Date(),
+            updatedAt: new Date()
         };
+
+        // Insert into MongoDB
+        const result = await collection.insertOne(newEvent);
+
+        context.log(`Event created: ${result.insertedId}`);
 
         return {
             status: 201,
-            body: {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 success: true,
-                data: newEvent,
+                data: {
+                    _id: result.insertedId,
+                    ...newEvent
+                },
                 timestamp: new Date().toISOString()
-            }
+            })
         };
     } catch (error) {
-        context.log.error('Events_Create: Error creating event:', error);
-        return {
-            status: 500,
-            body: {
-                success: false,
-                error: 'Failed to create event',
-                timestamp: new Date().toISOString()
-            }
-        };
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
     }
 }
 
@@ -199,7 +324,7 @@ app.http('Events_Create', {
     methods: ['POST'],
     authLevel: 'function',
     route: 'events',
-    handler: eventsCreateHandler
+    handler: standardMiddleware(eventsCreateHandler)
 });
 
 // ============================================
@@ -217,42 +342,76 @@ async function eventsUpdateHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Update: Request for event ${eventId}`);
 
+    let mongoClient;
+
     try {
         const requestBody = await request.json();
 
-        // TODO: Add validation with Joi
-        // TODO: Check authorization (user owns event or is admin)
-        // TODO: Replace with actual database update
-        const updatedEvent = {
-            id: eventId,
-            title: requestBody.title,
-            description: requestBody.description,
-            startTime: requestBody.startTime,
-            endTime: requestBody.endTime,
-            isAllDay: requestBody.isAllDay,
-            location: requestBody.location,
-            attendees: requestBody.attendees,
-            updatedAt: new Date().toISOString()
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('Events');
+
+        // Build update document
+        const updateDoc = {
+            $set: {
+                ...requestBody,
+                startTime: requestBody.startTime ? new Date(requestBody.startTime) : undefined,
+                endTime: requestBody.endTime ? new Date(requestBody.endTime) : undefined,
+                updatedAt: new Date()
+            }
         };
+
+        // Remove undefined fields
+        Object.keys(updateDoc.$set).forEach(key =>
+            updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
+        );
+
+        // Update document
+        const result = await collection.findOneAndUpdate(
+            { _id: new ObjectId(eventId) },
+            updateDoc,
+            { returnDocument: 'after' }
+        );
+
+        if (!result.value) {
+            context.log(`Event not found: ${eventId}`);
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Event not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log(`Event updated: ${eventId}`);
 
         return {
             status: 200,
-            body: {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 success: true,
-                data: updatedEvent,
+                data: result.value,
                 timestamp: new Date().toISOString()
-            }
+            })
         };
     } catch (error) {
-        context.log.error(`Events_Update: Error updating event ${eventId}:`, error);
-        return {
-            status: 500,
-            body: {
-                success: false,
-                error: 'Failed to update event',
-                timestamp: new Date().toISOString()
-            }
-        };
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
     }
 }
 
@@ -260,7 +419,7 @@ app.http('Events_Update', {
     methods: ['PUT'],
     authLevel: 'function',
     route: 'events/{eventId}',
-    handler: eventsUpdateHandler
+    handler: standardMiddleware(eventsUpdateHandler)
 });
 
 // ============================================
@@ -277,28 +436,55 @@ async function eventsDeleteHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Delete: Request for event ${eventId}`);
 
+    let mongoClient;
+
     try {
-        // TODO: Check authorization (user owns event or is admin)
-        // TODO: Replace with actual database delete
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('Events');
+
+        // Delete document
+        const result = await collection.deleteOne({ _id: new ObjectId(eventId) });
+
+        if (result.deletedCount === 0) {
+            context.log(`Event not found: ${eventId}`);
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Event not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log(`Event deleted: ${eventId}`);
 
         return {
             status: 200,
-            body: {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 success: true,
                 message: `Event ${eventId} deleted successfully`,
                 timestamp: new Date().toISOString()
-            }
+            })
         };
     } catch (error) {
-        context.log.error(`Events_Delete: Error deleting event ${eventId}:`, error);
-        return {
-            status: 500,
-            body: {
-                success: false,
-                error: 'Failed to delete event',
-                timestamp: new Date().toISOString()
-            }
-        };
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
     }
 }
 
@@ -306,5 +492,5 @@ app.http('Events_Delete', {
     methods: ['DELETE'],
     authLevel: 'function',
     route: 'events/{eventId}',
-    handler: eventsDeleteHandler
+    handler: standardMiddleware(eventsDeleteHandler)
 });
