@@ -1,6 +1,7 @@
 // src/functions/Health_Basic.js
 const { app } = require('@azure/functions');
 const { lightweightMiddleware } = require('../middleware');
+const packageJson = require('../../package.json');
 
 // Health check handler (without middleware for raw response)
 async function healthCheckHandler(request, context) {
@@ -12,7 +13,7 @@ async function healthCheckHandler(request, context) {
       timestamp: new Date().toISOString(),
       service: 'calendar-be-af',
       environment: process.env.NODE_ENV || 'development',
-      version: '1.0.0',
+      version: packageJson.version || '1.0.0',
       uptime: process.uptime()
     })
   };
