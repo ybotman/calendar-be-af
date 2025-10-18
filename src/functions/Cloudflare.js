@@ -49,6 +49,13 @@ async function cloudflareInfoHandler(request, context) {
     context.log('Cloudflare_Info: Request received');
 
     try {
+        // Helper: Strip port from IP address
+        const stripPortFromIP = (ip) => {
+            if (!ip || ip === 'unknown') return ip;
+            // Remove port if present (e.g., "71.232.30.16:52525" → "71.232.30.16")
+            return ip.split(':')[0].trim();
+        };
+
         // Read Cloudflare headers
         const cfConnectingIp = request.headers.get('cf-connecting-ip');
         const cfCountry = request.headers.get('cf-ipcountry');
@@ -60,7 +67,8 @@ async function cloudflareInfoHandler(request, context) {
                         || request.headers.get('x-real-ip')
                         || 'unknown';
 
-        const visitorIp = cfConnectingIp || fallbackIp;
+        // Strip port number from IP
+        const visitorIp = stripPortFromIP(cfConnectingIp || fallbackIp);
 
         // Parse CF-Visitor JSON if present
         let protocol = 'unknown';
