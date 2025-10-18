@@ -527,3 +527,450 @@ app.http('Geo_Ip', {
     route: 'geo/ip',
     handler: standardMiddleware(geoIpHandler)
 });
+
+// ============================================
+// FUNCTION 5: GET /api/geo/bigdatacloud/ip
+// ============================================
+
+/**
+ * IP Geolocation - BigDataCloud API
+ *
+ * @description Get geolocation data from visitor's IP using BigDataCloud API
+ * Alternative to ipapi.co to avoid rate limiting
+ *
+ * Use Cases:
+ * - Get visitor's location automatically from their IP
+ * - Center map on user's location
+ * - Show local events based on IP location
+ *
+ * Returns:
+ * - source: 'BigDataCloud'
+ * - ip: IP address
+ * - latitude: Latitude coordinate
+ * - longitude: Longitude coordinate
+ * - city: City name
+ * - region: State/Province
+ * - region_code: State/Province code
+ * - country: Country code (US, CA, etc)
+ * - country_name: Full country name
+ * - postal: ZIP/Postal code
+ * - timezone: Timezone ID
+ * - raw: Full API response for debugging
+ *
+ * @example
+ * GET /api/geo/bigdatacloud/ip
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "source": "BigDataCloud",
+ *     "ip": "71.232.30.16",
+ *     "latitude": 42.3584,
+ *     "longitude": -71.0598,
+ *     "city": "Boston",
+ *     "region": "Massachusetts",
+ *     "region_code": "MA",
+ *     "country": "US",
+ *     "country_name": "United States",
+ *     "postal": "02108",
+ *     "timezone": "America/New_York",
+ *     "raw": {...}
+ *   },
+ *   "timestamp": "2025-10-18T12:34:56.789Z"
+ * }
+ */
+async function geoBigDataCloudHandler(request, context) {
+    context.log('Geo_BigDataCloud_Get: Request received');
+
+    try {
+        const apiKey = process.env.BIGDATACLOUD_API_KEY;
+        if (!apiKey) {
+            throw new Error('BIGDATACLOUD_API_KEY not configured');
+        }
+
+        // Get IP from Cloudflare headers or fallback to request IP
+        const rawIp = request.headers.get('cf-connecting-ip') ||
+                      request.headers.get('x-forwarded-for')?.split(',')[0] ||
+                      'unknown';
+
+        // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
+        const ip = rawIp.split(':')[0].trim();
+
+        context.log('Geo_BigDataCloud_Get: Detected IP', { ip });
+
+        // Call BigDataCloud API
+        const url = `https://api.bigdatacloud.net/data/ip-geolocation?key=${apiKey}&ip=${ip}`;
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'TangoTiempo/1.0' },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+
+        if (!response.ok) {
+            throw new Error(`BigDataCloud API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        context.log('Geo_BigDataCloud_Get: Geolocation retrieved', {
+            ip: data.ip,
+            city: data.location?.city,
+            country: data.country?.isoAlpha2
+        });
+
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+            },
+            body: JSON.stringify({
+                success: true,
+                data: {
+                    source: 'BigDataCloud',
+                    ip: data.ip || ip,
+                    latitude: data.location?.latitude || null,
+                    longitude: data.location?.longitude || null,
+                    city: data.location?.city || null,
+                    region: data.location?.principalSubdivision || null,
+                    region_code: data.location?.principalSubdivisionCode || null,
+                    country: data.country?.isoAlpha2 || null,
+                    country_name: data.country?.name || null,
+                    postal: data.location?.postcode || null,
+                    timezone: data.location?.timeZone?.ianaTimeId || null,
+                    raw: data
+                },
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        // Let errorHandler middleware handle the error
+        throw error;
+    }
+}
+
+// Register function with standard middleware
+app.http('Geo_BigDataCloud_Get', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'geo/bigdatacloud/ip',
+    handler: standardMiddleware(geoBigDataCloudHandler)
+});
+
+// ============================================
+// FUNCTION 6: GET /api/geo/abstract/ip
+// ============================================
+
+/**
+ * IP Geolocation - Abstract API
+ *
+ * @description Get geolocation data from visitor's IP using Abstract API
+ * Alternative to ipapi.co to avoid rate limiting
+ *
+ * Use Cases:
+ * - Get visitor's location automatically from their IP
+ * - Center map on user's location
+ * - Show local events based on IP location
+ *
+ * Returns:
+ * - source: 'AbstractAPI'
+ * - ip: IP address
+ * - latitude: Latitude coordinate
+ * - longitude: Longitude coordinate
+ * - city: City name
+ * - region: State/Province
+ * - region_code: State/Province code
+ * - country: Country code (US, CA, etc)
+ * - country_name: Full country name
+ * - postal: ZIP/Postal code
+ * - timezone: Timezone ID
+ * - raw: Full API response for debugging
+ *
+ * @example
+ * GET /api/geo/abstract/ip
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "source": "AbstractAPI",
+ *     "ip": "71.232.30.16",
+ *     "latitude": 42.3584,
+ *     "longitude": -71.0598,
+ *     "city": "Boston",
+ *     "region": "Massachusetts",
+ *     "region_code": "MA",
+ *     "country": "US",
+ *     "country_name": "United States",
+ *     "postal": "02108",
+ *     "timezone": "America/New_York",
+ *     "raw": {...}
+ *   },
+ *   "timestamp": "2025-10-18T12:34:56.789Z"
+ * }
+ */
+async function geoAbstractHandler(request, context) {
+    context.log('Geo_Abstract_Get: Request received');
+
+    try {
+        const apiKey = process.env.ABSTRACT_API_KEY;
+        if (!apiKey) {
+            throw new Error('ABSTRACT_API_KEY not configured');
+        }
+
+        // Get IP from Cloudflare headers or fallback to request IP
+        const rawIp = request.headers.get('cf-connecting-ip') ||
+                      request.headers.get('x-forwarded-for')?.split(',')[0] ||
+                      'unknown';
+
+        // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
+        const ip = rawIp.split(':')[0].trim();
+
+        context.log('Geo_Abstract_Get: Detected IP', { ip });
+
+        // Call Abstract API
+        const url = `https://ipgeolocation.abstractapi.com/v1/?api_key=${apiKey}&ip_address=${ip}`;
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'TangoTiempo/1.0' },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+
+        if (!response.ok) {
+            throw new Error(`Abstract API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        context.log('Geo_Abstract_Get: Geolocation retrieved', {
+            ip: data.ip_address,
+            city: data.city,
+            country: data.country_code
+        });
+
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+            },
+            body: JSON.stringify({
+                success: true,
+                data: {
+                    source: 'AbstractAPI',
+                    ip: data.ip_address || ip,
+                    latitude: data.latitude || null,
+                    longitude: data.longitude || null,
+                    city: data.city || null,
+                    region: data.region || null,
+                    region_code: data.region_iso_code || null,
+                    country: data.country_code || null,
+                    country_name: data.country || null,
+                    postal: data.postal_code || null,
+                    timezone: data.timezone?.name || null,
+                    raw: data
+                },
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        // Let errorHandler middleware handle the error
+        throw error;
+    }
+}
+
+// Register function with standard middleware
+app.http('Geo_Abstract_Get', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'geo/abstract/ip',
+    handler: standardMiddleware(geoAbstractHandler)
+});
+
+// ============================================
+// FUNCTION 7: POST /api/geo/mapbox/reverse
+// ============================================
+
+/**
+ * Reverse Geocoding - Mapbox API
+ *
+ * @description Convert lat/long coordinates to full address using Mapbox Geocoding API
+ * Used after getting coordinates from Google Geolocation API
+ *
+ * Use Cases:
+ * - Convert browser geolocation coordinates to readable address
+ * - Get detailed address components from lat/lng
+ * - Validate and format addresses
+ *
+ * Request Body:
+ * - latitude: Latitude coordinate (required)
+ * - longitude: Longitude coordinate (required)
+ *
+ * Returns:
+ * - source: 'Mapbox'
+ * - latitude: Input latitude
+ * - longitude: Input longitude
+ * - formatted_address: Full formatted address
+ * - street_address: Street number and name
+ * - city: City name
+ * - region: State/Province
+ * - postal_code: ZIP/Postal code
+ * - country: Country name
+ * - country_code: Country code
+ * - accuracy: Geocoding accuracy
+ * - place_type: Array of place types
+ * - raw: Full API response for debugging
+ *
+ * @example
+ * POST /api/geo/mapbox/reverse
+ * Body: { "latitude": 42.3601, "longitude": -71.0589 }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "source": "Mapbox",
+ *     "latitude": 42.3601,
+ *     "longitude": -71.0589,
+ *     "formatted_address": "Boston, Massachusetts 02101, United States",
+ *     "street_address": "123 Main St",
+ *     "city": "Boston",
+ *     "region": "Massachusetts",
+ *     "postal_code": "02101",
+ *     "country": "United States",
+ *     "country_code": "us",
+ *     "accuracy": "rooftop",
+ *     "place_type": ["address"],
+ *     "raw": {...}
+ *   },
+ *   "timestamp": "2025-10-18T12:34:56.789Z"
+ * }
+ */
+async function geoMapboxReverseHandler(request, context) {
+    context.log('Geo_Mapbox_Reverse: Request received');
+
+    try {
+        const accessToken = process.env.MAPBOX_ACCESS_TOKEN;
+        if (!accessToken) {
+            throw new Error('MAPBOX_ACCESS_TOKEN not configured');
+        }
+
+        // Parse request body
+        let body;
+        try {
+            body = await request.json();
+        } catch (error) {
+            context.log('Geo_Mapbox_Reverse: Invalid JSON in request body');
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Invalid JSON in request body',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const { latitude, longitude } = body || {};
+
+        // Validate required parameters
+        if (!latitude || !longitude) {
+            context.log('Geo_Mapbox_Reverse: Missing latitude or longitude');
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Missing latitude or longitude in request body',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log('Geo_Mapbox_Reverse: Coordinates', { latitude, longitude });
+
+        // Call Mapbox Reverse Geocoding API
+        // Note: Mapbox format is {longitude},{latitude}.json (reversed!)
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}`;
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'TangoTiempo/1.0' },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+
+        if (!response.ok) {
+            throw new Error(`Mapbox API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Extract most relevant address from features
+        const feature = data.features?.[0];
+
+        if (!feature) {
+            context.log('Geo_Mapbox_Reverse: No address found for coordinates');
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'No address found for coordinates',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Helper to extract context items by type
+        const getContext = (type) => {
+            const item = feature.context?.find(c => c.id.startsWith(type));
+            return item ? item.text : null;
+        };
+
+        context.log('Geo_Mapbox_Reverse: Address found', {
+            formatted_address: feature.place_name,
+            city: getContext('place')
+        });
+
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+            },
+            body: JSON.stringify({
+                success: true,
+                data: {
+                    source: 'Mapbox',
+                    latitude: latitude,
+                    longitude: longitude,
+                    formatted_address: feature.place_name || null,
+                    street_address: feature.address
+                        ? `${feature.address} ${feature.text}`
+                        : feature.text,
+                    city: getContext('place'),
+                    region: getContext('region'),
+                    postal_code: getContext('postcode'),
+                    country: getContext('country'),
+                    country_code: feature.properties?.short_code || null,
+                    accuracy: feature.properties?.accuracy || null,
+                    place_type: feature.place_type || [],
+                    raw: data
+                },
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        // Let errorHandler middleware handle the error
+        throw error;
+    }
+}
+
+// Register function with standard middleware
+app.http('Geo_Mapbox_Reverse', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'geo/mapbox/reverse',
+    handler: standardMiddleware(geoMapboxReverseHandler)
+});
