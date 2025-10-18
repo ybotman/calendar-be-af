@@ -402,13 +402,14 @@ app.http('Geo_Timezone', {
 });
 
 // ============================================
-// FUNCTION 4: GET /api/geo/ip
+// FUNCTION 4: GET /api/geo/ipapico/ip
 // ============================================
 
 /**
- * IP Geolocation - Get location data from visitor's IP address
+ * IP Geolocation - ipapi.co API
  *
- * @description CORS proxy for ipapi.co - gets geolocation from request IP
+ * @description Get geolocation data from visitor's IP using ipapi.co API
+ * NOTE: This service is hitting rate limits - consider using BigDataCloud or Abstract API instead
  * Drop-in replacement for Express backend /api/firebase/geo/ip endpoint
  * (Note: "firebase" in old name was a misnomer - nothing to do with Firebase)
  *
@@ -431,7 +432,7 @@ app.http('Geo_Timezone', {
  * - Returns US center coordinates (39.8283, -98.5795) on 429 error
  *
  * @example
- * GET /api/geo/ip
+ * GET /api/geo/ipapico/ip
  *
  * Response:
  * {
@@ -445,8 +446,8 @@ app.http('Geo_Timezone', {
  *   "timezone": "America/New_York"
  * }
  */
-async function geoIpHandler(request, context) {
-    context.log('Geo_Ip: Request received');
+async function geoIpapiCoHandler(request, context) {
+    context.log('Geo_IpapiCo_Get: Request received');
 
     try {
         // Call ipapi.co to get geolocation from IP
@@ -499,8 +500,6 @@ async function geoIpHandler(request, context) {
         };
 
     } catch (error) {
-        context.log.error('Error fetching IP geolocation:', error.message);
-
         // Return fallback on error
         return {
             status: 500,
@@ -521,11 +520,11 @@ async function geoIpHandler(request, context) {
 }
 
 // Register function with standard middleware
-app.http('Geo_Ip', {
+app.http('Geo_IpapiCo_Get', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'geo/ip',
-    handler: standardMiddleware(geoIpHandler)
+    route: 'geo/ipapico/ip',
+    handler: standardMiddleware(geoIpapiCoHandler)
 });
 
 // ============================================
