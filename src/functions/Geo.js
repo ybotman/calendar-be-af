@@ -400,3 +400,130 @@ app.http('Geo_Timezone', {
     route: 'geo/timezone',
     handler: standardMiddleware(geoTimezoneHandler)
 });
+
+// ============================================
+// FUNCTION 4: GET /api/geo/ip
+// ============================================
+
+/**
+ * IP Geolocation - Get location data from visitor's IP address
+ *
+ * @description CORS proxy for ipapi.co - gets geolocation from request IP
+ * Drop-in replacement for Express backend /api/firebase/geo/ip endpoint
+ * (Note: "firebase" in old name was a misnomer - nothing to do with Firebase)
+ *
+ * Use Cases:
+ * - Get visitor's location automatically from their IP
+ * - Center map on user's location
+ * - Show local events based on IP location
+ *
+ * Returns:
+ * - ip: IP address
+ * - city: City name
+ * - region: State/Province
+ * - country: Country code (US, CA, etc)
+ * - country_name: Full country name
+ * - latitude: Latitude coordinate
+ * - longitude: Longitude coordinate
+ * - timezone: Timezone ID
+ *
+ * Rate Limit Fallback:
+ * - Returns US center coordinates (39.8283, -98.5795) on 429 error
+ *
+ * @example
+ * GET /api/geo/ip
+ *
+ * Response:
+ * {
+ *   "ip": "71.232.30.16",
+ *   "city": "Boston",
+ *   "region": "Massachusetts",
+ *   "country": "US",
+ *   "country_name": "United States",
+ *   "latitude": 42.3584,
+ *   "longitude": -71.0598,
+ *   "timezone": "America/New_York"
+ * }
+ */
+async function geoIpHandler(request, context) {
+    context.log('Geo_Ip: Request received');
+
+    try {
+        // Call ipapi.co to get geolocation from IP
+        const ipApiUrl = 'https://ipapi.co/json/';
+        const ipApiResponse = await fetch(ipApiUrl, {
+            headers: {
+                'User-Agent': 'TangoTiempo/1.0'
+            },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+
+        if (!ipApiResponse.ok) {
+            // Handle rate limiting specifically
+            if (ipApiResponse.status === 429) {
+                context.log('ipapi.co rate limit exceeded');
+                return {
+                    status: 429,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'public, max-age=60' // Cache fallback for 1 minute
+                    },
+                    body: JSON.stringify({
+                        error: 'Rate limit exceeded for location service. Please try again later.',
+                        fallback: {
+                            latitude: 39.8283, // US center
+                            longitude: -98.5795
+                        }
+                    })
+                };
+            }
+
+            throw new Error(`ipapi.co returned status ${ipApiResponse.status}`);
+        }
+
+        const ipApiData = await ipApiResponse.json();
+
+        context.log('IP geolocation retrieved:', {
+            ip: ipApiData.ip,
+            city: ipApiData.city,
+            country: ipApiData.country
+        });
+
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+            },
+            body: JSON.stringify(ipApiData)
+        };
+
+    } catch (error) {
+        context.log.error('Error fetching IP geolocation:', error.message);
+
+        // Return fallback on error
+        return {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=60' // Cache fallback for 1 minute
+            },
+            body: JSON.stringify({
+                error: 'Failed to fetch geolocation data',
+                message: error.message,
+                fallback: {
+                    latitude: 39.8283, // US center
+                    longitude: -98.5795
+                }
+            })
+        };
+    }
+}
+
+// Register function with standard middleware
+app.http('Geo_Ip', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'geo/ip',
+    handler: standardMiddleware(geoIpHandler)
+});
