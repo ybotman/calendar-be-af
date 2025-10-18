@@ -1,0 +1,1486 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Calendar Backend - Azure Functions API",
+    "version": "1.4.0",
+    "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
+    "contact": {
+      "name": "API Support",
+      "email": "toby.balsley@gmail.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:7071",
+      "description": "Local Development"
+    },
+    {
+      "url": "https://calendarbe-test-bpg5caaqg5chbndu.eastus-01.azurewebsites.net",
+      "description": "Azure TEST Environment"
+    },
+    {
+      "url": "https://CalendarBEAF-PROD.azurewebsites.net",
+      "description": "Azure PROD Environment"
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Health checks and system monitoring"
+    },
+    {
+      "name": "Observability",
+      "description": "Logs, metrics, and monitoring endpoints"
+    },
+    {
+      "name": "Categories",
+      "description": "Event categories management"
+    },
+    {
+      "name": "Roles",
+      "description": "User roles and permissions"
+    },
+    {
+      "name": "Calendars",
+      "description": "Calendar CRUD operations"
+    },
+    {
+      "name": "Events",
+      "description": "Calendar events management"
+    },
+    {
+      "name": "User Preferences",
+      "description": "User settings and preferences"
+    },
+    {
+      "name": "Analytics",
+      "description": "User analytics and tracking"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health check endpoint",
+        "description": "Returns the health status of the Azure Functions service",
+        "tags": ["System"],
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "status": "healthy",
+                  "timestamp": "2025-10-06T20:30:45.123Z",
+                  "service": "calendar-be-af",
+                  "environment": "development",
+                  "version": "1.0.0",
+                  "uptime": 3600.5
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/version": {
+      "get": {
+        "summary": "Service version information",
+        "description": "Returns detailed version and environment information",
+        "tags": ["System"],
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Version information retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/mongodb": {
+      "get": {
+        "summary": "MongoDB health check",
+        "description": "Verifies connection to default MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                },
+                "example": {
+                  "status": "healthy",
+                  "environment": "default",
+                  "database": "tangotiempo",
+                  "connected": true,
+                  "responseTime": "45ms",
+                  "timestamp": "2025-10-10T03:00:00.000Z"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB is unhealthy or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                },
+                "example": {
+                  "status": "unhealthy",
+                  "environment": "default",
+                  "error": "Connection timeout",
+                  "connected": false,
+                  "responseTime": "5001ms",
+                  "timestamp": "2025-10-10T03:00:00.000Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/mongodb/test": {
+      "get": {
+        "summary": "MongoDB TEST environment health check",
+        "description": "Verifies connection to TEST MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBTestHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB TEST is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB TEST is unhealthy or unavailable"
+          }
+        }
+      }
+    },
+    "/api/health/mongodb/prod": {
+      "get": {
+        "summary": "MongoDB PROD environment health check",
+        "description": "Verifies connection to PRODUCTION MongoDB database",
+        "tags": ["System"],
+        "operationId": "getMongoDBProdHealth",
+        "responses": {
+          "200": {
+            "description": "MongoDB PROD is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MongoDBHealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB PROD is unhealthy or unavailable"
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "summary": "Get metrics summary",
+        "description": "Returns API usage metrics including request counts, response times, and error rates",
+        "tags": ["Observability"],
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "description": "Metrics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/categories": {
+      "get": {
+        "summary": "List categories",
+        "description": "Retrieve a paginated list of event categories for an application",
+        "tags": ["Categories"],
+        "operationId": "listCategories",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "description": "Application ID (e.g., 'TangoTiempo', 'HarmonyJunction')",
+            "schema": {
+              "type": "string"
+            },
+            "example": "TangoTiempo"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-indexed)",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "description": "Comma-separated list of fields to include",
+            "schema": {
+              "type": "string"
+            },
+            "example": "_id,categoryName,categorySlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Categories retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoriesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/roles": {
+      "get": {
+        "summary": "List roles",
+        "description": "Retrieve a list of user roles for an application",
+        "tags": ["Roles"],
+        "operationId": "listRoles",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "description": "Application ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Roles retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calendars": {
+      "get": {
+        "summary": "List calendars",
+        "description": "Retrieve all calendars",
+        "tags": ["Calendars"],
+        "operationId": "listCalendars",
+        "responses": {
+          "200": {
+            "description": "Calendars retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Calendar"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create calendar",
+        "description": "Create a new calendar",
+        "tags": ["Calendars"],
+        "operationId": "createCalendar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Calendar created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calendar"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calendars/{id}": {
+      "get": {
+        "summary": "Get calendar by ID",
+        "description": "Retrieve a single calendar by ID",
+        "tags": ["Calendars"],
+        "operationId": "getCalendar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Calendar ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calendar"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Calendar not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update calendar",
+        "description": "Update an existing calendar",
+        "tags": ["Calendars"],
+        "operationId": "updateCalendar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Calendar ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Calendar updated successfully"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete calendar",
+        "description": "Delete a calendar by ID",
+        "tags": ["Calendars"],
+        "operationId": "deleteCalendar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Calendar ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Calendar deleted successfully"
+          }
+        }
+      }
+    },
+    "/api/calendars/{calendarId}/events": {
+      "get": {
+        "summary": "List events",
+        "description": "Retrieve events for a calendar",
+        "tags": ["Events"],
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "in": "path",
+            "required": true,
+            "description": "Calendar ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create event",
+        "description": "Create a new event in a calendar",
+        "tags": ["Events"],
+        "operationId": "createEvent",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "in": "path",
+            "required": true,
+            "description": "Calendar ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Event created successfully"
+          }
+        }
+      }
+    },
+    "/api/calendars/{calendarId}/events/{eventId}": {
+      "get": {
+        "summary": "Get event by ID",
+        "description": "Retrieve a single event",
+        "tags": ["Events"],
+        "operationId": "getEvent",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event retrieved successfully"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update event",
+        "description": "Update an existing event",
+        "tags": ["Events"],
+        "operationId": "updateEvent",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event updated successfully"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete event",
+        "description": "Delete an event by ID",
+        "tags": ["Events"],
+        "operationId": "deleteEvent",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Event deleted successfully"
+          }
+        }
+      }
+    },
+    "/api/mapcenter": {
+      "get": {
+        "summary": "Get user's map center",
+        "description": "Retrieve the authenticated user's saved map center location and search radius",
+        "tags": ["User Preferences"],
+        "operationId": "getUserMapCenter",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map center retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapCenterResponse"
+                },
+                "examples": {
+                  "withData": {
+                    "summary": "User has saved map center",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "lat": 42.923246,
+                        "lng": -73.256836,
+                        "zoom": 10,
+                        "radiusMiles": 50,
+                        "updatedAt": "2025-10-13T20:45:00.000Z"
+                      },
+                      "timestamp": "2025-10-13T20:45:01.234Z"
+                    }
+                  },
+                  "noData": {
+                    "summary": "User has no saved map center",
+                    "value": {
+                      "success": true,
+                      "data": null,
+                      "timestamp": "2025-10-13T20:45:01.234Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "Unauthorized - Valid Firebase token required",
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save user's map center",
+        "description": "Save the authenticated user's map center location and search radius to MongoDB",
+        "tags": ["User Preferences"],
+        "operationId": "saveUserMapCenter",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapCenterInput"
+              },
+              "example": {
+                "lat": 42.923246,
+                "lng": -73.256836,
+                "zoom": 10,
+                "radiusMiles": 50
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Map center saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapCenterResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "lat": 42.923246,
+                    "lng": -73.256836,
+                    "zoom": 10,
+                    "radiusMiles": 50,
+                    "updatedAt": "2025-10-13T20:45:00.000Z"
+                  },
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error - Invalid coordinates or parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "\"lat\" must be less than or equal to 90",
+                  "timestamp": "2025-10-13T20:45:01.234Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user/login-track": {
+      "post": {
+        "summary": "Track user login",
+        "description": "Tracks user login events with IP geolocation data for analytics, heatmaps, and targeted outreach. Captures city-level location data using ipinfo.io.",
+        "tags": ["Analytics"],
+        "operationId": "trackUserLogin",
+        "security": [
+          {
+            "firebaseAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login event tracked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginTrackResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "loginId": "507f1f77bcf86cd799439011",
+                    "timestamp": "2025-10-15T14:30:00.000Z"
+                  },
+                  "timestamp": "2025-10-15T14:30:00.123Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing Firebase token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": "Unauthorized - Valid Firebase token required",
+                  "timestamp": "2025-10-15T14:30:00.123Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/visitor/track": {
+      "post": {
+        "summary": "Track anonymous visitor",
+        "description": "Tracks anonymous visitors on /calendar routes with IP geolocation. Captures once per day per IP to avoid noise. No authentication required.",
+        "tags": ["Analytics"],
+        "operationId": "trackVisitor",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitorTrackInput"
+              },
+              "example": {
+                "page": "/calendar/boston"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Visitor tracked successfully or already tracked today",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorTrackResponse"
+                },
+                "examples": {
+                  "tracked": {
+                    "summary": "New visitor tracked",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "tracked": true,
+                        "message": "Visitor tracked successfully",
+                        "visitId": "507f1f77bcf86cd799439011"
+                      },
+                      "timestamp": "2025-10-15T14:30:00.123Z"
+                    }
+                  },
+                  "alreadyTracked": {
+                    "summary": "Already tracked today",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "tracked": false,
+                        "message": "Already tracked today"
+                      },
+                      "timestamp": "2025-10-15T14:30:00.123Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unable to determine IP address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "unhealthy"],
+            "description": "Health status"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of health check"
+          },
+          "service": {
+            "type": "string",
+            "description": "Service name"
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment (development, test, production)"
+          },
+          "version": {
+            "type": "string",
+            "description": "API version"
+          },
+          "uptime": {
+            "type": "number",
+            "description": "Service uptime in seconds"
+          }
+        },
+        "required": ["status", "timestamp", "service"]
+      },
+      "VersionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy"],
+            "description": "Health status"
+          },
+          "version": {
+            "type": "string",
+            "description": "Application version from package.json"
+          },
+          "name": {
+            "type": "string",
+            "description": "Application name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Application description"
+          },
+          "node": {
+            "type": "string",
+            "description": "Node.js version"
+          },
+          "azureFunctions": {
+            "type": "string",
+            "description": "Azure Functions runtime version"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of version check"
+          },
+          "environment": {
+            "type": "object",
+            "properties": {
+              "NODE_ENV": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "functionApp": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": ["status", "version", "timestamp"]
+      },
+      "MongoDBHealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "unhealthy", "error"],
+            "description": "MongoDB connection status"
+          },
+          "environment": {
+            "type": "string",
+            "enum": ["default", "test", "production"],
+            "description": "MongoDB environment"
+          },
+          "database": {
+            "type": "string",
+            "description": "Database name"
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Connection status"
+          },
+          "responseTime": {
+            "type": "string",
+            "description": "Response time in milliseconds"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of health check"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if unhealthy"
+          }
+        },
+        "required": ["status", "environment", "connected", "timestamp"]
+      },
+      "MetricsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "totalRequests": {
+                    "type": "integer"
+                  },
+                  "totalErrors": {
+                    "type": "integer"
+                  },
+                  "errorRate": {
+                    "type": "string"
+                  },
+                  "avgResponseTime": {
+                    "type": "number"
+                  }
+                }
+              },
+              "byFunction": {
+                "type": "object",
+                "description": "Request counts grouped by function name"
+              },
+              "byStatusCode": {
+                "type": "object",
+                "description": "Request counts grouped by HTTP status code"
+              },
+              "slowestEndpoints": {
+                "type": "array",
+                "description": "Top 10 slowest endpoints",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "function": {
+                      "type": "string"
+                    },
+                    "avgDuration": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CategoriesResponse": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Category"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "Category ID"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category display name"
+          },
+          "categorySlug": {
+            "type": "string",
+            "description": "URL-friendly slug"
+          },
+          "categoryDescription": {
+            "type": "string",
+            "description": "Category description"
+          },
+          "appId": {
+            "type": "string",
+            "description": "Application ID"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Active status"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RolesResponse": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          }
+        }
+      },
+      "Role": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          },
+          "roleSlug": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appId": {
+            "type": "string"
+          }
+        }
+      },
+      "Calendar": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CalendarInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": ["name"]
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EventInput": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["title", "startDate"]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Total number of items"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Current page number (0-indexed)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page"
+          },
+          "pages": {
+            "type": "integer",
+            "description": "Total number of pages"
+          }
+        }
+      },
+      "MapCenterResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MapCenterData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Map center data or null if not saved"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "MapCenterData": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude coordinate"
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude coordinate"
+          },
+          "zoom": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Map zoom level (visual)"
+          },
+          "radiusMiles": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 200,
+            "description": "Search radius in miles"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": ["lat", "lng"]
+      },
+      "MapCenterInput": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude coordinate"
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude coordinate"
+          },
+          "zoom": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Map zoom level (optional, defaults to 10)"
+          },
+          "radiusMiles": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 200,
+            "description": "Search radius in miles (optional, defaults to 50)"
+          }
+        },
+        "required": ["lat", "lng"]
+      },
+      "LoginTrackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "loginId": {
+                "type": "string",
+                "description": "MongoDB document ID of the login event"
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp of login event"
+              }
+            },
+            "required": ["loginId", "timestamp"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "VisitorTrackInput": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "Calendar page URL path",
+            "example": "/calendar/boston"
+          }
+        },
+        "required": ["page"]
+      },
+      "VisitorTrackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "tracked": {
+                "type": "boolean",
+                "description": "Whether visitor was tracked (false if already tracked today)"
+              },
+              "message": {
+                "type": "string",
+                "description": "Status message"
+              },
+              "visitId": {
+                "type": "string",
+                "description": "MongoDB document ID of visit event (only if tracked=true)"
+              }
+            },
+            "required": ["tracked", "message"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error type"
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "HTTP status code"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "firebaseAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Firebase Authentication JWT token. Include in Authorization header as: Bearer <token>"
+      }
+    }
+  }
+}

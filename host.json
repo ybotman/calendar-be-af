@@ -5,11 +5,30 @@
       "samplingSettings": {
         "isEnabled": true,
         "excludedTypes": "Request"
-      }
+      },
+      "enableLiveMetricsFilters": true
     }
   },
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"
+  },
+  "functionTimeout": "00:05:00",
+  "watchDirectories": ["src"],
+  "extensions": {
+    "http": {
+      "routePrefix": "api",
+      "customHeaders": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    }
+  },
+  "cors": {
+    "allowedOrigins": [
+      "*"
+    ],
+    "supportCredentials": false
   }
 }

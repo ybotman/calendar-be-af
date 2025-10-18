@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: PROD
+    environment: PRODUCTION
     
     steps:
       - name: 'Checkout GitHub Action'
@@ -36,7 +36,7 @@ jobs:
           app-name: 'CalendarBEAF-PROD'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PROD_PUBLISH_PROFILE }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
       - name: 'Post-deployment verification'
         shell: bash
