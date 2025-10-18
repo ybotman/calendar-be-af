@@ -26,6 +26,9 @@ require('./functions/Venues');
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
 
+// Cloudflare Info - Expose Cloudflare headers to frontend
+require('./functions/Cloudflare');
+
 // Note: Role_List, Venue_Create, Venue_Delete exist locally but not in git - commit them first
 
 module.exports = { app };
