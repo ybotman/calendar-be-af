@@ -73,29 +73,125 @@ export JIRA_BASE_URL="https://hdtsllc.atlassian.net"
 ```
 calendar-be-af/
 ├── src/
-│   ├── app.js                 # Main entry point
-│   ├── functions/             # Azure Function endpoints
-│   │   ├── Health_Basic.js
-│   │   ├── Metrics_Get.js
-│   │   ├── Category_Get.js
-│   │   ├── Role_List.js
-│   │   ├── calendar-api.js
-│   │   ├── calendar-events.js
-│   │   ├── API_Docs.js        # Swagger UI
+│   ├── app.js                      # Main entry point
+│   ├── functions/                  # Azure Function endpoints (standardized naming)
+│   │   ├── Categories_Get.js       # GET /api/categories
+│   │   ├── Events_Get.js           # GET /api/events
+│   │   ├── Events_GetById.js       # GET /api/events/{id}
+│   │   ├── Events_Create.js        # POST /api/events
+│   │   ├── Events_Update.js        # PUT /api/events/{id}
+│   │   ├── Events_Delete.js        # DELETE /api/events/{id}
+│   │   ├── Venues_Get.js           # GET /api/venues
+│   │   ├── MapCenter_Get.js        # GET /api/mapcenter
+│   │   ├── MapCenter_Update.js     # PUT /api/mapcenter
+│   │   ├── UserLoginTrack.js       # POST /api/user/login-track
+│   │   ├── VisitorTrack.js         # POST /api/visitor/track
+│   │   ├── Health_Basic.js         # GET /api/health
+│   │   ├── Health_MongoDB.js       # GET /api/health/mongodb
+│   │   ├── Metrics_Get.js          # GET /api/metrics
+│   │   ├── API_Docs.js             # Swagger UI
 │   │   └── ...
-│   ├── middleware/            # Reusable middleware
+│   ├── middleware/                 # Reusable middleware
 │   │   ├── index.js
 │   │   ├── logger.js
 │   │   ├── errorHandler.js
 │   │   ├── metrics.js
+│   │   ├── firebaseAuth.js
 │   │   └── ...
-│   └── lib/                   # Shared utilities
+│   └── lib/                        # Shared utilities
 ├── public/
-│   └── swagger.json           # OpenAPI specification
-├── docs/                      # Documentation
-├── tests/                     # Unit/integration tests
-├── host.json                  # Azure Functions config
+│   └── swagger.json                # OpenAPI specification
+├── docs/                           # Documentation
+│   ├── FUNCTION-NAMING-STANDARD.md # Function naming conventions
+│   ├── AVAILABLE-ENDPOINTS.md      # Current API status
+│   └── ...
+├── tests/                          # Unit/integration tests
+├── host.json                       # Azure Functions config
 └── package.json
+```
+
+---
+
+## Application Context
+
+### Multi-Tenant Architecture
+
+This backend serves **two applications** using the `appId` parameter:
+
+| Application | appId (Numeric) | appId (String) | Domain | MongoDB Database |
+|-------------|-----------------|----------------|--------|------------------|
+| **TangoTiempo** | `1` | `TangoTiempo` | tangotiempo.com | `TangoTiempo` |
+| **HarmonyJunction** | `2` | `HarmonyJunction` | harmonyjunction.org | `HarmonyJunction` |
+
+**Notes:**
+- Frontend sends numeric `appId` (1 or 2)
+- Backend also accepts string format (`TangoTiempo`, `HarmonyJunction`) for compatibility
+- Both formats map to the same MongoDB database
+- Collections are shared between Express backend and Azure Functions
+
+**Example API calls:**
+```bash
+# TangoTiempo (numeric)
+GET /api/categories?appId=1
+
+# TangoTiempo (string - also valid)
+GET /api/categories?appId=TangoTiempo
+
+# HarmonyJunction
+GET /api/categories?appId=2
+```
+
+---
+
+## Function Naming Standard
+
+### Standard Pattern
+```
+{Resource}_{HttpVerb}[_{Qualifier}]
+```
+
+**Example:**
+- `Categories_Get` → GET /api/categories
+- `Events_GetById` → GET /api/events/{id}
+- `Events_Create` → POST /api/events
+- `Venues_Update` → PUT /api/venues/{id}
+
+**See full documentation:** `docs/FUNCTION-NAMING-STANDARD.md`
+
+### Key Rules
+
+1. **Resources are PLURAL:** `Categories_Get`, not `Category_Get`
+2. **Use underscores:** `Events_GetById`, not `EventsGetById`
+3. **One function per file:** `Events_Get.js`, not `calendar-events.js` with 5 functions
+4. **File name = Function name:** `Events_Get.js` registers `Events_Get` function
+
+### Special Patterns
+
+| Pattern | Example | When to Use |
+|---------|---------|-------------|
+| `Health_{Resource}` | `Health_MongoDB` | Health checks |
+| `{Resource}Track` | `UserLoginTrack` | Analytics/tracking |
+| `Metrics_{Action}` | `Metrics_Get` | Metrics endpoints |
+
+### Directory Structure After Standardization
+```
+src/functions/
+├── Categories_Get.js          # GET /api/categories
+├── Events_Get.js              # GET /api/events
+├── Events_GetById.js          # GET /api/events/{id}
+├── Events_Create.js           # POST /api/events
+├── Events_Update.js           # PUT /api/events/{id}
+├── Events_Delete.js           # DELETE /api/events/{id}
+├── Venues_Get.js              # GET /api/venues
+├── Venues_GetById.js          # GET /api/venues/{id}
+├── MapCenter_Get.js           # GET /api/mapcenter
+├── MapCenter_Update.js        # PUT /api/mapcenter
+├── UserLoginTrack.js          # POST /api/user/login-track
+├── VisitorTrack.js            # POST /api/visitor/track
+├── Health_Basic.js            # GET /api/health
+├── Health_MongoDB.js          # GET /api/health/mongodb
+├── Metrics_Get.js             # GET /api/metrics
+└── API_Docs.js                # Swagger UI
 ```
 
 ---
@@ -107,8 +203,13 @@ All API endpoints MUST be documented in `public/swagger.json` using OpenAPI 3.0 
 
 ### Access API Documentation
 - **Local:** http://localhost:7071/api/docs
-- **TEST:** https://calendarbe-test-bpg5caaqg5chbndu.eastus-01.azurewebsites.net/api/docs
-- **PROD:** https://CalendarBEAF-PROD.azurewebsites.net/api/docs
+- **TEST:** https://calendarbeaf-test.azurewebsites.net/api/docs
+- **PROD:** https://calendarbeaf-prod.azurewebsites.net/api/docs
+
+### Naming Convention
+- **Express Backend (Original):** `calendarbe-test-*.azurewebsites.net` and `calendarbe-prod-*.azurewebsites.net`
+- **Azure Functions Backend (This Project):** `calendarbeaf-test.azurewebsites.net` and `calendarbeaf-prod.azurewebsites.net`
+- **A/B Testing:** Both backends run in parallel for performance comparison and migration validation
 
 ### Swagger Endpoints
 - `GET /api/docs` - Interactive Swagger UI
@@ -121,13 +222,13 @@ All API endpoints MUST be documented in `public/swagger.json` using OpenAPI 3.0 
 **2. Add JSDoc comment to function:**
 ```javascript
 /**
- * Function: Category_List
+ * Function: Categories_Get
  *
  * @description Lists all categories for an application
  * @route GET /api/categories
  * @auth anonymous (local) | function (production)
  *
- * @param {string} appId - Application ID (required)
+ * @param {string} appId - Application ID (1=TangoTiempo, 2=HarmonyJunction)
  * @param {number} page - Page number (default: 0)
  * @param {number} limit - Items per page (default: 50, max: 100)
  * @param {boolean} activeOnly - Filter active only (default: false)
@@ -137,7 +238,7 @@ All API endpoints MUST be documented in `public/swagger.json` using OpenAPI 3.0 
  * @throws {500} DatabaseError - Database connection failure
  *
  * @example
- * GET /api/categories?appId=TangoTiempo&page=0&limit=50
+ * GET /api/categories?appId=1&page=0&limit=50
  *
  * Response:
  * {
@@ -145,7 +246,7 @@ All API endpoints MUST be documented in `public/swagger.json` using OpenAPI 3.0 
  *   "pagination": { "total": 234, "page": 0, "limit": 50, "pages": 5 }
  * }
  */
-async function categoriesHandler(request, context) {
+async function categoriesGetHandler(request, context) {
   // Implementation
 }
 ```
@@ -323,8 +424,8 @@ app.http('Health', {
 
 ### Structured Logging Format
 ```javascript
-context.logger.info('Category list retrieved', {
-  appId: 'TangoTiempo',
+context.logger.info('Categories retrieved', {
+  appId: 1,  // TangoTiempo
   count: 15,
   page: 0,
   duration: 245
@@ -336,11 +437,11 @@ context.logger.info('Category list retrieved', {
 {
   "timestamp": "2025-10-06T20:30:45.123Z",
   "level": "info",
-  "message": "Category list retrieved",
-  "function": "Category_List",
+  "message": "Categories retrieved",
+  "function": "Categories_Get",
   "correlationId": "req-abc-123",
   "metadata": {
-    "appId": "TangoTiempo",
+    "appId": 1,
     "count": 15,
     "page": 0,
     "duration": 245
@@ -358,9 +459,9 @@ context.logger.info('Category list retrieved', {
 ```javascript
 const { describe, test, expect } = require('@jest/globals');
 
-describe('Category_Get', () => {
+describe('Categories_Get', () => {
   test('returns categories with valid appId', async () => {
-    const request = mockRequest({ appId: 'TangoTiempo' });
+    const request = mockRequest({ appId: 1 });  // TangoTiempo
     const context = mockContext();
 
     const response = await handler(request, context);
@@ -399,23 +500,20 @@ npm test
 | Environment | URL | Branch | Auto-Deploy |
 |-------------|-----|--------|-------------|
 | **Local** | http://localhost:7071 | - | No |
-| **TEST** | https://calendarbe-test-...net | DEVL | Yes (on push) |
-| **PROD** | https://CalendarBEAF-PROD...net | main | Yes (on merge) |
+| **TEST** | https://calendarbeaf-test.azurewebsites.net | TEST | Yes (on push to TEST) |
+| **PROD** | https://calendarbeaf-prod.azurewebsites.net | PROD | Yes (on push to PROD) |
 
 ### CI/CD Pipeline (GitHub Actions)
 
-**On push to DEVL:**
+**On push to TEST branch:**
 1. Run tests
 2. Build
-3. Deploy to TEST environment
-4. Run smoke tests
+3. Deploy to TEST environment (calendarbeaf-test.azurewebsites.net)
 
-**On merge to main:**
+**On push to PROD branch:**
 1. Run tests
 2. Build
-3. Deploy to PROD environment
-4. Run smoke tests
-5. Create release tag
+3. Deploy to PROD environment (calendarbeaf-prod.azurewebsites.net)
 
 ### Manual Deployment
 ```bash
@@ -532,11 +630,11 @@ async function connectToDatabase() {
     "avgResponseTime": 245.6
   },
   "byFunction": {
-    "Category_List": 500,
+    "Categories_Get": 500,
     "Health_Basic": 734
   },
   "slowestEndpoints": [
-    { "function": "Category_List", "avgDuration": 380 }
+    { "function": "Categories_Get", "avgDuration": 380 }
   ]
 }
 ```
@@ -612,6 +710,7 @@ open http://localhost:7071/api/docs    # View Swagger UI
 
 ---
 
-**Last Updated:** 2025-10-06
+**Last Updated:** 2025-10-17
 **Maintained By:** AI-GUILD YBOTBOT
 **Project Status:** In Development (CALBEAF-38 40% Complete)
+**Naming Standard:** Implemented v1.0 - See `docs/FUNCTION-NAMING-STANDARD.md`

@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.3.2",
+    "version": "1.5.1",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -55,6 +55,10 @@
     {
       "name": "Analytics",
       "description": "User analytics and tracking"
+    },
+    {
+      "name": "Geolocation",
+      "description": "IP geolocation and reverse geocoding services"
     }
   ],
   "paths": {
@@ -929,6 +933,185 @@
           }
         }
       }
+    },
+    "/api/geo/bigdatacloud/ip": {
+      "get": {
+        "summary": "IP Geolocation - BigDataCloud",
+        "description": "Get geolocation data from visitor's IP address using BigDataCloud API. Alternative to ipapi.co to avoid rate limiting.",
+        "tags": ["Geolocation"],
+        "operationId": "getBigDataCloudIP",
+        "responses": {
+          "200": {
+            "description": "Geolocation data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoIPResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "source": "BigDataCloud",
+                    "ip": "71.232.30.16",
+                    "latitude": 42.3584,
+                    "longitude": -71.0598,
+                    "city": "Boston",
+                    "region": "Massachusetts",
+                    "region_code": "MA",
+                    "country": "US",
+                    "country_name": "United States",
+                    "postal": "02108",
+                    "timezone": "America/New_York",
+                    "raw": {}
+                  },
+                  "timestamp": "2025-10-18T12:34:56.789Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "API error or configuration issue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geo/abstract/ip": {
+      "get": {
+        "summary": "IP Geolocation - Abstract API",
+        "description": "Get geolocation data from visitor's IP address using Abstract API. Alternative to ipapi.co to avoid rate limiting.",
+        "tags": ["Geolocation"],
+        "operationId": "getAbstractIP",
+        "responses": {
+          "200": {
+            "description": "Geolocation data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoIPResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "source": "AbstractAPI",
+                    "ip": "71.232.30.16",
+                    "latitude": 42.3584,
+                    "longitude": -71.0598,
+                    "city": "Boston",
+                    "region": "Massachusetts",
+                    "region_code": "MA",
+                    "country": "US",
+                    "country_name": "United States",
+                    "postal": "02108",
+                    "timezone": "America/New_York",
+                    "raw": {}
+                  },
+                  "timestamp": "2025-10-18T12:34:56.789Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "API error or configuration issue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geo/mapbox/reverse": {
+      "post": {
+        "summary": "Reverse Geocoding - Mapbox",
+        "description": "Convert lat/long coordinates to full address using Mapbox Geocoding API. Used after getting coordinates from browser geolocation or Google Geolocation API.",
+        "tags": ["Geolocation"],
+        "operationId": "mapboxReverseGeocode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapboxReverseInput"
+              },
+              "example": {
+                "latitude": 42.3601,
+                "longitude": -71.0589
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address found successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapboxReverseResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "source": "Mapbox",
+                    "latitude": 42.3601,
+                    "longitude": -71.0589,
+                    "formatted_address": "Boston, Massachusetts 02101, United States",
+                    "street_address": "123 Main St",
+                    "city": "Boston",
+                    "region": "Massachusetts",
+                    "postal_code": "02101",
+                    "country": "United States",
+                    "country_code": "us",
+                    "accuracy": "rooftop",
+                    "place_type": ["address"],
+                    "raw": {}
+                  },
+                  "timestamp": "2025-10-18T12:34:56.789Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid latitude/longitude",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No address found for coordinates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "API error or configuration issue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1472,6 +1655,182 @@
             "format": "date-time"
           }
         }
+      },
+      "GeoIPResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Request success status"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "API source (BigDataCloud or AbstractAPI)",
+                "enum": ["BigDataCloud", "AbstractAPI"]
+              },
+              "ip": {
+                "type": "string",
+                "description": "Detected IP address"
+              },
+              "latitude": {
+                "type": "number",
+                "description": "Latitude coordinate",
+                "nullable": true
+              },
+              "longitude": {
+                "type": "number",
+                "description": "Longitude coordinate",
+                "nullable": true
+              },
+              "city": {
+                "type": "string",
+                "description": "City name",
+                "nullable": true
+              },
+              "region": {
+                "type": "string",
+                "description": "State/Province name",
+                "nullable": true
+              },
+              "region_code": {
+                "type": "string",
+                "description": "State/Province code",
+                "nullable": true
+              },
+              "country": {
+                "type": "string",
+                "description": "Country code (US, CA, etc)",
+                "nullable": true
+              },
+              "country_name": {
+                "type": "string",
+                "description": "Full country name",
+                "nullable": true
+              },
+              "postal": {
+                "type": "string",
+                "description": "ZIP/Postal code",
+                "nullable": true
+              },
+              "timezone": {
+                "type": "string",
+                "description": "Timezone ID (America/New_York)",
+                "nullable": true
+              },
+              "raw": {
+                "type": "object",
+                "description": "Full API response for debugging"
+              }
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "MapboxReverseInput": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude coordinate"
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude coordinate"
+          }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "MapboxReverseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Request success status"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "API source",
+                "enum": ["Mapbox"]
+              },
+              "latitude": {
+                "type": "number",
+                "description": "Input latitude coordinate"
+              },
+              "longitude": {
+                "type": "number",
+                "description": "Input longitude coordinate"
+              },
+              "formatted_address": {
+                "type": "string",
+                "description": "Full formatted address",
+                "nullable": true
+              },
+              "street_address": {
+                "type": "string",
+                "description": "Street number and name",
+                "nullable": true
+              },
+              "city": {
+                "type": "string",
+                "description": "City name",
+                "nullable": true
+              },
+              "region": {
+                "type": "string",
+                "description": "State/Province name",
+                "nullable": true
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "ZIP/Postal code",
+                "nullable": true
+              },
+              "country": {
+                "type": "string",
+                "description": "Country name",
+                "nullable": true
+              },
+              "country_code": {
+                "type": "string",
+                "description": "Country code",
+                "nullable": true
+              },
+              "accuracy": {
+                "type": "string",
+                "description": "Geocoding accuracy level",
+                "nullable": true
+              },
+              "place_type": {
+                "type": "array",
+                "description": "Array of place types",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "raw": {
+                "type": "object",
+                "description": "Full API response for debugging"
+              }
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
       }
     },
     "securitySchemes": {
