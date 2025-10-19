@@ -16,9 +16,10 @@ require('./functions/Categories');
 // MapCenter API - User location storage (combined GET/PUT)
 require('./functions/MapCenter');
 
-// Analytics Tracking - Login and Visitor tracking
+// Analytics Tracking - Login, Visitor, and MapCenter tracking
 require('./functions/UserLoginTrack');
 require('./functions/VisitorTrack');
+require('./functions/MapCenterTrack');
 
 // Venue API
 require('./functions/Venues');
