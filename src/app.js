@@ -20,6 +20,7 @@ require('./functions/MapCenter');
 require('./functions/UserLoginTrack');
 require('./functions/VisitorTrack');
 require('./functions/MapCenterTrack');
+require('./functions/Analytics_VisitorHeatmap');
 
 // Venue API
 require('./functions/Venues');
