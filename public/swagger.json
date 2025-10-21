@@ -934,6 +934,127 @@
         }
       }
     },
+    "/api/analytics/visitor-heatmap": {
+      "get": {
+        "summary": "Visitor/Login Traffic Heatmap",
+        "description": "Generates Time of Day vs Day of Week heatmap showing traffic patterns from visitor and login tracking data",
+        "tags": ["Analytics"],
+        "operationId": "getVisitorHeatmap",
+        "parameters": [
+          {
+            "name": "timeType",
+            "in": "query",
+            "description": "Time type for aggregation",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["local", "zulu"],
+              "default": "local"
+            }
+          },
+          {
+            "name": "includeLogins",
+            "in": "query",
+            "description": "Include authenticated user logins in heatmap",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "includeVisitors",
+            "in": "query",
+            "description": "Include anonymous visitors in heatmap",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Heatmap generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeatmapResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "heatmap": {
+                      "Sunday": [2, 1, 0, 0, 1, 3, 8, 15, 22, 18, 12, 14, 16, 18, 20, 25, 28, 30, 25, 18, 12, 8, 5, 3],
+                      "Monday": [3, 1, 0, 0, 2, 5, 12, 25, 35, 28, 22, 24, 26, 28, 30, 38, 42, 45, 38, 28, 18, 12, 7, 4],
+                      "Tuesday": [3, 1, 0, 0, 2, 5, 12, 23, 32, 26, 20, 22, 24, 26, 28, 35, 39, 42, 35, 26, 16, 10, 6, 4],
+                      "Wednesday": [3, 1, 0, 0, 2, 5, 13, 26, 36, 29, 23, 25, 27, 29, 31, 39, 43, 46, 39, 29, 19, 13, 8, 4],
+                      "Thursday": [3, 1, 0, 0, 2, 5, 13, 27, 37, 30, 24, 26, 28, 30, 32, 40, 44, 47, 40, 30, 20, 14, 8, 5],
+                      "Friday": [3, 1, 0, 0, 2, 4, 11, 22, 31, 25, 19, 21, 23, 25, 27, 34, 38, 41, 34, 25, 17, 11, 7, 4],
+                      "Saturday": [2, 1, 0, 0, 1, 3, 9, 17, 24, 20, 14, 16, 18, 20, 22, 28, 32, 35, 28, 20, 14, 9, 6, 3]
+                    },
+                    "totals": {
+                      "byDay": {
+                        "Sunday": 284,
+                        "Monday": 456,
+                        "Tuesday": 423,
+                        "Wednesday": 467,
+                        "Thursday": 489,
+                        "Friday": 401,
+                        "Saturday": 312
+                      },
+                      "byHour": {
+                        "0": 19, "1": 7, "2": 0, "3": 0, "4": 12, "5": 30, "6": 83, "7": 167, "8": 227, "9": 176, "10": 134, "11": 148, "12": 162, "13": 176, "14": 190, "15": 239, "16": 266, "17": 286, "18": 239, "19": 176, "20": 116, "21": 77, "22": 47, "23": 27
+                      },
+                      "overall": 2832
+                    },
+                    "peak": {
+                      "day": "Thursday",
+                      "hour": 17,
+                      "count": 47,
+                      "timestamp": "Thursday at 5:00 PM"
+                    },
+                    "sources": {
+                      "userLogins": 1845,
+                      "anonymousVisitors": 987,
+                      "total": 2832
+                    },
+                    "metadata": {
+                      "timeType": "local",
+                      "includeLogins": true,
+                      "includeVisitors": true,
+                      "generatedAt": "2025-10-18T18:57:21.840Z",
+                      "dataPoints": 2832
+                    }
+                  },
+                  "timestamp": "2025-10-18T18:57:21.840Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/geo/bigdatacloud/ip": {
       "get": {
         "summary": "IP Geolocation - BigDataCloud",
@@ -1626,6 +1747,126 @@
               }
             },
             "required": ["tracked", "message"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        },
+        "required": ["success", "data", "timestamp"]
+      },
+      "HeatmapResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "heatmap": {
+                "type": "object",
+                "description": "7x24 matrix of traffic counts (day of week x hour of day)",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 24,
+                  "maxItems": 24
+                }
+              },
+              "totals": {
+                "type": "object",
+                "properties": {
+                  "byDay": {
+                    "type": "object",
+                    "description": "Total traffic by day of week",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "byHour": {
+                    "type": "object",
+                    "description": "Total traffic by hour (0-23)",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "overall": {
+                    "type": "number",
+                    "description": "Total traffic across all time periods"
+                  }
+                }
+              },
+              "peak": {
+                "type": "object",
+                "properties": {
+                  "day": {
+                    "type": "string",
+                    "description": "Day with peak traffic"
+                  },
+                  "hour": {
+                    "type": "number",
+                    "description": "Hour with peak traffic (0-23)"
+                  },
+                  "count": {
+                    "type": "number",
+                    "description": "Peak traffic count"
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "description": "Formatted peak time (e.g., 'Thursday at 5:00 PM')"
+                  }
+                }
+              },
+              "sources": {
+                "type": "object",
+                "properties": {
+                  "userLogins": {
+                    "type": "number",
+                    "description": "Total authenticated user logins"
+                  },
+                  "anonymousVisitors": {
+                    "type": "number",
+                    "description": "Total anonymous visitor visits"
+                  },
+                  "total": {
+                    "type": "number",
+                    "description": "Combined total (logins + visitors)"
+                  }
+                }
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "timeType": {
+                    "type": "string",
+                    "enum": ["local", "zulu"],
+                    "description": "Time type used for aggregation"
+                  },
+                  "includeLogins": {
+                    "type": "boolean",
+                    "description": "Whether user logins were included"
+                  },
+                  "includeVisitors": {
+                    "type": "boolean",
+                    "description": "Whether anonymous visitors were included"
+                  },
+                  "generatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When heatmap was generated"
+                  },
+                  "dataPoints": {
+                    "type": "number",
+                    "description": "Total number of data points in heatmap"
+                  }
+                }
+              }
+            }
           },
           "timestamp": {
             "type": "string",

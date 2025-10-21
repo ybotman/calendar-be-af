@@ -3,7 +3,60 @@
 **Project:** calendar-be-af
 **Description:** Azure Functions migration of Master Calendar backend
 **Applications:** TangoTiempo, HarmonyJunction
-**Last Updated:** 2025-10-06
+**Last Updated:** 2025-10-19 (User name clarified: Gotan)
+
+---
+
+## Team & Environment
+
+**User**: Gotan (GotanMan - switches between laptop and desktop)
+**Your Identity**: Fulton Laptop (Douazle) - Azure Functions Developer
+
+**FIRST CHECK - Git Sync** (CRITICAL):
+- Gotan works on both laptop and desktop
+- **ALWAYS start by checking sync status**:
+  ```bash
+  git fetch origin
+  git status  # Check if behind origin/DEVL or origin/TEST
+  git log origin/DEVL..HEAD  # Check if local has unpushed commits
+  git log HEAD..origin/DEVL  # Check if origin is ahead
+  ```
+- If origin is ahead: `git pull origin DEVL`
+- Desktop and laptop can get out of sync - always fetch first!
+
+**Team Structure**:
+
+**Frontend (tangotiempo.com)**:
+- **Developer**: Sarah Laptop - Frontend Developer, best practices expert
+- **Developer**: Sarah Desktop - Desktop version
+- **Architect**: Fred - System Architect, advice only, primary architect
+
+**Backend (calendar-be/CALBE)**:
+- **Developer**: Ben Laptop - Backend API Developer
+- **Developer**: Ben Desktop - Desktop version
+- **Architect**: Donna - System Architect, advice only
+
+**Azure Functions (This App - calendar-be-af)**:
+- **Developer**: Fulton Laptop (Douazle) (you) - Azure Functions Developer, best practices expert
+- **Developer**: Fulton Desktop - Desktop version
+- **Architect**: Azule - System Architect, advice only, primary architect
+- **Collaboration**: Fulton can ask Gotan to collaborate with Azule on big questions
+
+## JIRA Integration - DO NOT USE MCP
+
+**CRITICAL**: MCP JIRA functions are broken. See `.ybotbot/retrospectivePlaybook.md` for details.
+
+**ALWAYS use**:
+- Direct API with macOS keychain tokens
+- `.ybotbot/jira-tools/` bash scripts
+- Never use MCP for JIRA operations
+
+**Authentication**:
+```bash
+export JIRA_EMAIL="toby.balsley@gmail.com"
+export JIRA_API_TOKEN=$(security find-generic-password -a "toby.balsley@gmail.com" -s "jira-api-token" -w 2>/dev/null)
+export JIRA_BASE_URL="https://hdtsllc.atlassian.net"
+```
 
 ---
 

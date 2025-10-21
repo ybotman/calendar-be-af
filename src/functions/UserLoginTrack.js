@@ -225,9 +225,11 @@ async function loginTrackHandler(request, context) {
                 createdAt: new Date()
             },
             $set: {
+                // Update current IP (can change with each login)
+                ip: userIp,
+
                 // Update last known location
                 lastKnownLocation: geoData ? {
-                    ip: userIp,
                     city: geoData.city,
                     region: geoData.region,
                     country: geoData.country,

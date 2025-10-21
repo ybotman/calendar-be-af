@@ -79,6 +79,123 @@ Located in `.ybotbot/jira-tools/` (if they exist):
 
 ---
 
+---
+
+## Session: 2025-10-19 - PROD Database Misconfiguration (TIEMPO-323)
+
+### Critical Issue Discovered
+
+**Ticket**: TIEMPO-323 / CALBEAF-TBD
+**Severity**: HIGH - Production data not being captured
+**Reporter**: Sarah (frontend developer)
+
+#### Problem Statement
+PROD Azure Functions (CalendarBEAF-PROD) writing analytics to TEST database instead of PROD database.
+
+**Affected Features:**
+- User Login Tracking (TIEMPO-313/314)
+- Visitor Analytics (VisitorTrack)
+- Collections: UserLoginHistory, UserLoginAnalytics, VisitorTrackingHistory
+
+#### Root Cause Analysis ✅
+
+**Environment Variable Misconfiguration:**
+
+```bash
+# CURRENT (WRONG):
+PROD BEAF → MONGODB_URI = .../TangoTiempo   (TEST database)
+TEST BEAF → MONGODB_URI = .../TangoTiempo   (TEST database)
+
+# SHOULD BE:
+PROD BEAF → MONGODB_URI = .../TangoTiempoProd  (PROD database)
+TEST BEAF → MONGODB_URI = .../TangoTiempo       (TEST database)
+```
+
+**Code Pattern** (UserLoginTrack.js:182, VisitorTrack.js:126):
+```javascript
+const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+const db = mongoClient.db(); // Uses database from connection string
+```
+
+**Database Naming Convention:**
+- `TangoTiempo` = TEST database
+- `TangoTiempoProd` = PROD database (one word, no underscore)
+
+#### Investigation Process
+
+1. **Sarah's Alert**: Noticed PROD analytics not appearing in expected location
+2. **Environment Check**: Verified both TEST and PROD Azure Function App Settings
+3. **Code Review**: Analyzed UserLoginTrack.js and VisitorTrack.js
+4. **Discovery**: Both environments point to same database (TangoTiempo)
+5. **Confirmation**: Compared with calendar-be (Express) .env which has both TEST and PROD URIs
+
+#### The Fix
+
+**Azure Portal → CalendarBEAF-PROD → Configuration → Application Settings:**
+
+Update `MONGODB_URI` value:
+```
+FROM: mongodb+srv://TangoTiempoBE:***@.../TangoTiempo?...
+TO:   mongodb+srv://TangoTiempoBE:***@.../TangoTiempoProd?...
+                                          ^^^^^^^^^^^^^^
+                                          Change database name
+```
+
+**Verification After Fix:**
+1. Restart PROD Azure Functions
+2. Test user login tracking
+3. Test visitor tracking
+4. Verify data appears in TangoTiempoProd collections
+5. Confirm TEST still writes to TangoTiempo
+
+#### Key Learnings
+
+**✅ What Worked Well:**
+- Inter-agent messaging system (Sarah → Fulton coordination)
+- Background message poller (30-second interval)
+- Systematic debugging approach (env check → code review → comparison)
+- Clear understanding of MongoDB database naming convention
+
+**❌ What Didn't Work:**
+- JIRA bash scripts have authentication issues (need troubleshooting)
+- Initial confusion about database naming (TangoTiempo vs TangoTiempoProd)
+
+**📝 Process Improvements:**
+1. Document environment variable standards in applicationPlaybook
+2. Add environment variable validation in Azure Functions startup
+3. Create health check endpoint that reports current database name
+4. Add alerts for cross-environment data writes
+
+**🔒 Prevention for Future:**
+- Document all environment variables in applicationPlaybook2
+- Create checklist for new Azure Function deployments
+- Add database name to logs/metrics for visibility
+- Consider environment tagging in all analytics documents
+
+#### Action Items
+
+- [ ] **JIRA Ticket**: Create CALBEAF ticket for this bug fix
+- [ ] **Apply Fix**: Update PROD BEAF MONGODB_URI to TangoTiempoProd
+- [ ] **Test**: Verify analytics writing to correct databases
+- [ ] **Document**: Update applicationPlaybook2 with env var standards
+- [ ] **Notify**: Report resolution to Sarah via agent-messages
+- [ ] **Monitor**: Check PROD analytics for next 24-48 hours
+
+#### Collaboration Notes
+
+**Agent Communication:**
+- Sarah identified the issue (frontend perspective)
+- Fulton investigated (backend/Azure Functions perspective)
+- Gotan clarified database naming convention
+- Resolution coordinated via agent-messages system
+
+**Cross-Project Learning:**
+- calendar-be (Express) already has correct TEST/PROD separation
+- calendar-be-af (Azure Functions) needs to match this pattern
+- tangotiempo.com (frontend) also uses this convention
+
+---
+
 ## Previous Sessions
 
 No previous sessions recorded for this project.
