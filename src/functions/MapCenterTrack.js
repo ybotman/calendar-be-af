@@ -6,17 +6,17 @@ const { standardMiddleware } = require('../middleware');
 /**
  * MapCenter Reset Tracking
  *
- * @description Tracks when logged-in users reset their map center while browsing
+ * @description Tracks when users (logged-in or anonymous) reset their map center while browsing
  * Used for analytics on MapCenter usage patterns per user session
  *
  * @route POST /api/user/mapcenter-track
- * @auth Required (Firebase Bearer token)
+ * @auth Optional (Firebase Bearer token for logged-in users, null for anonymous)
  *
  * @returns {MapCenterTrackResponse} Success confirmation
  *
  * @example
  * POST /api/user/mapcenter-track
- * Authorization: Bearer <firebase-token>
+ * Authorization: Bearer <firebase-token> (optional)
  * Body: {
  *   "mapCenter": { "lat": 42.3601, "lng": -71.0589 },
  *   "page": "/calendar/boston"
@@ -63,14 +63,15 @@ async function mapCenterTrackHandler(request, context) {
     let mongoClient;
 
     try {
-        // Authenticate user
+        // Authenticate user (optional - supports both logged-in and anonymous users)
         const user = await firebaseAuth(request, context);
-        if (!user) {
-            return unauthorizedResponse();
-        }
+        const firebaseUid = user ? user.uid : null;
 
-        const firebaseUid = user.uid;
-        context.log(`Tracking MapCenter reset for user: ${firebaseUid}`);
+        if (firebaseUid) {
+            context.log(`Tracking MapCenter reset for logged-in user: ${firebaseUid}`);
+        } else {
+            context.log('Tracking MapCenter reset for anonymous user');
+        }
 
         // Parse request body
         let requestBody = {};
