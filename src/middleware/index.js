@@ -21,6 +21,32 @@ const {
 } = require('./metrics');
 
 /**
+ * CORS preflight middleware
+ * Automatically handles OPTIONS requests with 200 OK
+ */
+function corsMiddleware(handler) {
+  return async (request, context) => {
+    // Handle OPTIONS (CORS preflight) requests
+    if (request.method === 'OPTIONS') {
+      context.log('CORS preflight request (OPTIONS) - returning 200 OK');
+      return {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Max-Age': '86400' // 24 hours
+        },
+        body: ''
+      };
+    }
+
+    // For non-OPTIONS requests, call the handler
+    return handler(request, context);
+  };
+}
+
+/**
  * Compose multiple middleware functions into one
  * Executes middleware in order: logging -> metrics -> error handling -> handler
  */
@@ -36,12 +62,13 @@ function composeMiddleware(...middlewares) {
 
 /**
  * Standard middleware stack for all HTTP functions
- * Includes: logging, metrics, and error handling
+ * Includes: CORS, logging, metrics, and error handling
  */
 function standardMiddleware(handler) {
   return composeMiddleware(
-    errorHandlerMiddleware,  // Outermost: catches all errors
-    metricsMiddleware,       // Middle: tracks request metrics
+    corsMiddleware,          // Outermost: handles CORS preflight
+    errorHandlerMiddleware,  // Second: catches all errors
+    metricsMiddleware,       // Third: tracks request metrics
     loggingMiddleware        // Innermost: logs request/response
   )(handler);
 }
@@ -52,6 +79,7 @@ function standardMiddleware(handler) {
  */
 function lightweightMiddleware(handler) {
   return composeMiddleware(
+    corsMiddleware,
     errorHandlerMiddleware,
     loggingMiddleware
   )(handler);
@@ -59,6 +87,7 @@ function lightweightMiddleware(handler) {
 
 module.exports = {
   // Middleware functions
+  corsMiddleware,
   loggingMiddleware,
   errorHandlerMiddleware,
   metricsMiddleware,
