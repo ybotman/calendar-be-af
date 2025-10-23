@@ -27,6 +27,7 @@ require('./functions/Venues');
 
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
+require('./functions/Geo_GoogleGeolocate');
 
 // Cloudflare Info - Expose Cloudflare headers to frontend
 require('./functions/Cloudflare');
