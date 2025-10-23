@@ -213,6 +213,16 @@ async function loginTrackHandler(request, context) {
         const loginAnalyticsCollection = db.collection('UserLoginAnalytics');
 
         // 1. INSERT: Raw login event (immutable audit trail)
+        // Determine geoSource for history record
+        let historyGeoSource = null;
+        if (geoData.google_browser_lat && geoData.google_browser_long) {
+            historyGeoSource = 'GoogleBrowser';
+        } else if (geoData.google_api_lat && geoData.google_api_long) {
+            historyGeoSource = 'GoogleGeolocation';
+        } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
+            historyGeoSource = 'IPInfoIO';
+        }
+
         const loginEvent = {
             firebaseUserId: firebaseUid,
             timestamp: loginTime,
@@ -231,6 +241,7 @@ async function loginTrackHandler(request, context) {
             timezoneOffset: timezoneOffset,
 
             ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
+            geoSource: historyGeoSource, // Track which geolocation source was used
             createdAt: new Date()
         };
 
@@ -239,28 +250,28 @@ async function loginTrackHandler(request, context) {
 
         // 2. UPSERT: Aggregated analytics for dashboards and heatmaps
         // Determine best available location (Priority: Browser > Google API > ipinfo)
-        let bestLat, bestLong, bestCity, bestRegion, bestCountry, bestSource;
+        let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             bestLat = geoData.google_browser_lat;
             bestLong = geoData.google_browser_long;
             bestCity = geoData.ipinfo_city; // Use ipinfo for city/region
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
-            bestSource = 'browser';
+            geoSource = 'GoogleBrowser';
         } else if (geoData.google_api_lat && geoData.google_api_long) {
             bestLat = geoData.google_api_lat;
             bestLong = geoData.google_api_long;
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
-            bestSource = 'google_api';
+            geoSource = 'GoogleGeolocation';
         } else {
             bestLat = geoData.ipinfo_lat;
             bestLong = geoData.ipinfo_long;
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
-            bestSource = 'ipinfo';
+            geoSource = 'IPInfoIO';
         }
 
         const locationKey = bestCity || 'Unknown';
@@ -281,11 +292,12 @@ async function loginTrackHandler(request, context) {
                     city: bestCity,
                     region: bestRegion,
                     country: bestCountry,
-                    source: bestSource,
+                    source: geoSource,
                     updatedAt: loginTime
                 } : null,
                 // Store all geolocation sources
                 ...geoData,
+                geoSource: geoSource, // Track which geolocation API was used
                 lastLoginAt: loginTime,
                 updatedAt: new Date()
             },

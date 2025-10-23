@@ -213,6 +213,17 @@ async function mapCenterTrackHandler(request, context) {
 
         // Create tracking event
         const trackingTime = new Date();
+
+        // Determine geoSource
+        let geoSource = null;
+        if (geoData.google_browser_lat && geoData.google_browser_long) {
+            geoSource = 'GoogleBrowser';
+        } else if (geoData.google_api_lat && geoData.google_api_long) {
+            geoSource = 'GoogleGeolocation';
+        } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
+            geoSource = 'IPInfoIO';
+        }
+
         const trackingEvent = {
             firebaseUserId: firebaseUid,
             ip: userIp,
@@ -225,6 +236,7 @@ async function mapCenterTrackHandler(request, context) {
             timezone: userTimezone,
             timezoneOffset: timezoneOffset,
             ...geoData, // Spread all geolocation data
+            geoSource: geoSource, // Track which geolocation API was used
             userAgent: userAgent,
             deviceType: deviceType,
             createdAt: new Date()
