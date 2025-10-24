@@ -93,6 +93,13 @@ async function visitorTrackHandler(request, context) {
         const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
 
+        // Extract 3-tier geolocation data from frontend
+        const google_browser_lat = requestBody.google_browser_lat || null;
+        const google_browser_long = requestBody.google_browser_long || null;
+        const google_browser_accuracy = requestBody.google_browser_accuracy || null;
+        const google_api_lat = requestBody.google_api_lat || null;
+        const google_api_long = requestBody.google_api_long || null
+
         // Extract IP address from CloudFlare headers or X-Forwarded-For
         const rawIp = request.headers.get('CF-Connecting-IP')
                    || request.headers.get('X-Forwarded-For')?.split(',')[0]
@@ -165,10 +172,26 @@ async function visitorTrackHandler(request, context) {
             };
         }
 
-        // Get geolocation data from ipinfo.io
-        let geoData = null;
-        const ipinfoToken = process.env.IPINFO_API_TOKEN;
+        // 3-TIER GEOLOCATION SYSTEM
+        const geoData = {};
 
+        // Priority 1: Browser Geolocation (if provided by frontend)
+        if (google_browser_lat && google_browser_long) {
+            geoData.google_browser_lat = google_browser_lat;
+            geoData.google_browser_long = google_browser_long;
+            geoData.google_browser_accuracy = google_browser_accuracy;
+            context.log(`Browser geolocation: ${google_browser_lat}, ${google_browser_long} (accuracy: ${google_browser_accuracy}m)`);
+        }
+
+        // Priority 2: Google API Geolocation (if provided by frontend)
+        if (google_api_lat && google_api_long) {
+            geoData.google_api_lat = google_api_lat;
+            geoData.google_api_long = google_api_long;
+            context.log(`Google API geolocation: ${google_api_lat}, ${google_api_long}`);
+        }
+
+        // Priority 3: ipinfo.io Geolocation (fallback)
+        const ipinfoToken = process.env.IPINFO_API_TOKEN;
         if (ipinfoToken) {
             try {
                 const ipinfoUrl = `https://ipinfo.io/${userIp}/json?token=${ipinfoToken}`;
@@ -186,23 +209,21 @@ async function visitorTrackHandler(request, context) {
                         longitude = parseFloat(lng);
                     }
 
-                    geoData = {
-                        city: data.city || null,
-                        region: data.region || null,
-                        country: data.country || null,
-                        latitude: latitude,
-                        longitude: longitude,
-                        timezone: data.timezone || null,
-                        postal: data.postal || null
-                    };
+                    geoData.ipinfo_lat = latitude;
+                    geoData.ipinfo_long = longitude;
+                    geoData.ipinfo_city = data.city || null;
+                    geoData.ipinfo_region = data.region || null;
+                    geoData.ipinfo_country = data.country || null;
+                    geoData.ipinfo_timezone = data.timezone || null;
+                    geoData.ipinfo_postal = data.postal || null;
 
-                    context.log(`Geolocation: ${data.city}, ${data.region}, ${data.country}`);
+                    context.log(`ipinfo.io: ${data.city}, ${data.region}, ${data.country}`);
                 } else {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }
             } catch (geoError) {
-                context.log.error('Error fetching geolocation:', geoError.message);
-                // Continue without geo data rather than failing
+                context.log.error('Error fetching ipinfo.io:', geoError.message);
+                // Continue without ipinfo data
             }
         } else {
             context.log('IPINFO_API_TOKEN not configured');
@@ -223,6 +244,16 @@ async function visitorTrackHandler(request, context) {
         const hourOfDayLocal = localTime?.hourOfDay || null;
 
         // 1. INSERT: Raw visit event (immutable audit trail)
+        // Determine geoSource for history record
+        let historyGeoSource = null;
+        if (geoData.google_browser_lat && geoData.google_browser_long) {
+            historyGeoSource = 'GoogleBrowser';
+        } else if (geoData.google_api_lat && geoData.google_api_long) {
+            historyGeoSource = 'GoogleGeolocation';
+        } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
+            historyGeoSource = 'IPInfoIO';
+        }
+
         const visitEvent = {
             ip: userIp,
             timestamp: visitTime,
@@ -241,6 +272,7 @@ async function visitorTrackHandler(request, context) {
             timezoneOffset: timezoneOffset,
 
             ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
+            geoSource: historyGeoSource, // Track which geolocation source was used
             createdAt: new Date()
         };
 
@@ -248,22 +280,50 @@ async function visitorTrackHandler(request, context) {
         context.log(`Visit event tracked: ${historyResult.insertedId}`);
 
         // 2. UPSERT: Aggregated analytics for dashboards and heatmaps
+        // Determine best available location (Priority: Browser > Google API > ipinfo)
+        let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource;
+        if (geoData.google_browser_lat && geoData.google_browser_long) {
+            bestLat = geoData.google_browser_lat;
+            bestLong = geoData.google_browser_long;
+            bestCity = geoData.ipinfo_city; // Use ipinfo for city/region
+            bestRegion = geoData.ipinfo_region;
+            bestCountry = geoData.ipinfo_country;
+            geoSource = 'GoogleBrowser';
+        } else if (geoData.google_api_lat && geoData.google_api_long) {
+            bestLat = geoData.google_api_lat;
+            bestLong = geoData.google_api_long;
+            bestCity = geoData.ipinfo_city;
+            bestRegion = geoData.ipinfo_region;
+            bestCountry = geoData.ipinfo_country;
+            geoSource = 'GoogleGeolocation';
+        } else {
+            bestLat = geoData.ipinfo_lat;
+            bestLong = geoData.ipinfo_long;
+            bestCity = geoData.ipinfo_city;
+            bestRegion = geoData.ipinfo_region;
+            bestCountry = geoData.ipinfo_country;
+            geoSource = 'IPInfoIO';
+        }
+
         const analyticsUpdate = {
             $setOnInsert: {
                 ip: userIp,
                 createdAt: new Date()
             },
             $set: {
-                // Update last known location
-                lastKnownLocation: geoData ? {
-                    city: geoData.city,
-                    region: geoData.region,
-                    country: geoData.country,
-                    latitude: geoData.latitude,
-                    longitude: geoData.longitude,
-                    timezone: geoData.timezone,
+                // Update last known location (best available source)
+                lastKnownLocation: (bestLat && bestLong) ? {
+                    latitude: bestLat,
+                    longitude: bestLong,
+                    city: bestCity,
+                    region: bestRegion,
+                    country: bestCountry,
+                    source: geoSource,
                     updatedAt: visitTime
                 } : null,
+                // Store all geolocation sources
+                ...geoData,
+                geoSource: geoSource, // Track which geolocation API was used
                 lastVisitAt: visitTime,
                 updatedAt: new Date()
             },

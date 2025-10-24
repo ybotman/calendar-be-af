@@ -179,7 +179,7 @@ async function geoReverseHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_Reverse', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/reverse',
     handler: standardMiddleware(geoReverseHandler)
@@ -283,7 +283,7 @@ async function geoGeocodeHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_Geocode', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/geocode',
     handler: standardMiddleware(geoGeocodeHandler)
@@ -395,7 +395,7 @@ async function geoTimezoneHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_Timezone', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/timezone',
     handler: standardMiddleware(geoTimezoneHandler)
@@ -521,7 +521,7 @@ async function geoIpapiCoHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_IpapiCo_Get', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/ipapico/ip',
     handler: standardMiddleware(geoIpapiCoHandler)
@@ -651,7 +651,7 @@ async function geoBigDataCloudHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_BigDataCloud_Get', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/bigdatacloud/ip',
     handler: standardMiddleware(geoBigDataCloudHandler)
@@ -781,7 +781,7 @@ async function geoAbstractHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_Abstract_Get', {
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/abstract/ip',
     handler: standardMiddleware(geoAbstractHandler)
@@ -968,7 +968,7 @@ async function geoMapboxReverseHandler(request, context) {
 
 // Register function with standard middleware
 app.http('Geo_Mapbox_Reverse', {
-    methods: ['POST'],
+    methods: ['POST', 'OPTIONS'],
     authLevel: 'anonymous',
     route: 'geo/mapbox/reverse',
     handler: standardMiddleware(geoMapboxReverseHandler)

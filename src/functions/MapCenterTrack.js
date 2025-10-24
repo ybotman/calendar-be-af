@@ -6,17 +6,17 @@ const { standardMiddleware } = require('../middleware');
 /**
  * MapCenter Reset Tracking
  *
- * @description Tracks when logged-in users reset their map center while browsing
+ * @description Tracks when users (logged-in or anonymous) reset their map center while browsing
  * Used for analytics on MapCenter usage patterns per user session
  *
  * @route POST /api/user/mapcenter-track
- * @auth Required (Firebase Bearer token)
+ * @auth Optional (Firebase Bearer token for logged-in users, null for anonymous)
  *
  * @returns {MapCenterTrackResponse} Success confirmation
  *
  * @example
  * POST /api/user/mapcenter-track
- * Authorization: Bearer <firebase-token>
+ * Authorization: Bearer <firebase-token> (optional)
  * Body: {
  *   "mapCenter": { "lat": 42.3601, "lng": -71.0589 },
  *   "page": "/calendar/boston"
@@ -45,6 +45,13 @@ function getDeviceType(userAgent) {
     return 'desktop';
 }
 
+// Helper: Strip port from IP address
+function stripPortFromIP(ip) {
+    if (!ip || ip === 'unknown') return ip;
+    // Remove port if present (e.g., "71.232.30.16:52525" → "71.232.30.16")
+    return ip.split(':')[0].trim();
+}
+
 async function mapCenterTrackHandler(request, context) {
     context.log('MapCenterTrack: POST request received');
 
@@ -63,14 +70,15 @@ async function mapCenterTrackHandler(request, context) {
     let mongoClient;
 
     try {
-        // Authenticate user
+        // Authenticate user (optional - supports both logged-in and anonymous users)
         const user = await firebaseAuth(request, context);
-        if (!user) {
-            return unauthorizedResponse();
-        }
+        const firebaseUid = user ? user.uid : null;
 
-        const firebaseUid = user.uid;
-        context.log(`Tracking MapCenter reset for user: ${firebaseUid}`);
+        if (firebaseUid) {
+            context.log(`Tracking MapCenter reset for logged-in user: ${firebaseUid}`);
+        } else {
+            context.log('Tracking MapCenter reset for anonymous user');
+        }
 
         // Parse request body
         let requestBody = {};
@@ -113,10 +121,83 @@ async function mapCenterTrackHandler(request, context) {
         }
 
         const page = requestBody.page || '/calendar';
+        const userTimezone = requestBody.timezone || null;
+        const timezoneOffset = requestBody.timezoneOffset || null;
+
+        // Extract 3-tier geolocation data from frontend
+        const google_browser_lat = requestBody.google_browser_lat || null;
+        const google_browser_long = requestBody.google_browser_long || null;
+        const google_browser_accuracy = requestBody.google_browser_accuracy || null;
+        const google_api_lat = requestBody.google_api_lat || null;
+        const google_api_long = requestBody.google_api_long || null;
+
+        // Extract IP address from CloudFlare headers or X-Forwarded-For
+        const rawIp = request.headers.get('CF-Connecting-IP')
+                   || request.headers.get('X-Forwarded-For')?.split(',')[0]
+                   || request.headers.get('X-Real-IP')
+                   || 'unknown';
+
+        const userIp = stripPortFromIP(rawIp);
+        context.log(`User IP: ${userIp}, MapCenter: ${mapCenter.lat}, ${mapCenter.lng}`);
 
         // Extract user agent and device info
         const userAgent = request.headers.get('User-Agent') || 'unknown';
         const deviceType = getDeviceType(userAgent);
+
+        // 3-TIER GEOLOCATION SYSTEM
+        const geoData = {};
+
+        // Priority 1: Browser Geolocation (if provided by frontend)
+        if (google_browser_lat && google_browser_long) {
+            geoData.google_browser_lat = google_browser_lat;
+            geoData.google_browser_long = google_browser_long;
+            geoData.google_browser_accuracy = google_browser_accuracy;
+            context.log(`Browser geolocation: ${google_browser_lat}, ${google_browser_long}`);
+        }
+
+        // Priority 2: Google API Geolocation (if provided by frontend)
+        if (google_api_lat && google_api_long) {
+            geoData.google_api_lat = google_api_lat;
+            geoData.google_api_long = google_api_long;
+            context.log(`Google API geolocation: ${google_api_lat}, ${google_api_long}`);
+        }
+
+        // Priority 3: ipinfo.io Geolocation (fallback)
+        const ipinfoToken = process.env.IPINFO_API_TOKEN;
+        if (ipinfoToken && userIp !== 'unknown') {
+            try {
+                const ipinfoUrl = `https://ipinfo.io/${userIp}/json?token=${ipinfoToken}`;
+                const geoResponse = await fetch(ipinfoUrl);
+
+                if (geoResponse.ok) {
+                    const data = await geoResponse.json();
+
+                    // Parse location coordinates
+                    let latitude = null;
+                    let longitude = null;
+                    if (data.loc) {
+                        const [lat, lng] = data.loc.split(',');
+                        latitude = parseFloat(lat);
+                        longitude = parseFloat(lng);
+                    }
+
+                    geoData.ipinfo_lat = latitude;
+                    geoData.ipinfo_long = longitude;
+                    geoData.ipinfo_city = data.city || null;
+                    geoData.ipinfo_region = data.region || null;
+                    geoData.ipinfo_country = data.country || null;
+                    geoData.ipinfo_timezone = data.timezone || null;
+                    geoData.ipinfo_postal = data.postal || null;
+
+                    context.log(`ipinfo.io: ${data.city}, ${data.region}, ${data.country}`);
+                } else {
+                    context.log(`ipinfo.io returned status: ${geoResponse.status}`);
+                }
+            } catch (geoError) {
+                context.log.error('Error fetching ipinfo.io:', geoError.message);
+                // Continue without ipinfo data
+            }
+        }
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
@@ -132,14 +213,30 @@ async function mapCenterTrackHandler(request, context) {
 
         // Create tracking event
         const trackingTime = new Date();
+
+        // Determine geoSource
+        let geoSource = null;
+        if (geoData.google_browser_lat && geoData.google_browser_long) {
+            geoSource = 'GoogleBrowser';
+        } else if (geoData.google_api_lat && geoData.google_api_long) {
+            geoSource = 'GoogleGeolocation';
+        } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
+            geoSource = 'IPInfoIO';
+        }
+
         const trackingEvent = {
             firebaseUserId: firebaseUid,
+            ip: userIp,
             timestamp: trackingTime,
             mapCenter: {
                 latitude: mapCenter.lat,
                 longitude: mapCenter.lng
             },
             page: page,
+            timezone: userTimezone,
+            timezoneOffset: timezoneOffset,
+            ...geoData, // Spread all geolocation data
+            geoSource: geoSource, // Track which geolocation API was used
             userAgent: userAgent,
             deviceType: deviceType,
             createdAt: new Date()

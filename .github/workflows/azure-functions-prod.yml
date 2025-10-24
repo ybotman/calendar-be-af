@@ -23,11 +23,9 @@ jobs:
       - name: 'Resolve Project Dependencies Using NPM'
         shell: bash
         run: |
-          pushd './${{ github.workspace }}'
           npm install
           npm run build --if-present
           npm run lint --if-present
-          popd
 
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1

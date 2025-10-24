@@ -1151,6 +1151,155 @@
         }
       }
     },
+    "/api/geo/google-geolocate": {
+      "post": {
+        "summary": "Google Geolocation API - WiFi/Cell Tower Positioning",
+        "description": "Get device location using WiFi access points and cell towers via Google Geolocation API. More accurate than IP-based geolocation. DIFFERENT from Geocoding API - this uses signal positioning, not address conversion.",
+        "tags": ["Geolocation"],
+        "operationId": "googleGeolocate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "considerIp": {
+                    "type": "boolean",
+                    "description": "Whether to use IP address as fallback",
+                    "default": true
+                  },
+                  "wifiAccessPoints": {
+                    "type": "array",
+                    "description": "WiFi networks visible to device (optional)",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "macAddress": {
+                          "type": "string",
+                          "description": "MAC address of WiFi access point"
+                        },
+                        "signalStrength": {
+                          "type": "integer",
+                          "description": "Signal strength in dBm"
+                        },
+                        "channel": {
+                          "type": "integer",
+                          "description": "WiFi channel number"
+                        }
+                      }
+                    }
+                  },
+                  "cellTowers": {
+                    "type": "array",
+                    "description": "Cell tower information (optional)",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic request with IP fallback",
+                  "value": {
+                    "considerIp": true
+                  }
+                },
+                "with_wifi": {
+                  "summary": "Request with WiFi data",
+                  "value": {
+                    "considerIp": true,
+                    "wifiAccessPoints": [
+                      {
+                        "macAddress": "01:23:45:67:89:AB",
+                        "signalStrength": -65,
+                        "channel": 11
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Location retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "properties": {
+                            "lat": {
+                              "type": "number",
+                              "description": "Latitude coordinate"
+                            },
+                            "lng": {
+                              "type": "number",
+                              "description": "Longitude coordinate"
+                            }
+                          }
+                        },
+                        "accuracy": {
+                          "type": "number",
+                          "description": "Accuracy radius in meters"
+                        }
+                      }
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "location": {
+                      "lat": 37.4224764,
+                      "lng": -122.0842499
+                    },
+                    "accuracy": 20.0
+                  },
+                  "timestamp": "2025-10-23T19:45:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "API error or configuration issue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/geo/mapbox/reverse": {
       "post": {
         "summary": "Reverse Geocoding - Mapbox",

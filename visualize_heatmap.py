@@ -116,7 +116,11 @@ def visualize_heatmap(data, save_path='heatmap.png', show=True):
         ax_bar_day.text(v/2, i, str(int(v)), ha='center', va='center', fontweight='bold')
 
     # Hour totals bar
-    hour_totals = [totals['byHour'].get(str(h), 0) for h in range(24)]
+    # Handle both dict and list formats for byHour
+    if isinstance(totals['byHour'], dict):
+        hour_totals = [totals['byHour'].get(str(h), 0) for h in range(24)]
+    else:
+        hour_totals = totals['byHour']
     ax_bar_hour.bar(range(24), hour_totals, color='coral')
     ax_bar_hour.set_xticks([])
     ax_bar_hour.set_ylabel('Total by Hour', fontsize=10)
@@ -185,11 +189,20 @@ def print_summary(data):
         print(f"  {day:12} {count:>6,} events")
 
     print(f"\nBusiest Hours:")
-    sorted_hours = sorted(
-        [(int(h), count) for h, count in totals['byHour'].items()],
-        key=lambda x: x[1],
-        reverse=True
-    )
+    # Handle both dict and list formats for byHour
+    if isinstance(totals['byHour'], dict):
+        sorted_hours = sorted(
+            [(int(h), count) for h, count in totals['byHour'].items()],
+            key=lambda x: x[1],
+            reverse=True
+        )
+    else:
+        # byHour is an array where index = hour
+        sorted_hours = sorted(
+            [(hour, count) for hour, count in enumerate(totals['byHour'])],
+            key=lambda x: x[1],
+            reverse=True
+        )
     for hour, count in sorted_hours[:5]:
         time_str = f"{hour:02d}:00" if hour < 10 else f"{hour}:00"
         print(f"  {time_str:12} {count:>6,} events")

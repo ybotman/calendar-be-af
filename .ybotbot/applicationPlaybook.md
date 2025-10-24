@@ -3,7 +3,7 @@
 **Project:** calendar-be-af
 **Description:** Azure Functions migration of Master Calendar backend
 **Applications:** TangoTiempo, HarmonyJunction
-**Last Updated:** 2025-10-19 (User name clarified: Gotan)
+**Last Updated:** 2025-10-23 (Added API Keys Configuration section)
 
 ---
 
@@ -57,6 +57,88 @@ export JIRA_EMAIL="toby.balsley@gmail.com"
 export JIRA_API_TOKEN=$(security find-generic-password -a "toby.balsley@gmail.com" -s "jira-api-token" -w 2>/dev/null)
 export JIRA_BASE_URL="https://hdtsllc.atlassian.net"
 ```
+
+---
+
+## API Keys Configuration
+
+### CRITICAL - API Key Types and Restrictions
+
+**Mapbox API Keys**
+
+We use multiple Mapbox keys with different restrictions:
+
+1. **Server-Side Keys** (for Azure Functions):
+   - Used in Azure Functions backend (calendar-be-af)
+   - No domain restrictions
+   - Can be used from server-side code (Node.js)
+   - Used for: Reverse Geocoding API calls from backend
+
+2. **Domain-Restricted Keys** (for Frontend):
+   - Used in tangotiempo.com frontend
+   - Restricted to specific domains (tangotiempo.com, localhost)
+   - Cannot be used from Azure Functions
+   - Used for: Mapbox GL JS map display
+
+**Important:** Never mix these keys! Server keys for server code, domain keys for frontend code.
+
+**Google API Keys**
+
+1. **Google Geolocation/Geocoding Key**:
+   - Used by Azure Functions for location services
+   - Supports: Geocoding API, Places API, Reverse Geocoding
+   - **Environment:** Currently ONE key shared between TEST and DEV
+   - Retrieved from Azure App Settings: `GOOGLE_API_KEY`
+   - Used for: Converting addresses to coordinates, reverse geocoding
+
+**Key Storage:**
+- **Local/DEV:** `.env.local` (gitignored)
+- **TEST/PROD:** Azure Function App Settings (Configuration blade)
+
+**Environment Variables:**
+
+```bash
+# Mapbox (Server-Side)
+MAPBOX_ACCESS_TOKEN=pk.ey... (server-side key)
+
+# Google
+GOOGLE_API_KEY=AIza... (one key for TEST and DEV)
+
+# MongoDB
+MONGODB_URI=mongodb+srv://... (TangoTiempo for TEST)
+MONGODB_URI_PROD=mongodb+srv://... (TangoTiempoProd for PROD)
+```
+
+**Testing with curl:**
+When testing endpoints locally with curl, the server-side keys work fine because Azure Functions run server-side. Domain-restricted keys will fail.
+
+**Key Verification:**
+```bash
+# Test Mapbox server key (should work from Azure Functions)
+curl "https://api.mapbox.com/geocoding/v5/mapbox.places/-73.935242,40.730610.json?access_token=${MAPBOX_ACCESS_TOKEN}"
+
+# Test Google API key (should work from Azure Functions)
+curl "https://maps.googleapis.com/maps/api/geocode/json?latlng=40.730610,-73.935242&key=${GOOGLE_API_KEY}"
+```
+
+**Functions Using API Keys:**
+
+| Function | Endpoint | API Key Used | Notes |
+|----------|----------|--------------|-------|
+| `Geo_Reverse` | GET /api/geo/reverse | `GOOGLE_API_KEY` | Reverse geocoding (lat/lng → address) |
+| `Geo_Geocode` | GET /api/geo/geocode | `GOOGLE_API_KEY` | Forward geocoding (address → lat/lng) |
+| `Geo_Timezone` | GET /api/geo/timezone | `GOOGLE_API_KEY` | Get timezone from lat/lng |
+| `Geo_Mapbox_Reverse` | POST /api/geo/mapbox/reverse | `MAPBOX_ACCESS_TOKEN` | Mapbox reverse geocoding |
+| `Geo_IpapiCo_Get` | GET /api/geo/ipapico/ip | None (free API) | IP geolocation (rate limited) |
+| `Geo_BigDataCloud_Get` | GET /api/geo/bigdatacloud/ip | None (free API) | IP geolocation (alternative) |
+| `Geo_Abstract_Get` | GET /api/geo/abstract/ip | None (free API) | IP geolocation (alternative) |
+
+**Important Notes:**
+- All Geo functions support OPTIONS method for CORS preflight
+- Google functions require `GOOGLE_API_KEY` environment variable
+- Mapbox functions require `MAPBOX_ACCESS_TOKEN` (server-side key)
+- Free IP geolocation services (ipapi.co, BigDataCloud, Abstract) have rate limits
+- Use 3-tier geolocation fallback: Browser GPS → Google API → IP-based
 
 ---
 
