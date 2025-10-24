@@ -1,0 +1,59 @@
+name: Keep PROD Azure Functions Warm
+
+# Ping every 15 minutes to prevent cold starts
+# Azure Functions deallocate after ~20 minutes of inactivity
+on:
+  schedule:
+    # Every 15 minutes: "*/15 * * * *"
+    # GitHub Actions cron can have delays, so 15min gives safety buffer
+    - cron: '*/15 * * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  ping-prod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping PROD - Google Geolocation Endpoint
+        run: |
+          echo "🔥 Pinging PROD Google Geolocation endpoint to keep warm..."
+
+          response=$(curl -X POST \
+            https://calendarbeaf-prod.azurewebsites.net/api/geo/google-geolocate \
+            -H "Content-Type: application/json" \
+            -d '{"considerIp": true}' \
+            --max-time 30 \
+            --silent \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --show-error)
+
+          http_code=$(echo "$response" | grep "HTTP_STATUS" | cut -d':' -f2)
+
+          echo "Response Code: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✅ PROD endpoint is warm and responsive"
+          else
+            echo "⚠️ PROD endpoint returned non-200 status: $http_code"
+            echo "Response: $response"
+            exit 1
+          fi
+
+      - name: Ping PROD - Health Check (Optional)
+        continue-on-error: true
+        run: |
+          echo "🏥 Checking PROD health endpoint..."
+
+          # If you have a health endpoint, ping it too
+          curl -X GET \
+            https://calendarbeaf-prod.azurewebsites.net/api/health \
+            --max-time 10 \
+            --silent \
+            --show-error || echo "⚠️ Health endpoint not available (this is OK)"
+
+      - name: Log Keep-Alive Success
+        run: |
+          echo "✅ Keep-alive ping completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Next ping in ~15 minutes"
