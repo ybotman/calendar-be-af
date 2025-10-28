@@ -22,6 +22,10 @@ require('./functions/VisitorTrack');
 require('./functions/MapCenterTrack');
 require('./functions/Analytics_VisitorHeatmap');
 
+// User Profile & Onboarding - TIEMPO-329 Phase 2/3
+require('./functions/User_FCMToken');
+require('./functions/User_OnboardingStatus');
+
 // Venue API
 require('./functions/Venues');
 
