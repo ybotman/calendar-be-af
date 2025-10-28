@@ -93,6 +93,9 @@ async function visitorTrackHandler(request, context) {
         const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
 
+        // TIEMPO-329: Accept visitor_id UUID from frontend cookie
+        const visitor_id = requestBody.visitor_id || null;
+
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
         const google_browser_long = requestBody.google_browser_long || null;
@@ -142,17 +145,37 @@ async function visitorTrackHandler(request, context) {
         const historyCollection = db.collection('VisitorTrackingHistory');
         const analyticsCollection = db.collection('VisitorTrackingAnalytics');
 
-        // Check if this IP was already tracked today (deduplication)
+        // TIEMPO-329: Check if visitor has visited before (for entry state detection)
+        let is_first_time = true;
+        let is_returning = false;
+
+        if (visitor_id) {
+            // Check if this visitor_id exists in history
+            const existingVisitor = await historyCollection.findOne({ visitor_id: visitor_id });
+
+            if (existingVisitor) {
+                is_first_time = false;
+                is_returning = true;
+                context.log(`Returning visitor: ${visitor_id}`);
+            } else {
+                context.log(`First-time visitor: ${visitor_id}`);
+            }
+        }
+
+        // Check if this visitor was already tracked today (deduplication)
+        // Priority: visitor_id > IP address
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Start of day (midnight)
 
-        const existingToday = await historyCollection.findOne({
-            ip: userIp,
-            timestamp: { $gte: today }
-        });
+        const deduplicationQuery = visitor_id
+            ? { visitor_id: visitor_id, timestamp: { $gte: today } }
+            : { ip: userIp, timestamp: { $gte: today } };
+
+        const existingToday = await historyCollection.findOne(deduplicationQuery);
 
         if (existingToday) {
-            context.log(`IP ${userIp} already tracked today - skipping`);
+            const identifier = visitor_id || userIp;
+            context.log(`Visitor ${identifier} already tracked today - skipping`);
             return {
                 status: 200,
                 headers: {
@@ -165,6 +188,9 @@ async function visitorTrackHandler(request, context) {
                     success: true,
                     data: {
                         tracked: false,
+                        is_first_time: is_first_time,
+                        is_returning: is_returning,
+                        visitor_id: visitor_id,
                         message: 'Already tracked today'
                     },
                     timestamp: new Date().toISOString()
@@ -255,6 +281,7 @@ async function visitorTrackHandler(request, context) {
         }
 
         const visitEvent = {
+            visitor_id: visitor_id, // TIEMPO-329: Store visitor UUID from cookie
             ip: userIp,
             timestamp: visitTime,
             page: page,
@@ -308,6 +335,7 @@ async function visitorTrackHandler(request, context) {
         const analyticsUpdate = {
             $setOnInsert: {
                 ip: userIp,
+                visitor_id: visitor_id, // TIEMPO-329: Store visitor UUID
                 createdAt: new Date()
             },
             $set: {
@@ -345,9 +373,10 @@ async function visitorTrackHandler(request, context) {
             }
         };
 
-        // Apply analytics update
+        // Apply analytics update (query by visitor_id if available, else IP)
+        const analyticsQuery = visitor_id ? { visitor_id: visitor_id } : { ip: userIp };
         await analyticsCollection.updateOne(
-            { ip: userIp },
+            analyticsQuery,
             analyticsUpdate,
             { upsert: true }
         );
@@ -366,7 +395,10 @@ async function visitorTrackHandler(request, context) {
                 success: true,
                 data: {
                     tracked: true,
-                    message: 'Visitor tracked successfully',
+                    is_first_time: is_first_time, // TIEMPO-329: For State 1 detection
+                    is_returning: is_returning,   // TIEMPO-329: For State 2 detection
+                    visitor_id: visitor_id,
+                    message: is_first_time ? 'First-time visitor tracked' : 'Returning visitor tracked',
                     visitId: historyResult.insertedId.toString()
                 },
                 timestamp: new Date().toISOString()

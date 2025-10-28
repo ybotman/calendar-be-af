@@ -211,6 +211,37 @@ async function loginTrackHandler(request, context) {
         const db = mongoClient.db();
         const loginHistoryCollection = db.collection('UserLoginHistory');
         const loginAnalyticsCollection = db.collection('UserLoginAnalytics');
+        const usersCollection = db.collection('Users');
+
+        // TIEMPO-329: Detect first-time login for entry state detection
+        const priorLoginCount = await loginHistoryCollection.countDocuments({ firebaseUserId: firebaseUid });
+        const isFirstLogin = priorLoginCount === 0;
+
+        if (isFirstLogin) {
+            context.log(`First-time login for user: ${firebaseUid}`);
+        } else {
+            context.log(`Returning user login: ${firebaseUid} (${priorLoginCount} prior logins)`);
+        }
+
+        // TIEMPO-329: Get user role for personalized entry flow
+        let userRole = 'Milonguero'; // Default role (80% of users)
+        const userProfile = await usersCollection.findOne(
+            { firebaseUid: firebaseUid },
+            { projection: { roles: 1, backendInfo: 1 } }
+        );
+
+        if (userProfile) {
+            // Check if user is an Event Organizer
+            const isOrganizer = userProfile.roles?.includes('RegionalOrganizer') &&
+                                userProfile.backendInfo?.regionalOrganizerInfo?.isEnabled === true;
+
+            if (isOrganizer) {
+                userRole = 'EventOrganizer';
+                context.log(`User role: EventOrganizer (${userProfile.backendInfo.regionalOrganizerInfo.organizerId})`);
+            } else {
+                context.log(`User role: Milonguero (event consumer)`);
+            }
+        }
 
         // 1. INSERT: Raw login event (immutable audit trail)
         // Determine geoSource for history record
@@ -389,6 +420,8 @@ async function loginTrackHandler(request, context) {
                 success: true,
                 data: {
                     loginId: historyResult.insertedId.toString(),
+                    isFirstLogin: isFirstLogin,     // TIEMPO-329: For State 4A/4B detection
+                    userRole: userRole,             // TIEMPO-329: Milonguero or EventOrganizer
                     timestamp: loginEvent.timestamp.toISOString()
                 },
                 timestamp: new Date().toISOString()
