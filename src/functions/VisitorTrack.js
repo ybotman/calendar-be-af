@@ -110,24 +110,12 @@ async function visitorTrackHandler(request, context) {
                    || 'unknown';
 
         // Strip port number if present (Azure sometimes includes port)
-        const userIp = stripPortFromIP(rawIp);
+        let userIp = stripPortFromIP(rawIp);
 
+        // LOCALHOST FALLBACK: Use 127.0.0.1 for local development testing
         if (userIp === 'unknown') {
-            context.log('Unable to determine visitor IP');
-            return {
-                status: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type'
-                },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Unable to determine IP address',
-                    timestamp: new Date().toISOString()
-                })
-            };
+            userIp = '127.0.0.1';
+            context.log('Using localhost IP fallback for development: 127.0.0.1');
         }
 
         context.log(`Visitor IP: ${userIp}, Page: ${page}`);
