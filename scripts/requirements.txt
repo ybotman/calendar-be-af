@@ -1,0 +1,6 @@
+# Python dependencies for visitor analytics visualizer
+pymongo>=4.6.0
+pandas>=2.1.0
+plotly>=5.18.0
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
