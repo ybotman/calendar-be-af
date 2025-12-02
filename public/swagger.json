@@ -1382,6 +1382,177 @@
           }
         }
       }
+    },
+    "/api/geo/event-density": {
+      "get": {
+        "summary": "Event Density Detection",
+        "description": "Detect if a visitor's location has events/venues (populated area) vs none (unpopulated area). Used for frontend entry flow to show different welcome messages. Returns event count, venue count, and nearest venue information within a specified radius.",
+        "tags": ["Geolocation"],
+        "operationId": "getEventDensity",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "description": "Latitude of the location to check",
+            "example": 42.3601
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "description": "Longitude of the location to check",
+            "example": -71.0589
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "float",
+              "default": 80
+            },
+            "description": "Search radius in kilometers (default: 80km)",
+            "example": 80
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)",
+            "example": "1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event density information retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDensityResponse"
+                },
+                "examples": {
+                  "populated_area": {
+                    "summary": "Populated area with events (Boston)",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "eventCount": 15,
+                        "activeVenueCount": 8,
+                        "isPopulated": true,
+                        "nearestEventDistance": 2.3,
+                        "nearestVenueName": "Boston Tango Studio"
+                      },
+                      "query": {
+                        "lat": 42.3601,
+                        "lng": -71.0589,
+                        "radius": 80,
+                        "appId": "1"
+                      },
+                      "timestamp": "2025-10-26T15:30:00.000Z"
+                    }
+                  },
+                  "unpopulated_area": {
+                    "summary": "Unpopulated area - no events or venues (Chicago)",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "eventCount": 0,
+                        "activeVenueCount": 0,
+                        "isPopulated": false,
+                        "nearestEventDistance": null,
+                        "nearestVenueName": null
+                      },
+                      "query": {
+                        "lat": 41.8781,
+                        "lng": -87.6298,
+                        "radius": 80,
+                        "appId": "1"
+                      },
+                      "timestamp": "2025-10-26T15:30:00.000Z"
+                    }
+                  },
+                  "pre_launch_area": {
+                    "summary": "Pre-launch area with venues but no events (Austin)",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "eventCount": 0,
+                        "activeVenueCount": 3,
+                        "isPopulated": true,
+                        "nearestEventDistance": 5.7,
+                        "nearestVenueName": "Austin Dance Center"
+                      },
+                      "query": {
+                        "lat": 30.2672,
+                        "lng": -97.7431,
+                        "radius": 80,
+                        "appId": "1"
+                      },
+                      "timestamp": "2025-10-26T15:30:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missing_coordinates": {
+                    "summary": "Missing lat/lng parameters",
+                    "value": {
+                      "success": false,
+                      "error": "lat and lng are required and must be valid numbers",
+                      "timestamp": "2025-10-26T15:30:00.000Z"
+                    }
+                  },
+                  "invalid_range": {
+                    "summary": "Coordinates out of range",
+                    "value": {
+                      "success": false,
+                      "error": "lat must be between -90 and 90, lng must be between -180 and 180",
+                      "timestamp": "2025-10-26T15:30:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2222,6 +2393,71 @@
         },
         "required": ["success", "data", "timestamp"]
       }
+    },
+    "EventDensityResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Request success status"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "eventCount": {
+              "type": "integer",
+              "description": "Number of upcoming events within radius"
+            },
+            "activeVenueCount": {
+              "type": "integer",
+              "description": "Number of active venues within radius"
+            },
+            "isPopulated": {
+              "type": "boolean",
+              "description": "True if eventCount > 0 OR activeVenueCount > 0"
+            },
+            "nearestEventDistance": {
+              "type": "number",
+              "format": "float",
+              "nullable": true,
+              "description": "Distance to nearest event in kilometers (null if no events)"
+            },
+            "nearestVenueName": {
+              "type": "string",
+              "nullable": true,
+              "description": "Name of nearest venue (null if no venues)"
+            }
+          },
+          "required": ["eventCount", "activeVenueCount", "isPopulated"]
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "lat": {
+              "type": "number",
+              "description": "Query latitude"
+            },
+            "lng": {
+              "type": "number",
+              "description": "Query longitude"
+            },
+            "radius": {
+              "type": "number",
+              "description": "Query radius in kilometers"
+            },
+            "appId": {
+              "type": "string",
+              "description": "Application ID"
+            }
+          }
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Response timestamp"
+        }
+      },
+      "required": ["success", "data", "timestamp"]
     },
     "securitySchemes": {
       "firebaseAuth": {

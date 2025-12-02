@@ -22,12 +22,17 @@ require('./functions/VisitorTrack');
 require('./functions/MapCenterTrack');
 require('./functions/Analytics_VisitorHeatmap');
 
+// User Profile & Onboarding - TIEMPO-329 Phase 2/3
+require('./functions/User_FCMToken');
+require('./functions/User_OnboardingStatus');
+
 // Venue API
 require('./functions/Venues');
 
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
 require('./functions/Geo_GoogleGeolocate');
+require('./functions/Geo_EventDensity');
 
 // Cloudflare Info - Expose Cloudflare headers to frontend
 require('./functions/Cloudflare');
