@@ -1,5 +1,5 @@
 const { app } = require('@azure/functions');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 
 /**
@@ -65,7 +65,6 @@ async function venuesGetHandler(request, context) {
 
         // Filter by city
         if (cityId) {
-            const { ObjectId } = require('mongodb');
             query.masteredCityId = new ObjectId(cityId);
         }
 
@@ -149,4 +148,420 @@ app.http('Venues_Get', {
     authLevel: 'anonymous',
     route: 'venues',
     handler: standardMiddleware(venuesGetHandler)
+});
+
+/**
+ * GET /api/venues/{id}
+ * Get single venue by ID
+ */
+async function venuesGetByIdHandler(request, context) {
+    const venueId = request.params.id;
+    const populate = request.query.get('populate') === 'true';
+
+    context.log(`Venues_GetById: Request for venue ${venueId}`);
+
+    let mongoClient;
+
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('venues');
+
+        let venue = await collection.findOne({
+            _id: new ObjectId(venueId)
+        });
+
+        if (!venue) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Venue not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Populate masteredCityId if requested
+        if (populate && venue.masteredCityId) {
+            const citiesCollection = db.collection('masteredcities');
+            const city = await citiesCollection.findOne({
+                _id: venue.masteredCityId
+            });
+            if (city) {
+                venue.masteredCityId = city;
+            }
+        }
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(venue)
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Venues_GetById', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'venues/{id}',
+    handler: standardMiddleware(venuesGetByIdHandler)
+});
+
+/**
+ * POST /api/venues
+ * Create a new venue
+ */
+async function venuesCreateHandler(request, context) {
+    context.log('Venues_Create: Request received');
+
+    let mongoClient;
+
+    try {
+        const body = await request.json();
+        const appId = body.appId || '1';
+
+        // Validate required fields
+        if (!body.name) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ValidationError',
+                    message: 'name is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Require coordinates
+        if (body.latitude === undefined || body.longitude === undefined) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ValidationError',
+                    message: 'latitude and longitude are required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('venues');
+
+        const latitude = parseFloat(body.latitude);
+        const longitude = parseFloat(body.longitude);
+
+        // Check for duplicate venue within 100 yards (~91 meters)
+        const duplicateCheck = await collection.findOne({
+            appId,
+            geolocation: {
+                $near: {
+                    $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+                    $maxDistance: 91.44
+                }
+            }
+        });
+
+        if (duplicateCheck) {
+            return {
+                status: 409,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'DuplicateError',
+                    message: 'A venue already exists within 100 yards of this location',
+                    existingVenueId: duplicateCheck._id,
+                    existingVenueName: duplicateCheck.name,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Create venue document
+        const newVenue = {
+            appId,
+            name: body.name,
+            shortName: body.shortName || '',
+            address1: body.address1 || '',
+            address2: body.address2 || '',
+            address3: body.address3 || '',
+            city: body.city || '',
+            state: body.state || '',
+            zip: body.zip || '',
+            phone: body.phone || '',
+            comments: body.comments || '',
+            latitude,
+            longitude,
+            geolocation: {
+                type: 'Point',
+                coordinates: [longitude, latitude]
+            },
+            masteredCityId: body.masteredCityId ? new ObjectId(body.masteredCityId) : null,
+            masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : null,
+            masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : null,
+            masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : null,
+            timezone: body.timezone || 'America/New_York',
+            country: body.country || 'US',
+            isActive: body.isActive !== undefined ? body.isActive : true,
+            isApproved: body.isApproved !== undefined ? body.isApproved : false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        const result = await collection.insertOne(newVenue);
+        newVenue._id = result.insertedId;
+
+        context.log(`[VENUE CREATE] Name: "${newVenue.name}", VenueId: ${newVenue._id}, City: ${newVenue.city}`);
+
+        return {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newVenue)
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Venues_Create', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'venues',
+    handler: standardMiddleware(venuesCreateHandler)
+});
+
+/**
+ * PUT /api/venues/{id}
+ * Update a venue
+ */
+async function venuesUpdateHandler(request, context) {
+    const venueId = request.params.id;
+    context.log(`Venues_Update: Request for venue ${venueId}`);
+
+    let mongoClient;
+
+    try {
+        const body = await request.json();
+        const appId = body.appId || request.query.get('appId') || '1';
+
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('venues');
+
+        // Check if venue exists
+        const existing = await collection.findOne({
+            _id: new ObjectId(venueId)
+        });
+
+        if (!existing) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Venue not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Build update object
+        const updateData = { ...body };
+        delete updateData.appId;
+        delete updateData._id;
+        updateData.updatedAt = new Date();
+
+        // Handle coordinate updates
+        if (body.latitude !== undefined && body.longitude !== undefined) {
+            const latitude = parseFloat(body.latitude);
+            const longitude = parseFloat(body.longitude);
+
+            updateData.latitude = latitude;
+            updateData.longitude = longitude;
+            updateData.geolocation = {
+                type: 'Point',
+                coordinates: [longitude, latitude]
+            };
+
+            // Check for duplicates if coordinates changed
+            if (latitude !== existing.latitude || longitude !== existing.longitude) {
+                const duplicateCheck = await collection.findOne({
+                    appId,
+                    _id: { $ne: new ObjectId(venueId) },
+                    geolocation: {
+                        $near: {
+                            $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+                            $maxDistance: 91.44
+                        }
+                    }
+                });
+
+                if (duplicateCheck) {
+                    return {
+                        status: 409,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            success: false,
+                            error: 'DuplicateError',
+                            message: 'Another venue exists within 100 yards of the new location',
+                            timestamp: new Date().toISOString()
+                        })
+                    };
+                }
+            }
+        }
+
+        // Convert ObjectId fields if provided
+        if (body.masteredCityId) {
+            updateData.masteredCityId = new ObjectId(body.masteredCityId);
+        }
+        if (body.masteredDivisionId) {
+            updateData.masteredDivisionId = new ObjectId(body.masteredDivisionId);
+        }
+        if (body.masteredRegionId) {
+            updateData.masteredRegionId = new ObjectId(body.masteredRegionId);
+        }
+        if (body.masteredCountryId) {
+            updateData.masteredCountryId = new ObjectId(body.masteredCountryId);
+        }
+
+        const result = await collection.findOneAndUpdate(
+            { _id: new ObjectId(venueId) },
+            { $set: updateData },
+            { returnDocument: 'after' }
+        );
+
+        context.log(`[VENUE UPDATE] VenueId: ${venueId}, UpdatedFields: ${Object.keys(updateData).join(', ')}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result)
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Venues_Update', {
+    methods: ['PUT'],
+    authLevel: 'anonymous',
+    route: 'venues/{id}',
+    handler: standardMiddleware(venuesUpdateHandler)
+});
+
+/**
+ * DELETE /api/venues/{id}
+ * Delete a venue
+ */
+async function venuesDeleteHandler(request, context) {
+    const venueId = request.params.id;
+
+    context.log(`Venues_Delete: Request for venue ${venueId}`);
+
+    let mongoClient;
+
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('venues');
+
+        // Find venue first for logging
+        const venue = await collection.findOne({
+            _id: new ObjectId(venueId)
+        });
+
+        if (!venue) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Venue not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        await collection.deleteOne({
+            _id: new ObjectId(venueId)
+        });
+
+        context.log(`[VENUE DELETE] VenueId: ${venueId}, Name: "${venue.name}"`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: 'Venue deleted successfully',
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Venues_Delete', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'venues/{id}',
+    handler: standardMiddleware(venuesDeleteHandler)
 });

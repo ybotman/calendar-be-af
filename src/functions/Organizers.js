@@ -232,3 +232,620 @@ app.http('Organizers_GetById', {
     route: 'organizers/{id}',
     handler: standardMiddleware(organizersGetByIdHandler)
 });
+
+/**
+ * POST /api/organizers
+ * Create a new organizer
+ */
+async function organizersCreateHandler(request, context) {
+    context.log('Organizers_Create: Request received');
+
+    let mongoClient;
+
+    try {
+        const body = await request.json();
+        const appId = body.appId || '1';
+
+        // Validate required fields
+        if (!body.fullName) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ValidationError',
+                    message: 'fullName is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        if (!body.shortName) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ValidationError',
+                    message: 'shortName is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('organizers');
+
+        // Normalize shortName to uppercase
+        const normalizedShortName = body.shortName.toUpperCase();
+
+        // Check for duplicate shortName
+        const existing = await collection.findOne({
+            shortName: normalizedShortName,
+            appId
+        });
+
+        if (existing) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'DuplicateError',
+                    message: `shortName '${normalizedShortName}' already exists`,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Create organizer document
+        const newOrganizer = {
+            appId,
+            fullName: body.fullName,
+            shortName: normalizedShortName,
+            description: body.description || '',
+            publicContactInfo: body.publicContactInfo || {},
+            organizerRegion: body.organizerRegion || null,
+            organizerDivision: body.organizerDivision || null,
+            organizerCity: body.organizerCity || null,
+            masteredRegionId: body.masteredRegionId || null,
+            masteredDivisionId: body.masteredDivisionId || null,
+            masteredCityId: body.masteredCityId || null,
+            wantRender: body.wantRender || false,
+            isActive: body.isActive !== undefined ? body.isActive : false,
+            isEnabled: body.isEnabled !== undefined ? body.isEnabled : false,
+            isVisible: body.isVisible !== undefined ? body.isVisible : true,
+            organizerTypes: body.organizerTypes || {
+                isEventOrganizer: true,
+                isVenue: false,
+                isTeacher: false,
+                isMaestro: false,
+                isDJ: false,
+                isOrchestra: false
+            },
+            firebaseUserId: body.firebaseUserId || null,
+            linkedUserLogin: body.linkedUserLogin || null,
+            images: body.images || [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        const result = await collection.insertOne(newOrganizer);
+        newOrganizer._id = result.insertedId;
+
+        context.log(`[ORGANIZER CREATE] Name: "${newOrganizer.fullName}", ShortName: "${newOrganizer.shortName}", OrganizerId: ${newOrganizer._id}`);
+
+        return {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newOrganizer)
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_Create', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'organizers',
+    handler: standardMiddleware(organizersCreateHandler)
+});
+
+/**
+ * PUT /api/organizers/{id}
+ * Update an organizer
+ */
+async function organizersUpdateHandler(request, context) {
+    const organizerId = request.params.id;
+    context.log(`Organizers_Update: Request for organizer ${organizerId}`);
+
+    let mongoClient;
+
+    try {
+        const body = await request.json();
+        const appId = body.appId || request.query.get('appId') || '1';
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('organizers');
+
+        // Check if organizer exists
+        const existing = await collection.findOne({
+            _id: new ObjectId(organizerId),
+            appId
+        });
+
+        if (!existing) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Organizer not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // If updating shortName, validate it
+        if (body.shortName) {
+            const normalizedShortName = body.shortName.toUpperCase();
+
+            if (normalizedShortName === 'CHANGE') {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'ValidationError',
+                        message: "shortName cannot be 'CHANGE'",
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+
+            // Check for duplicate
+            const duplicate = await collection.findOne({
+                shortName: normalizedShortName,
+                appId,
+                _id: { $ne: new ObjectId(organizerId) }
+            });
+
+            if (duplicate) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'DuplicateError',
+                        message: `shortName '${normalizedShortName}' is already taken`,
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+
+            body.shortName = normalizedShortName;
+        }
+
+        // Build update object
+        const updateData = { ...body };
+        delete updateData.appId; // Don't update appId
+        delete updateData._id;   // Don't update _id
+        updateData.updatedAt = new Date();
+
+        const result = await collection.findOneAndUpdate(
+            { _id: new ObjectId(organizerId), appId },
+            { $set: updateData },
+            { returnDocument: 'after' }
+        );
+
+        context.log(`[ORGANIZER UPDATE] OrganizerId: ${organizerId}, UpdatedFields: ${Object.keys(updateData).join(', ')}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result)
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_Update', {
+    methods: ['PUT'],
+    authLevel: 'anonymous',
+    route: 'organizers/{id}',
+    handler: standardMiddleware(organizersUpdateHandler)
+});
+
+/**
+ * DELETE /api/organizers/{id}
+ * Delete an organizer
+ */
+async function organizersDeleteHandler(request, context) {
+    const organizerId = request.params.id;
+    const appId = request.query.get('appId') || '1';
+
+    context.log(`Organizers_Delete: Request for organizer ${organizerId}`);
+
+    let mongoClient;
+
+    try {
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('organizers');
+
+        // Find organizer first for logging
+        const organizer = await collection.findOne({
+            _id: new ObjectId(organizerId),
+            appId
+        });
+
+        if (!organizer) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Organizer not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Delete the organizer
+        await collection.deleteOne({
+            _id: new ObjectId(organizerId),
+            appId
+        });
+
+        context.log(`[ORGANIZER DELETE] OrganizerId: ${organizerId}, Name: "${organizer.fullName}"`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: 'Organizer deleted',
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_Delete', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'organizers/{id}',
+    handler: standardMiddleware(organizersDeleteHandler)
+});
+
+/**
+ * PATCH /api/organizers/{id}/connect-user
+ * Connect a Firebase user to an organizer
+ */
+async function organizersConnectUserHandler(request, context) {
+    const organizerId = request.params.id;
+    context.log(`Organizers_ConnectUser: Request for organizer ${organizerId}`);
+
+    let mongoClient;
+
+    try {
+        const body = await request.json();
+        const { firebaseUserId, appId = '1' } = body;
+
+        if (!firebaseUserId) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ValidationError',
+                    message: 'firebaseUserId is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const organizersCollection = db.collection('organizers');
+        const userLoginsCollection = db.collection('userlogins');
+        const rolesCollection = db.collection('roles');
+
+        // Find the organizer
+        const organizer = await organizersCollection.findOne({
+            _id: new ObjectId(organizerId),
+            appId
+        });
+
+        if (!organizer) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Organizer not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Find the user
+        const user = await userLoginsCollection.findOne({ firebaseUserId, appId });
+
+        if (!user) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'User not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Check if Firebase ID is already used by another organizer
+        const existingOrganizer = await organizersCollection.findOne({
+            firebaseUserId,
+            appId,
+            _id: { $ne: new ObjectId(organizerId) }
+        });
+
+        if (existingOrganizer) {
+            return {
+                status: 409,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'ConflictError',
+                    message: 'This Firebase user is already linked to another organizer',
+                    existingOrganizerId: existingOrganizer._id,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Update the organizer
+        await organizersCollection.updateOne(
+            { _id: new ObjectId(organizerId) },
+            {
+                $set: {
+                    firebaseUserId,
+                    linkedUserLogin: user._id,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        // Get the RegionalOrganizer role
+        const organizerRole = await rolesCollection.findOne({ roleName: 'RegionalOrganizer', appId });
+
+        // Update the user's regionalOrganizerInfo and add role
+        const userUpdate = {
+            $set: {
+                'regionalOrganizerInfo.organizerId': new ObjectId(organizerId),
+                'regionalOrganizerInfo.isApproved': true,
+                'regionalOrganizerInfo.isEnabled': true,
+                'regionalOrganizerInfo.isActive': true,
+                'regionalOrganizerInfo.ApprovalDate': new Date(),
+                updatedAt: new Date()
+            }
+        };
+
+        // Add role if it exists and user doesn't have it
+        if (organizerRole) {
+            userUpdate.$addToSet = { roleIds: organizerRole._id };
+        }
+
+        await userLoginsCollection.updateOne(
+            { _id: user._id },
+            userUpdate
+        );
+
+        context.log(`[ORGANIZER CONNECT] OrganizerId: ${organizerId} connected to User: ${user._id}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: 'User connected to organizer successfully',
+                organizer: {
+                    _id: organizerId,
+                    firebaseUserId,
+                    linkedUserLogin: user._id
+                },
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_ConnectUser', {
+    methods: ['PATCH'],
+    authLevel: 'anonymous',
+    route: 'organizers/{id}/connect-user',
+    handler: standardMiddleware(organizersConnectUserHandler)
+});
+
+/**
+ * PATCH /api/organizers/{id}/disconnect-user
+ * Disconnect a Firebase user from an organizer
+ */
+async function organizersDisconnectUserHandler(request, context) {
+    const organizerId = request.params.id;
+    context.log(`Organizers_DisconnectUser: Request for organizer ${organizerId}`);
+
+    let mongoClient;
+
+    try {
+        const body = await request.json().catch(() => ({}));
+        const appId = body.appId || request.query.get('appId') || '1';
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const organizersCollection = db.collection('organizers');
+        const userLoginsCollection = db.collection('userlogins');
+
+        // Find the organizer
+        const organizer = await organizersCollection.findOne({
+            _id: new ObjectId(organizerId),
+            appId
+        });
+
+        if (!organizer) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Organizer not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Check if organizer has a linked user
+        if (!organizer.firebaseUserId || !organizer.linkedUserLogin) {
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    message: 'Organizer does not have a linked user',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const firebaseUserId = organizer.firebaseUserId;
+        const linkedUserLoginId = organizer.linkedUserLogin;
+
+        // Update the organizer - remove user connection
+        await organizersCollection.updateOne(
+            { _id: new ObjectId(organizerId) },
+            {
+                $set: {
+                    firebaseUserId: null,
+                    linkedUserLogin: null,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        // Update the user's regionalOrganizerInfo
+        await userLoginsCollection.updateOne(
+            { firebaseUserId, appId },
+            {
+                $set: {
+                    'regionalOrganizerInfo.organizerId': null,
+                    'regionalOrganizerInfo.isApproved': false,
+                    'regionalOrganizerInfo.isEnabled': false,
+                    'regionalOrganizerInfo.isActive': false,
+                    'regionalOrganizerInfo.ApprovalDate': null,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        context.log(`[ORGANIZER DISCONNECT] OrganizerId: ${organizerId} disconnected from User`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: 'User disconnected from organizer successfully',
+                organizer: {
+                    _id: organizerId,
+                    name: organizer.fullName || organizer.shortName
+                },
+                previousFirebaseUserId: firebaseUserId,
+                previousUserLoginId: linkedUserLoginId,
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_DisconnectUser', {
+    methods: ['PATCH'],
+    authLevel: 'anonymous',
+    route: 'organizers/{id}/disconnect-user',
+    handler: standardMiddleware(organizersDisconnectUserHandler)
+});
