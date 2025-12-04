@@ -39,7 +39,7 @@ async function venuesGetHandler(request, context) {
         context.log(`Fetching venues: appId=${appId}, page=${page}, limit=${limit}`);
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -48,7 +48,7 @@ async function venuesGetHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const venuesCollection = db.collection('Venues');
+        const venuesCollection = db.collection('venues');
 
         // Build query filter
         const query = { appId };
@@ -95,7 +95,7 @@ async function venuesGetHandler(request, context) {
 
         // Populate masteredCityId if requested
         if (populate && venues.length > 0) {
-            const citiesCollection = db.collection('masteredCities');
+            const citiesCollection = db.collection('masteredcities');
             const cityIds = [...new Set(venues
                 .map(v => v.masteredCityId)
                 .filter(id => id))];

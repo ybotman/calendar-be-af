@@ -93,7 +93,7 @@ async function geoEventDensityHandler(request, context) {
 
     try {
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -102,8 +102,8 @@ async function geoEventDensityHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const venuesCollection = db.collection('Venues');
-        const eventsCollection = db.collection('Events');
+        const venuesCollection = db.collection('venues');
+        const eventsCollection = db.collection('events');
 
         // Get today's date for event filtering
         const today = new Date();

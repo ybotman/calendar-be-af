@@ -74,7 +74,7 @@ async function eventsGetHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build MongoDB query filter
         const filter = { appId };
@@ -175,7 +175,7 @@ async function eventsGetByIdHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Find event by ID
         const event = await collection.findOne({ _id: new ObjectId(eventId) });
@@ -275,7 +275,7 @@ async function eventsCreateHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build new event document
         const newEvent = {
@@ -357,7 +357,7 @@ async function eventsUpdateHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build update document
         const updateDoc = {
@@ -449,7 +449,7 @@ async function eventsDeleteHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Delete document
         const result = await collection.deleteOne({ _id: new ObjectId(eventId) });
