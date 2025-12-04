@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.5.1",
+    "version": "1.10.0",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -59,6 +59,14 @@
     {
       "name": "Geolocation",
       "description": "IP geolocation and reverse geocoding services"
+    },
+    {
+      "name": "Organizers",
+      "description": "Event organizer management"
+    },
+    {
+      "name": "Venues",
+      "description": "Venue management"
     }
   ],
   "paths": {
@@ -1553,6 +1561,398 @@
           }
         }
       }
+    },
+    "/api/organizers": {
+      "get": {
+        "summary": "List organizers",
+        "description": "Retrieve a paginated list of event organizers with filtering options",
+        "tags": ["Organizers"],
+        "operationId": "listOrganizers",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": false,
+            "description": "Application ID (default: 1)",
+            "schema": { "type": "string", "default": "1" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Results per page",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "wantRender",
+            "in": "query",
+            "description": "Filter by render status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "select",
+            "in": "query",
+            "description": "Comma-separated fields to return",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organizers retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrganizersResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create organizer",
+        "description": "Create a new event organizer",
+        "tags": ["Organizers"],
+        "operationId": "createOrganizer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OrganizerInput" },
+              "example": {
+                "fullName": "Boston Tango Society",
+                "shortName": "BTS",
+                "appId": "1",
+                "isActive": true,
+                "isEnabled": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organizer created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Organizer" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or duplicate shortName"
+          }
+        }
+      }
+    },
+    "/api/organizers/{id}": {
+      "get": {
+        "summary": "Get organizer by ID",
+        "description": "Retrieve a single organizer by ID",
+        "tags": ["Organizers"],
+        "operationId": "getOrganizer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organizer retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Organizer" }
+              }
+            }
+          },
+          "404": { "description": "Organizer not found" }
+        }
+      },
+      "put": {
+        "summary": "Update organizer",
+        "description": "Update an existing organizer",
+        "tags": ["Organizers"],
+        "operationId": "updateOrganizer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OrganizerInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Organizer updated successfully" },
+          "404": { "description": "Organizer not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete organizer",
+        "description": "Delete an organizer by ID",
+        "tags": ["Organizers"],
+        "operationId": "deleteOrganizer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Organizer deleted successfully" },
+          "404": { "description": "Organizer not found" }
+        }
+      }
+    },
+    "/api/organizers/{id}/connect-user": {
+      "patch": {
+        "summary": "Connect user to organizer",
+        "description": "Link a Firebase user to an organizer, granting RegionalOrganizer role",
+        "tags": ["Organizers"],
+        "operationId": "connectUserToOrganizer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firebaseUserId": { "type": "string", "description": "Firebase user ID to connect" },
+                  "appId": { "type": "string", "default": "1" }
+                },
+                "required": ["firebaseUserId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "User connected successfully" },
+          "404": { "description": "Organizer or user not found" },
+          "409": { "description": "User already connected to another organizer" }
+        }
+      }
+    },
+    "/api/organizers/{id}/disconnect-user": {
+      "patch": {
+        "summary": "Disconnect user from organizer",
+        "description": "Unlink a Firebase user from an organizer",
+        "tags": ["Organizers"],
+        "operationId": "disconnectUserFromOrganizer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "User disconnected successfully" },
+          "404": { "description": "Organizer not found" }
+        }
+      }
+    },
+    "/api/venues": {
+      "get": {
+        "summary": "List venues",
+        "description": "Retrieve a paginated list of venues with filtering options",
+        "tags": ["Venues"],
+        "operationId": "listVenues",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID",
+            "schema": { "type": "string", "default": "1" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Results per page",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Search by name (case-insensitive)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cityId",
+            "in": "query",
+            "description": "Filter by masteredCityId",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "populate",
+            "in": "query",
+            "description": "Populate masteredCityId references",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Venues retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VenuesResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create venue",
+        "description": "Create a new venue. Validates no duplicate within 100 yards.",
+        "tags": ["Venues"],
+        "operationId": "createVenue",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VenueInput" },
+              "example": {
+                "name": "Boston Dance Studio",
+                "latitude": 42.3601,
+                "longitude": -71.0589,
+                "city": "Boston",
+                "state": "MA",
+                "appId": "1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Venue created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Venue" }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "409": { "description": "Duplicate venue within 100 yards" }
+        }
+      }
+    },
+    "/api/venues/{id}": {
+      "get": {
+        "summary": "Get venue by ID",
+        "description": "Retrieve a single venue by ID",
+        "tags": ["Venues"],
+        "operationId": "getVenue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "populate",
+            "in": "query",
+            "description": "Populate masteredCityId reference",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Venue retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Venue" }
+              }
+            }
+          },
+          "404": { "description": "Venue not found" }
+        }
+      },
+      "put": {
+        "summary": "Update venue",
+        "description": "Update an existing venue",
+        "tags": ["Venues"],
+        "operationId": "updateVenue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VenueInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Venue updated successfully" },
+          "404": { "description": "Venue not found" },
+          "409": { "description": "Duplicate venue at new location" }
+        }
+      },
+      "delete": {
+        "summary": "Delete venue",
+        "description": "Delete a venue by ID",
+        "tags": ["Venues"],
+        "operationId": "deleteVenue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Venue deleted successfully" },
+          "404": { "description": "Venue not found" }
+        }
+      }
     }
   },
   "components": {
@@ -2392,6 +2792,147 @@
           }
         },
         "required": ["success", "data", "timestamp"]
+      },
+      "Organizer": {
+        "type": "object",
+        "properties": {
+          "_id": { "type": "string", "description": "Organizer ID" },
+          "appId": { "type": "string", "description": "Application ID" },
+          "fullName": { "type": "string", "description": "Full organizer name" },
+          "shortName": { "type": "string", "description": "Short name (uppercase, unique)" },
+          "description": { "type": "string", "description": "Organizer description" },
+          "publicContactInfo": { "type": "object", "description": "Public contact information" },
+          "organizerRegion": { "type": "string", "description": "Region reference" },
+          "organizerDivision": { "type": "string", "description": "Division reference" },
+          "organizerCity": { "type": "string", "description": "City reference" },
+          "masteredRegionId": { "type": "string", "description": "Mastered region ObjectId" },
+          "masteredDivisionId": { "type": "string", "description": "Mastered division ObjectId" },
+          "masteredCityId": { "type": "string", "description": "Mastered city ObjectId" },
+          "wantRender": { "type": "boolean", "description": "Whether to render on map" },
+          "isActive": { "type": "boolean", "description": "Active status" },
+          "isEnabled": { "type": "boolean", "description": "Enabled status" },
+          "isVisible": { "type": "boolean", "description": "Visibility status" },
+          "organizerTypes": {
+            "type": "object",
+            "properties": {
+              "isEventOrganizer": { "type": "boolean" },
+              "isVenue": { "type": "boolean" },
+              "isTeacher": { "type": "boolean" },
+              "isMaestro": { "type": "boolean" },
+              "isDJ": { "type": "boolean" },
+              "isOrchestra": { "type": "boolean" }
+            }
+          },
+          "firebaseUserId": { "type": "string", "nullable": true, "description": "Linked Firebase user ID" },
+          "linkedUserLogin": { "type": "string", "nullable": true, "description": "Linked userLogin ObjectId" },
+          "images": { "type": "array", "items": { "type": "object" } },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OrganizerInput": {
+        "type": "object",
+        "properties": {
+          "fullName": { "type": "string", "description": "Full organizer name (required)" },
+          "shortName": { "type": "string", "description": "Short name (required, will be uppercased)" },
+          "appId": { "type": "string", "default": "1" },
+          "description": { "type": "string" },
+          "publicContactInfo": { "type": "object" },
+          "masteredRegionId": { "type": "string" },
+          "masteredDivisionId": { "type": "string" },
+          "masteredCityId": { "type": "string" },
+          "wantRender": { "type": "boolean", "default": false },
+          "isActive": { "type": "boolean", "default": false },
+          "isEnabled": { "type": "boolean", "default": false },
+          "isVisible": { "type": "boolean", "default": true },
+          "organizerTypes": { "type": "object" }
+        },
+        "required": ["fullName", "shortName"]
+      },
+      "OrganizersResponse": {
+        "type": "object",
+        "properties": {
+          "organizers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Organizer" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Venue": {
+        "type": "object",
+        "properties": {
+          "_id": { "type": "string", "description": "Venue ID" },
+          "appId": { "type": "string", "description": "Application ID" },
+          "name": { "type": "string", "description": "Venue name" },
+          "shortName": { "type": "string", "description": "Short name" },
+          "address1": { "type": "string" },
+          "address2": { "type": "string" },
+          "address3": { "type": "string" },
+          "city": { "type": "string" },
+          "state": { "type": "string" },
+          "zip": { "type": "string" },
+          "phone": { "type": "string" },
+          "comments": { "type": "string" },
+          "latitude": { "type": "number", "description": "Latitude coordinate" },
+          "longitude": { "type": "number", "description": "Longitude coordinate" },
+          "geolocation": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["Point"] },
+              "coordinates": { "type": "array", "items": { "type": "number" } }
+            }
+          },
+          "masteredCityId": { "type": "string" },
+          "masteredDivisionId": { "type": "string" },
+          "masteredRegionId": { "type": "string" },
+          "masteredCountryId": { "type": "string" },
+          "timezone": { "type": "string", "description": "Timezone ID" },
+          "country": { "type": "string", "description": "Country code" },
+          "isActive": { "type": "boolean", "description": "Active status" },
+          "isApproved": { "type": "boolean", "description": "Approval status" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "VenueInput": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Venue name (required)" },
+          "latitude": { "type": "number", "description": "Latitude (required)" },
+          "longitude": { "type": "number", "description": "Longitude (required)" },
+          "appId": { "type": "string", "default": "1" },
+          "shortName": { "type": "string" },
+          "address1": { "type": "string" },
+          "address2": { "type": "string" },
+          "address3": { "type": "string" },
+          "city": { "type": "string" },
+          "state": { "type": "string" },
+          "zip": { "type": "string" },
+          "phone": { "type": "string" },
+          "comments": { "type": "string" },
+          "masteredCityId": { "type": "string" },
+          "masteredDivisionId": { "type": "string" },
+          "masteredRegionId": { "type": "string" },
+          "masteredCountryId": { "type": "string" },
+          "timezone": { "type": "string", "default": "America/New_York" },
+          "country": { "type": "string", "default": "US" },
+          "isActive": { "type": "boolean", "default": true },
+          "isApproved": { "type": "boolean", "default": false }
+        },
+        "required": ["name", "latitude", "longitude"]
+      },
+      "VenuesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Venue" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
       }
     },
     "EventDensityResponse": {
