@@ -29,6 +29,12 @@ require('./functions/User_OnboardingStatus');
 // Venue API
 require('./functions/Venues');
 
+// Organizers API
+require('./functions/Organizers');
+
+// Roles API
+require('./functions/Roles');
+
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
 require('./functions/Geo_GoogleGeolocate');
