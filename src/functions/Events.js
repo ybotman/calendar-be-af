@@ -65,7 +65,7 @@ async function eventsGetHandler(request, context) {
         context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -166,7 +166,7 @@ async function eventsGetByIdHandler(request, context) {
 
     try {
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -266,7 +266,7 @@ async function eventsCreateHandler(request, context) {
         }
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -297,6 +297,35 @@ async function eventsCreateHandler(request, context) {
         const result = await collection.insertOne(newEvent);
 
         context.log(`Event created: ${result.insertedId}`);
+
+        // CALBEAF-57: Reactivate venue if it's currently inactive
+        // When an event is created with an inactive venue, set venue.isActive=true
+        if (newEvent.venueId) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venueObjectId = typeof newEvent.venueId === 'string'
+                    ? new ObjectId(newEvent.venueId)
+                    : newEvent.venueId;
+
+                const venueUpdateResult = await venuesCollection.updateOne(
+                    { _id: venueObjectId, isActive: false },
+                    {
+                        $set: {
+                            isActive: true,
+                            reactivatedAt: new Date(),
+                            reactivatedByEventId: result.insertedId
+                        }
+                    }
+                );
+
+                if (venueUpdateResult.modifiedCount > 0) {
+                    context.log(`CALBEAF-57: Venue ${newEvent.venueId} reactivated due to event creation ${result.insertedId}`);
+                }
+            } catch (venueError) {
+                // Log but don't fail event creation if venue update fails
+                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${newEvent.venueId}: ${venueError.message}`);
+            }
+        }
 
         return {
             status: 201,
@@ -348,7 +377,7 @@ async function eventsUpdateHandler(request, context) {
         const requestBody = await request.json();
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -440,7 +469,7 @@ async function eventsDeleteHandler(request, context) {
 
     try {
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
