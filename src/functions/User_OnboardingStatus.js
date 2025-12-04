@@ -62,7 +62,7 @@ async function onboardingStatusHandler(request, context) {
         context.log(`Checking onboarding status for user: ${firebaseUid}`);
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -71,7 +71,7 @@ async function onboardingStatusHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const usersCollection = db.collection('Users');
+        const usersCollection = db.collection('userlogins');
         const cloudDefaultCollection = db.collection('CloudDefault');
 
         // Find user profile
