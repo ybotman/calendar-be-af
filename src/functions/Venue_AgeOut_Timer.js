@@ -97,8 +97,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                     startDate: { $gte: oneYearAgoISO }
                 });
 
-                // Debug: log first few venues checked
-                if (inactiveVenues.indexOf(venue) < 5) {
+                // Debug: log first 3 venues AND any venue with events
+                if (inactiveVenues.indexOf(venue) < 3 || allVenueEvents > 0) {
                     context.log(`Venue_AgeOut_Timer_App1: Venue ${venueIdStr} (${venue.name || 'unnamed'}) - total events: ${allVenueEvents}, recent: ${recentEventCount}`);
                 }
 
