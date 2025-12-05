@@ -48,8 +48,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const venuesCollection = db.collection('Venues');
-        const eventsCollection = db.collection('Events');
+        const venuesCollection = db.collection('venues');
+        const eventsCollection = db.collection('events');
 
         // ============================================
         // OPERATION 1: Reactivate venues with recent activity
@@ -67,8 +67,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of inactiveVenues) {
                 // Check if venue has any events in the past year
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: oneYearAgo }
+                    venueID: venue._id.toString(),
+                    startDate: { $gte: oneYearAgo }
                 });
 
                 if (recentEventCount > 0) {
@@ -108,8 +108,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of potentialArchiveVenues) {
                 // Check if venue has any events in the past 2 years
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: twoYearsAgo }
+                    venueID: venue._id.toString(),
+                    startDate: { $gte: twoYearsAgo }
                 });
 
                 if (recentEventCount === 0) {
@@ -149,8 +149,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of activeVenues) {
                 // Check if venue has any events in the past year
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: oneYearAgo }
+                    venueID: venue._id.toString(),
+                    startDate: { $gte: oneYearAgo }
                 });
 
                 if (recentEventCount === 0) {
