@@ -32,7 +32,11 @@ async function venueAgeOutTimerHandler(myTimer, context) {
     const twoYearsAgo = new Date(now);
     twoYearsAgo.setDate(twoYearsAgo.getDate() - 730);
 
-    context.log(`Venue_AgeOut_Timer: Cutoff dates - 1 year: ${oneYearAgo.toISOString()}, 2 years: ${twoYearsAgo.toISOString()}`);
+    // Convert to ISO strings for comparison (handles both Date and string fields in MongoDB)
+    const oneYearAgoISO = oneYearAgo.toISOString();
+    const twoYearsAgoISO = twoYearsAgo.toISOString();
+
+    context.log(`Venue_AgeOut_Timer: Cutoff dates - 1 year: ${oneYearAgoISO}, 2 years: ${twoYearsAgoISO}`);
 
     let mongoClient;
     const results = {
@@ -77,9 +81,10 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
                 // Check if venue has any events in the past year
+                // Use ISO string comparison to handle string dates in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
                     venueID: venueIdStr,
-                    startDate: { $gte: oneYearAgo }
+                    startDate: { $gte: oneYearAgoISO }
                 });
 
                 // Debug: log first few venues checked
@@ -127,7 +132,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 // Check if venue has any events in the past 2 years
                 const recentEventCount = await eventsCollection.countDocuments({
                     venueID: venue._id.toString(),
-                    startDate: { $gte: twoYearsAgo }
+                    startDate: { $gte: twoYearsAgoISO }
                 });
 
                 if (recentEventCount === 0) {
@@ -169,7 +174,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 // Check if venue has any events in the past year
                 const recentEventCount = await eventsCollection.countDocuments({
                     venueID: venue._id.toString(),
-                    startDate: { $gte: oneYearAgo }
+                    startDate: { $gte: oneYearAgoISO }
                 });
 
                 if (recentEventCount === 0) {
