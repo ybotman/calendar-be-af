@@ -70,12 +70,20 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 isArchived: { $ne: true } // Don't reactivate archived venues
             }).toArray();
 
+            context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive venues to check`);
+
             for (const venue of inactiveVenues) {
+                const venueIdStr = venue._id.toString();
                 // Check if venue has any events in the past year
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venue._id.toString(),
+                    venueID: venueIdStr,
                     startDate: { $gte: oneYearAgo }
                 });
+
+                // Debug: log first few venues checked
+                if (inactiveVenues.indexOf(venue) < 3) {
+                    context.log(`Venue_AgeOut_Timer_App1: Venue ${venueIdStr} (${venue.name || 'unnamed'}) has ${recentEventCount} recent events`);
+                }
 
                 if (recentEventCount > 0) {
                     await venuesCollection.updateOne(
