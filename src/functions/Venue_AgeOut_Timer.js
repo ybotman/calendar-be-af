@@ -63,14 +63,16 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         try {
             context.log('Venue_AgeOut_Timer: Starting reactivation check...');
 
-            // Find all inactive venues for this app
+            // Find all inactive OR archived venues for this app (check all non-active)
             const inactiveVenues = await venuesCollection.find({
                 appId: APP_ID,
-                isActive: false,
-                isArchived: { $ne: true } // Don't reactivate archived venues
+                $or: [
+                    { isActive: false },
+                    { isArchived: true }
+                ]
             }).toArray();
 
-            context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive venues to check`);
+            context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive/archived venues to check`);
 
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
@@ -91,6 +93,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                         {
                             $set: {
                                 isActive: true,
+                                isArchived: false,
                                 reactivatedAt: now,
                                 reactivatedByTimer: true,
                                 reactivationReason: `Found ${recentEventCount} events in past year`
