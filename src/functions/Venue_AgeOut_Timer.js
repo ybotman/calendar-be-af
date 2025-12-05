@@ -78,8 +78,18 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive/archived venues to check`);
 
+            // Debug: log total events in collection
+            const totalEvents = await eventsCollection.countDocuments({});
+            context.log(`Venue_AgeOut_Timer_App1: Total events in collection: ${totalEvents}`);
+
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
+
+                // Debug: check events for this venue WITHOUT date filter first
+                const allVenueEvents = await eventsCollection.countDocuments({
+                    venueID: venueIdStr
+                });
+
                 // Check if venue has any events in the past year
                 // Use ISO string comparison to handle string dates in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
@@ -88,8 +98,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 });
 
                 // Debug: log first few venues checked
-                if (inactiveVenues.indexOf(venue) < 3) {
-                    context.log(`Venue_AgeOut_Timer_App1: Venue ${venueIdStr} (${venue.name || 'unnamed'}) has ${recentEventCount} recent events`);
+                if (inactiveVenues.indexOf(venue) < 5) {
+                    context.log(`Venue_AgeOut_Timer_App1: Venue ${venueIdStr} (${venue.name || 'unnamed'}) - total events: ${allVenueEvents}, recent: ${recentEventCount}`);
                 }
 
                 if (recentEventCount > 0) {
