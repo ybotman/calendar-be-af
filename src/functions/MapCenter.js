@@ -48,7 +48,7 @@ async function mapCenterHandler(request, context) {
         const firebaseUid = user.uid;
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -57,7 +57,7 @@ async function mapCenterHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const usersCollection = db.collection('Users');
+        const usersCollection = db.collection('userlogins');
 
         // Handle GET request
         if (request.method === 'GET') {

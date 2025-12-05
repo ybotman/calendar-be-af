@@ -56,7 +56,7 @@ async function categoriesGetHandler(request, context) {
       context.log(`Fetching categories for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
       // Connect to MongoDB
-      const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+      const mongoUri = process.env.MONGODB_URI;
       if (!mongoUri) {
         throw new Error('MongoDB connection string not configured');
       }
@@ -65,7 +65,7 @@ async function categoriesGetHandler(request, context) {
       await mongoClient.connect();
 
       const db = mongoClient.db();
-      const collection = db.collection('Categories');
+      const collection = db.collection('categories');
 
       // Build projection from select parameter
       const projection = {};

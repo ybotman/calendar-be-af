@@ -65,7 +65,7 @@ async function eventsGetHandler(request, context) {
         context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -74,7 +74,7 @@ async function eventsGetHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build MongoDB query filter
         const filter = { appId };
@@ -166,7 +166,7 @@ async function eventsGetByIdHandler(request, context) {
 
     try {
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -175,7 +175,7 @@ async function eventsGetByIdHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Find event by ID
         const event = await collection.findOne({ _id: new ObjectId(eventId) });
@@ -266,7 +266,7 @@ async function eventsCreateHandler(request, context) {
         }
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -275,7 +275,7 @@ async function eventsCreateHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build new event document
         const newEvent = {
@@ -297,6 +297,35 @@ async function eventsCreateHandler(request, context) {
         const result = await collection.insertOne(newEvent);
 
         context.log(`Event created: ${result.insertedId}`);
+
+        // CALBEAF-57: Reactivate venue if it's currently inactive
+        // When an event is created with an inactive venue, set venue.isActive=true
+        if (newEvent.venueId) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venueObjectId = typeof newEvent.venueId === 'string'
+                    ? new ObjectId(newEvent.venueId)
+                    : newEvent.venueId;
+
+                const venueUpdateResult = await venuesCollection.updateOne(
+                    { _id: venueObjectId, isActive: false },
+                    {
+                        $set: {
+                            isActive: true,
+                            reactivatedAt: new Date(),
+                            reactivatedByEventId: result.insertedId
+                        }
+                    }
+                );
+
+                if (venueUpdateResult.modifiedCount > 0) {
+                    context.log(`CALBEAF-57: Venue ${newEvent.venueId} reactivated due to event creation ${result.insertedId}`);
+                }
+            } catch (venueError) {
+                // Log but don't fail event creation if venue update fails
+                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${newEvent.venueId}: ${venueError.message}`);
+            }
+        }
 
         return {
             status: 201,
@@ -348,7 +377,7 @@ async function eventsUpdateHandler(request, context) {
         const requestBody = await request.json();
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -357,7 +386,7 @@ async function eventsUpdateHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Build update document
         const updateDoc = {
@@ -440,7 +469,7 @@ async function eventsDeleteHandler(request, context) {
 
     try {
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -449,7 +478,7 @@ async function eventsDeleteHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const collection = db.collection('Events');
+        const collection = db.collection('events');
 
         // Delete document
         const result = await collection.deleteOne({ _id: new ObjectId(eventId) });

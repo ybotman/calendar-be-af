@@ -200,7 +200,7 @@ async function loginTrackHandler(request, context) {
         const hourOfDayLocal = localTime?.hourOfDay || null;
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -211,7 +211,7 @@ async function loginTrackHandler(request, context) {
         const db = mongoClient.db();
         const loginHistoryCollection = db.collection('UserLoginHistory');
         const loginAnalyticsCollection = db.collection('UserLoginAnalytics');
-        const usersCollection = db.collection('Users');
+        const usersCollection = db.collection('userlogins');
 
         // TIEMPO-329: Detect first-time login for entry state detection
         const priorLoginCount = await loginHistoryCollection.countDocuments({ firebaseUserId: firebaseUid });

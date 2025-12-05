@@ -104,7 +104,7 @@ async function fcmTokenHandler(request, context) {
         }
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
@@ -113,7 +113,7 @@ async function fcmTokenHandler(request, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const usersCollection = db.collection('Users');
+        const usersCollection = db.collection('userlogins');
 
         // Find user by firebaseUid
         const existingUser = await usersCollection.findOne({ firebaseUid: firebaseUid });
