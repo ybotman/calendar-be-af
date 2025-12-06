@@ -86,14 +86,15 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 const venueIdStr = venue._id.toString();
 
                 // Debug: check events for this venue WITHOUT date filter first
+                // Note: Events collection uses 'venueId' (lowercase d), not 'venueID'
                 const allVenueEvents = await eventsCollection.countDocuments({
-                    venueID: venueIdStr
+                    venueId: venueIdStr
                 });
 
                 // Check if venue has any events in the past year
                 // Use ISO string comparison to handle string dates in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venueIdStr,
+                    venueId: venueIdStr,
                     startDate: { $gte: oneYearAgoISO }
                 });
 
@@ -141,7 +142,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of potentialArchiveVenues) {
                 // Check if venue has any events in the past 2 years
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venue._id.toString(),
+                    venueId: venue._id.toString(),
                     startDate: { $gte: twoYearsAgoISO }
                 });
 
@@ -183,7 +184,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             for (const venue of activeVenues) {
                 // Check if venue has any events in the past year
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venue._id.toString(),
+                    venueId: venue._id.toString(),
                     startDate: { $gte: oneYearAgoISO }
                 });
 
