@@ -82,6 +82,12 @@ async function venueAgeOutTimerHandler(myTimer, context) {
             const totalEvents = await eventsCollection.countDocuments({});
             context.log(`Venue_AgeOut_Timer_App1: Total events in collection: ${totalEvents}`);
 
+            // Debug: check a known venue with events (Ultimate Tango Studio)
+            const testVenueId = '68190f7b05c983fb8798381b';
+            const testCount1 = await eventsCollection.countDocuments({ venueID: testVenueId });
+            const testCount2 = await eventsCollection.countDocuments({ venueId: testVenueId });
+            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Events for Ultimate Tango: venueID=${testCount1}, venueId=${testCount2}`);
+
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
 
