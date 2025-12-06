@@ -1,11 +1,16 @@
 // src/functions/Venue_AgeOut_Timer.js
-// Domain: Venues - Weekly timer for venue activity management
+// Domain: Venues - Weekly timer for venue activity management (App ID 1 only)
 // CALBEAF-58: Age out inactive venues, mark old venues invalid, reactivate venues with recent activity
+// NOTE: This timer is specific to appId="1". Multi-app support requires separate ticket.
 const { app } = require('@azure/functions');
 const { MongoClient } = require('mongodb');
 
+// App-specific configuration - currently hardcoded to app 1
+// TODO: Multi-app support - different apps may have different aging requirements
+const APP_ID = "1";
+
 /**
- * Weekly Timer: Venue Age-Out and Activity Management
+ * Weekly Timer: Venue Age-Out and Activity Management (App ID 1)
  *
  * Runs every Sunday at 3:00 AM UTC (weekly)
  * CRON: 0 0 3 * * 0
@@ -17,7 +22,7 @@ const { MongoClient } = require('mongodb');
  */
 async function venueAgeOutTimerHandler(myTimer, context) {
     const startTime = Date.now();
-    context.log('Venue_AgeOut_Timer: Starting weekly venue activity management');
+    context.log(`Venue_AgeOut_Timer_App1: Starting weekly venue activity management for appId=${APP_ID}`);
 
     // Calculate cutoff dates
     const now = new Date();
@@ -48,8 +53,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         await mongoClient.connect();
 
         const db = mongoClient.db();
-        const venuesCollection = db.collection('Venues');
-        const eventsCollection = db.collection('Events');
+        const venuesCollection = db.collection('venues');
+        const eventsCollection = db.collection('events');
 
         // ============================================
         // OPERATION 1: Reactivate venues with recent activity
@@ -58,17 +63,23 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         try {
             context.log('Venue_AgeOut_Timer: Starting reactivation check...');
 
-            // Find all inactive venues
+            // Find all inactive OR archived venues for this app (check all non-active)
             const inactiveVenues = await venuesCollection.find({
-                isActive: false,
-                isArchived: { $ne: true } // Don't reactivate archived venues
+                appId: APP_ID,
+                $or: [
+                    { isActive: false },
+                    { isArchived: true }
+                ]
             }).toArray();
+
+            context.log(`Venue_AgeOut_Timer: Found ${inactiveVenues.length} inactive/archived venues to check`);
 
             for (const venue of inactiveVenues) {
                 // Check if venue has any events in the past year
+                // Note: venueID stored as ObjectId, startDate stored as Date in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: oneYearAgo }
+                    venueID: venue._id,
+                    startDate: { $gte: oneYearAgo }
                 });
 
                 if (recentEventCount > 0) {
@@ -77,6 +88,7 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                         {
                             $set: {
                                 isActive: true,
+                                isArchived: false,
                                 reactivatedAt: now,
                                 reactivatedByTimer: true,
                                 reactivationReason: `Found ${recentEventCount} events in past year`
@@ -100,16 +112,18 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         try {
             context.log('Venue_AgeOut_Timer: Starting archive check (>2 years)...');
 
-            // Find active or inactive venues that aren't already archived
+            // Find active or inactive venues that aren't already archived (for this app)
             const potentialArchiveVenues = await venuesCollection.find({
+                appId: APP_ID,
                 isArchived: { $ne: true }
             }).toArray();
 
             for (const venue of potentialArchiveVenues) {
                 // Check if venue has any events in the past 2 years
+                // Note: venueID is stored as ObjectId in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: twoYearsAgo }
+                    venueID: venue._id,
+                    startDate: { $gte: twoYearsAgo }
                 });
 
                 if (recentEventCount === 0) {
@@ -140,17 +154,19 @@ async function venueAgeOutTimerHandler(myTimer, context) {
         try {
             context.log('Venue_AgeOut_Timer: Starting inactive check (>1 year)...');
 
-            // Find currently active venues (not archived)
+            // Find currently active venues (not archived) for this app
             const activeVenues = await venuesCollection.find({
+                appId: APP_ID,
                 isActive: true,
                 isArchived: { $ne: true }
             }).toArray();
 
             for (const venue of activeVenues) {
                 // Check if venue has any events in the past year
+                // Note: venueID is stored as ObjectId in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueId: venue._id.toString(),
-                    startTime: { $gte: oneYearAgo }
+                    venueID: venue._id,
+                    startDate: { $gte: oneYearAgo }
                 });
 
                 if (recentEventCount === 0) {
@@ -195,7 +211,8 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 }
 
 // Register timer function - runs weekly on Sunday at 3:00 AM UTC
-app.timer('Venue_AgeOut_Timer', {
+// Named App1 to indicate this is specific to appId="1"
+app.timer('Venue_AgeOut_Timer_App1', {
     schedule: '0 0 3 * * 0', // CRON: second minute hour day month weekday
     handler: venueAgeOutTimerHandler
 });

@@ -28,6 +28,7 @@ require('./functions/User_OnboardingStatus');
 
 // Venue API
 require('./functions/Venues');
+require('./functions/Venue_AgeOut_Timer');
 
 // Organizers API
 require('./functions/Organizers');

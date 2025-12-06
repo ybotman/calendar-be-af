@@ -121,7 +121,7 @@ async function visitorTrackHandler(request, context) {
         context.log(`Visitor IP: ${userIp}, Page: ${page}`);
 
         // Connect to MongoDB
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI_PROD;
+        const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
         }
