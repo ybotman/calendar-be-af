@@ -102,17 +102,18 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
+                const venueObjectId = venue._id; // Already an ObjectId from MongoDB
 
                 // Debug: check events for this venue WITHOUT date filter first
-                // Note: Imported events use 'venueID' (uppercase D)
+                // Note: venueID is stored as ObjectId in MongoDB, not string
                 const allVenueEvents = await eventsCollection.countDocuments({
-                    venueID: venueIdStr
+                    venueID: venueObjectId
                 });
 
                 // Check if venue has any events in the past year
                 // Use ISO string comparison to handle string dates in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venueIdStr,
+                    venueID: venueObjectId,
                     startDate: { $gte: oneYearAgoISO }
                 });
 
@@ -159,8 +160,9 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             for (const venue of potentialArchiveVenues) {
                 // Check if venue has any events in the past 2 years
+                // Note: venueID is stored as ObjectId in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venue._id.toString(),
+                    venueID: venue._id,
                     startDate: { $gte: twoYearsAgoISO }
                 });
 
@@ -201,8 +203,9 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             for (const venue of activeVenues) {
                 // Check if venue has any events in the past year
+                // Note: venueID is stored as ObjectId in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venue._id.toString(),
+                    venueID: venue._id,
                     startDate: { $gte: oneYearAgoISO }
                 });
 
