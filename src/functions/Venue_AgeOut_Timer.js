@@ -78,15 +78,25 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive/archived venues to check`);
 
+            // Debug: list all collections in database
+            const collections = await db.listCollections().toArray();
+            const collNames = collections.map(c => c.name).join(', ');
+            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Collections in DB: ${collNames}`);
+
             // Debug: log total events in collection
             const totalEvents = await eventsCollection.countDocuments({});
-            context.log(`Venue_AgeOut_Timer_App1: Total events in collection: ${totalEvents}`);
+            context.log(`Venue_AgeOut_Timer_App1: Total events in 'events' collection: ${totalEvents}`);
+
+            // Also check 'Events' collection (capital E)
+            const eventsCapital = db.collection('Events');
+            const totalEventsCapital = await eventsCapital.countDocuments({});
+            context.log(`Venue_AgeOut_Timer_App1: Total events in 'Events' collection: ${totalEventsCapital}`);
 
             // Debug: check a known venue with events (Ultimate Tango Studio)
             const testVenueId = '68190f7b05c983fb8798381b';
             const testCount1 = await eventsCollection.countDocuments({ venueID: testVenueId });
-            const testCount2 = await eventsCollection.countDocuments({ venueId: testVenueId });
-            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Events for Ultimate Tango: venueID=${testCount1}, venueId=${testCount2}`);
+            const testCount2 = await eventsCapital.countDocuments({ venueID: testVenueId });
+            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Ultimate Tango: 'events'=${testCount1}, 'Events'=${testCount2}`);
 
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
