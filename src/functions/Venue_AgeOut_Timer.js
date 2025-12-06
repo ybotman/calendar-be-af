@@ -3,7 +3,7 @@
 // CALBEAF-58: Age out inactive venues, mark old venues invalid, reactivate venues with recent activity
 // NOTE: This timer is specific to appId="1". Multi-app support requires separate ticket.
 const { app } = require('@azure/functions');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 
 // App-specific configuration - currently hardcoded to app 1
 // TODO: Multi-app support - different apps may have different aging requirements
@@ -94,9 +94,11 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
             // Debug: check a known venue with events (Ultimate Tango Studio)
             const testVenueId = '68190f7b05c983fb8798381b';
+            const testVenueObjectId = new ObjectId(testVenueId);
             const testCount1 = await eventsCollection.countDocuments({ venueID: testVenueId });
-            const testCount2 = await eventsCapital.countDocuments({ venueID: testVenueId });
-            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Ultimate Tango: 'events'=${testCount1}, 'Events'=${testCount2}`);
+            const testCount2 = await eventsCollection.countDocuments({ venueID: testVenueObjectId });
+            const testCount3 = await eventsCollection.countDocuments({ 'venueID._id': testVenueObjectId });
+            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Ultimate Tango: string=${testCount1}, ObjectId=${testCount2}, nested._id=${testCount3}`);
 
             for (const venue of inactiveVenues) {
                 const venueIdStr = venue._id.toString();
