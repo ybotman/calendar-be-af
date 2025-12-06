@@ -3,7 +3,7 @@
 // CALBEAF-58: Age out inactive venues, mark old venues invalid, reactivate venues with recent activity
 // NOTE: This timer is specific to appId="1". Multi-app support requires separate ticket.
 const { app } = require('@azure/functions');
-const { MongoClient, ObjectId } = require('mongodb');
+const { MongoClient } = require('mongodb');
 
 // App-specific configuration - currently hardcoded to app 1
 // TODO: Multi-app support - different apps may have different aging requirements
@@ -31,9 +31,6 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
     const twoYearsAgo = new Date(now);
     twoYearsAgo.setDate(twoYearsAgo.getDate() - 730);
-
-    // Keep as Date objects for MongoDB comparison (startDate stored as Date in MongoDB)
-    // MongoDB can compare Date objects directly
 
     context.log(`Venue_AgeOut_Timer: Cutoff dates - 1 year: ${oneYearAgo.toISOString()}, 2 years: ${twoYearsAgo.toISOString()}`);
 
@@ -75,51 +72,15 @@ async function venueAgeOutTimerHandler(myTimer, context) {
                 ]
             }).toArray();
 
-            context.log(`Venue_AgeOut_Timer_App1: Found ${inactiveVenues.length} inactive/archived venues to check`);
-
-            // Debug: list all collections in database
-            const collections = await db.listCollections().toArray();
-            const collNames = collections.map(c => c.name).join(', ');
-            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Collections in DB: ${collNames}`);
-
-            // Debug: log total events in collection
-            const totalEvents = await eventsCollection.countDocuments({});
-            context.log(`Venue_AgeOut_Timer_App1: Total events in 'events' collection: ${totalEvents}`);
-
-            // Also check 'Events' collection (capital E)
-            const eventsCapital = db.collection('Events');
-            const totalEventsCapital = await eventsCapital.countDocuments({});
-            context.log(`Venue_AgeOut_Timer_App1: Total events in 'Events' collection: ${totalEventsCapital}`);
-
-            // Debug: check a known venue with events (Ultimate Tango Studio)
-            const testVenueId = '68190f7b05c983fb8798381b';
-            const testVenueObjectId = new ObjectId(testVenueId);
-            const testCount1 = await eventsCollection.countDocuments({ venueID: testVenueId });
-            const testCount2 = await eventsCollection.countDocuments({ venueID: testVenueObjectId });
-            const testCount3 = await eventsCollection.countDocuments({ 'venueID._id': testVenueObjectId });
-            context.log(`Venue_AgeOut_Timer_App1: DEBUG - Ultimate Tango: string=${testCount1}, ObjectId=${testCount2}, nested._id=${testCount3}`);
+            context.log(`Venue_AgeOut_Timer: Found ${inactiveVenues.length} inactive/archived venues to check`);
 
             for (const venue of inactiveVenues) {
-                const venueIdStr = venue._id.toString();
-                const venueObjectId = venue._id; // Already an ObjectId from MongoDB
-
-                // Debug: check events for this venue WITHOUT date filter first
-                // Note: venueID is stored as ObjectId in MongoDB, not string
-                const allVenueEvents = await eventsCollection.countDocuments({
-                    venueID: venueObjectId
-                });
-
                 // Check if venue has any events in the past year
-                // Use ISO string comparison to handle string dates in MongoDB
+                // Note: venueID stored as ObjectId, startDate stored as Date in MongoDB
                 const recentEventCount = await eventsCollection.countDocuments({
-                    venueID: venueObjectId,
+                    venueID: venue._id,
                     startDate: { $gte: oneYearAgo }
                 });
-
-                // Debug: log first 3 venues AND any venue with events
-                if (inactiveVenues.indexOf(venue) < 3 || allVenueEvents > 0) {
-                    context.log(`Venue_AgeOut_Timer_App1: Venue ${venueIdStr} (${venue.name || 'unnamed'}) - total events: ${allVenueEvents}, recent: ${recentEventCount}`);
-                }
 
                 if (recentEventCount > 0) {
                     await venuesCollection.updateOne(
