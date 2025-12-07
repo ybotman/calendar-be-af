@@ -120,6 +120,16 @@ async function eventsGetHandler(request, context) {
         // Express logic: Regular events within date range OR any recurring events
         const baseFilter = { appId };
 
+        // CALBEAF-65: Express ALWAYS applies isActive=true by default
+        // This is the likely cause of the 12-event difference (384 vs 396)
+        const activeParam = request.query.get('active');
+        if (activeParam === 'false') {
+            baseFilter.isActive = false;
+        } else {
+            // Default: only show active events (Express parity)
+            baseFilter.isActive = true;
+        }
+
         // Add category filter if provided
         if (categoryId) {
             baseFilter.categoryId = categoryId;
