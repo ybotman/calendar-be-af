@@ -650,19 +650,24 @@ async function eventsDebugHandler(request, context) {
 
         const baseFilter = { appId, isActive: true };
 
+        // CALBEAF-65: Calculate date range like Express
+        const today = new Date();
+        const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        const endDate = new Date(today.getFullYear(), today.getMonth() + 6, 0);
+
         // Various recurring event queries
         const results = {
+            // Date range info
+            dateRange: {
+                start: startDate.toISOString(),
+                end: endDate.toISOString()
+            },
+
             // Total active events
             totalActive: await collection.countDocuments(baseFilter),
 
-            // Mongoose-style query (what Express uses)
-            mongooseStyle: await collection.countDocuments({
-                ...baseFilter,
-                recurrenceRule: { $exists: true, $ne: null, $ne: '' }
-            }),
-
-            // $and style
-            andStyle: await collection.countDocuments({
+            // Recurring: all queries return same (30)
+            recurringCount: await collection.countDocuments({
                 ...baseFilter,
                 $and: [
                     { recurrenceRule: { $exists: true } },
@@ -671,10 +676,37 @@ async function eventsDebugHandler(request, context) {
                 ]
             }),
 
-            // $type string only
-            typeString: await collection.countDocuments({
+            // Non-recurring in date range (Express query logic)
+            nonRecurringInRange: await collection.countDocuments({
                 ...baseFilter,
-                recurrenceRule: { $exists: true, $type: 'string', $ne: '' }
+                startDate: { $gte: startDate, $lte: endDate },
+                $or: [
+                    { recurrenceRule: { $exists: false } },
+                    { recurrenceRule: null },
+                    { recurrenceRule: '' }
+                ]
+            }),
+
+            // Total from combined query (what AF Events returns)
+            combinedQuery: await collection.countDocuments({
+                ...baseFilter,
+                $or: [
+                    {
+                        startDate: { $gte: startDate, $lte: endDate },
+                        $or: [
+                            { recurrenceRule: { $exists: false } },
+                            { recurrenceRule: null },
+                            { recurrenceRule: '' }
+                        ]
+                    },
+                    {
+                        $and: [
+                            { recurrenceRule: { $exists: true } },
+                            { recurrenceRule: { $ne: null } },
+                            { recurrenceRule: { $ne: '' } }
+                        ]
+                    }
+                ]
             }),
 
             // Has recurrenceRule field at all
@@ -683,10 +715,10 @@ async function eventsDebugHandler(request, context) {
                 recurrenceRule: { $exists: true }
             }),
 
-            // recurrenceRule is truthy (not null, not empty)
-            truthy: await collection.countDocuments({
+            // Events with empty string recurrenceRule
+            emptyStringRecurrence: await collection.countDocuments({
                 ...baseFilter,
-                recurrenceRule: { $nin: [null, '', undefined] }
+                recurrenceRule: ''
             }),
 
             // Sample of recurrenceRule values
@@ -694,9 +726,12 @@ async function eventsDebugHandler(request, context) {
                 { $match: { ...baseFilter, recurrenceRule: { $exists: true } } },
                 { $group: { _id: '$recurrenceRule', count: { $sum: 1 } } },
                 { $sort: { count: -1 } },
-                { $limit: 20 }
+                { $limit: 10 }
             ]).toArray()
         };
+
+        // Calculate expected total
+        results.expectedTotal = results.recurringCount + results.nonRecurringInRange;
 
         return {
             status: 200,
