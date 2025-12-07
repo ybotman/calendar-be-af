@@ -70,7 +70,7 @@ async function eventsGetHandler(request, context) {
         const limitNum = Math.min(500, Math.max(1, parseInt(limit) || 100));
         const skip = (pageNum - 1) * limitNum;
 
-        // CALBEAF-65: Calculate date range with Express parity defaults
+        // CALBEAF-65 v1.13.8: Calculate date range with UTC dates to match stored data
         const today = new Date();
         let startDate, endDate;
 
@@ -84,8 +84,9 @@ async function eventsGetHandler(request, context) {
                 };
             }
         } else {
-            // Default: First day of current month
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            // Default: First day of current month at midnight UTC
+            // Use UTC methods to ensure consistent behavior across timezones
+            startDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1, 0, 0, 0, 0));
         }
 
         if (endParam) {
@@ -98,9 +99,12 @@ async function eventsGetHandler(request, context) {
                 };
             }
         } else {
-            // Default: Last day of 6 months from now (Express: today.getMonth() + 6, 0)
-            // CALBEAF-65 v1.13.3: Match Express exactly (serverEvents.js line 302)
-            endDate = new Date(today.getFullYear(), today.getMonth() + 6, 0);
+            // Default: Last day of 6 months from now at 23:59:59 UTC
+            // Use Date.UTC for consistent behavior
+            const endYear = today.getUTCFullYear();
+            const endMonth = today.getUTCMonth() + 6;
+            // Get last day of month by going to day 0 of next month
+            endDate = new Date(Date.UTC(endYear, endMonth, 0, 23, 59, 59, 999));
         }
 
         context.log(`Events_Get: Date range ${startDate.toISOString()} to ${endDate.toISOString()}`);
