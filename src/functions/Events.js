@@ -131,6 +131,7 @@ async function eventsGetHandler(request, context) {
         }
 
         // Combined query: (regular events in date range) OR (recurring events)
+        // CALBEAF-65: Express parity - recurring events returned regardless of date
         const filter = {
             ...baseFilter,
             $or: [
@@ -144,8 +145,13 @@ async function eventsGetHandler(request, context) {
                     ]
                 },
                 // ALL recurring events (returned regardless of date filter)
+                // Must have recurrenceRule that exists, is not null, and is not empty string
                 {
-                    recurrenceRule: { $exists: true, $ne: null, $ne: '' }
+                    recurrenceRule: { $exists: true },
+                    $and: [
+                        { recurrenceRule: { $ne: null } },
+                        { recurrenceRule: { $ne: '' } }
+                    ]
                 }
             ]
         };
