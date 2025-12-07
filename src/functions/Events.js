@@ -121,11 +121,14 @@ async function eventsGetHandler(request, context) {
         // Express logic: Regular events within date range OR any recurring events
         const baseFilter = { appId };
 
-        // CALBEAF-65 v1.13.3: Express ONLY filters isActive when parameter is explicitly provided
-        // (NOT by default - matching serverEvents.js line 331)
+        // CALBEAF-65 v1.13.4: Express has active="true" as DEFAULT (line 267)
+        // So isActive=true IS applied by default (Ben's correction)
         const activeParam = request.query.get('active');
-        if (activeParam !== null && activeParam !== undefined) {
-            baseFilter.isActive = activeParam === 'true';
+        if (activeParam === 'false') {
+            baseFilter.isActive = false;
+        } else {
+            // Default: isActive=true (matches Express default active="true" on line 267)
+            baseFilter.isActive = true;
         }
 
         // Add category filter if provided
@@ -153,11 +156,10 @@ async function eventsGetHandler(request, context) {
                     ]
                 },
                 // ALL recurring events (returned regardless of date filter)
-                // CALBEAF-65 v1.13.3: Match Express exactly (serverEvents.js line 323)
-                // Mongoose handles { $exists: true, $ne: null, $ne: '' } - for native driver use $and
+                // CALBEAF-65 v1.13.4: Match Express exactly with $and for empty string check
                 {
+                    recurrenceRule: { $exists: true },
                     $and: [
-                        { recurrenceRule: { $exists: true } },
                         { recurrenceRule: { $ne: null } },
                         { recurrenceRule: { $ne: '' } }
                     ]
