@@ -98,8 +98,9 @@ async function eventsGetHandler(request, context) {
                 };
             }
         } else {
-            // Default: Last day of 6 months from now
-            endDate = new Date(today.getFullYear(), today.getMonth() + 7, 0);
+            // Default: Last day of 6 months from now (Express: today.getMonth() + 6, 0)
+            // CALBEAF-65 v1.13.3: Match Express exactly (serverEvents.js line 302)
+            endDate = new Date(today.getFullYear(), today.getMonth() + 6, 0);
         }
 
         context.log(`Events_Get: Date range ${startDate.toISOString()} to ${endDate.toISOString()}`);
@@ -120,14 +121,11 @@ async function eventsGetHandler(request, context) {
         // Express logic: Regular events within date range OR any recurring events
         const baseFilter = { appId };
 
-        // CALBEAF-65: Express ALWAYS applies isActive=true by default
-        // This is the likely cause of the 12-event difference (384 vs 396)
+        // CALBEAF-65 v1.13.3: Express ONLY filters isActive when parameter is explicitly provided
+        // (NOT by default - matching serverEvents.js line 331)
         const activeParam = request.query.get('active');
-        if (activeParam === 'false') {
-            baseFilter.isActive = false;
-        } else {
-            // Default: only show active events (Express parity)
-            baseFilter.isActive = true;
+        if (activeParam !== null && activeParam !== undefined) {
+            baseFilter.isActive = activeParam === 'true';
         }
 
         // Add category filter if provided
@@ -155,10 +153,11 @@ async function eventsGetHandler(request, context) {
                     ]
                 },
                 // ALL recurring events (returned regardless of date filter)
-                // Must have recurrenceRule that exists, is not null, and is not empty string
+                // CALBEAF-65 v1.13.3: Match Express exactly (serverEvents.js line 323)
+                // Mongoose handles { $exists: true, $ne: null, $ne: '' } - for native driver use $and
                 {
-                    recurrenceRule: { $exists: true },
                     $and: [
+                        { recurrenceRule: { $exists: true } },
                         { recurrenceRule: { $ne: null } },
                         { recurrenceRule: { $ne: '' } }
                     ]
