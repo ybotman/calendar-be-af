@@ -176,6 +176,9 @@ async function eventsGetHandler(request, context) {
             $or: dateConditions
         };
 
+        // CALBEAF-65 v1.13.7: Debug logging to verify filter structure
+        context.log('Events_Get: baseFilter:', JSON.stringify(baseFilter));
+        context.log('Events_Get: final filter:', JSON.stringify(filter));
         context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
         // Build MongoDB query
