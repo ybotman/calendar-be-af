@@ -10,24 +10,32 @@ const { standardMiddleware } = require('../middleware');
 
 /**
  * GET /api/events
- * List all events with optional filtering
+ * List all events with optional filtering - CALBEAF-65: Express parity
  *
  * Query Parameters:
  * - appId: Application ID (1=TangoTiempo, 2=HarmonyJunction) (required)
- * - startDate: Filter events from date (ISO format)
- * - endDate: Filter events to date (ISO format)
+ * - start: Filter events from date (YYYY-MM-DD) - Express parity
+ * - end: Filter events to date (YYYY-MM-DD) - Express parity
+ * - startDate: Alias for start (legacy support)
+ * - endDate: Alias for end (legacy support)
  * - categoryId: Filter by category
  * - venueId: Filter by venue
  * - limit: Results per page (default: 100, max: 500)
  * - page: Page number (default: 1)
  *
+ * Default Date Behavior (if no dates provided):
+ * - start: First day of current month
+ * - end: Last day of 6 months from now
+ *
+ * IMPORTANT: Recurring events are ALWAYS returned regardless of date filter!
+ *
  * Response: { events: [...], pagination: { total, page, limit, pages } }
  */
 async function eventsGetHandler(request, context) {
-    // Extract query parameters
+    // Extract query parameters - support both 'start/end' (Express) and 'startDate/endDate' (legacy)
     const appId = request.query.get('appId');
-    const startDate = request.query.get('startDate');
-    const endDate = request.query.get('endDate');
+    const startParam = request.query.get('start') || request.query.get('startDate');
+    const endParam = request.query.get('end') || request.query.get('endDate');
     const categoryId = request.query.get('categoryId');
     const venueId = request.query.get('venueId');
     const page = request.query.get('page') || '1';
@@ -36,8 +44,8 @@ async function eventsGetHandler(request, context) {
     // Log request details
     context.log('Events_Get: Request received', {
         appId,
-        startDate,
-        endDate,
+        start: startParam,
+        end: endParam,
         categoryId,
         venueId,
         page,
@@ -62,7 +70,39 @@ async function eventsGetHandler(request, context) {
         const limitNum = Math.min(500, Math.max(1, parseInt(limit) || 100));
         const skip = (pageNum - 1) * limitNum;
 
-        context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
+        // CALBEAF-65: Calculate date range with Express parity defaults
+        const today = new Date();
+        let startDate, endDate;
+
+        if (startParam) {
+            startDate = new Date(startParam);
+            if (isNaN(startDate.getTime())) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid date format for start parameter' })
+                };
+            }
+        } else {
+            // Default: First day of current month
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        }
+
+        if (endParam) {
+            endDate = new Date(endParam);
+            if (isNaN(endDate.getTime())) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid date format for end parameter' })
+                };
+            }
+        } else {
+            // Default: Last day of 6 months from now
+            endDate = new Date(today.getFullYear(), today.getMonth() + 7, 0);
+        }
+
+        context.log(`Events_Get: Date range ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -76,34 +116,46 @@ async function eventsGetHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Build MongoDB query filter
-        const filter = { appId };
-
-        // Add date range filtering if provided
-        if (startDate || endDate) {
-            filter.startTime = {};
-            if (startDate) {
-                filter.startTime.$gte = new Date(startDate);
-            }
-            if (endDate) {
-                filter.startTime.$lte = new Date(endDate);
-            }
-        }
+        // CALBEAF-65: Build query with Express parity - recurring events ALWAYS included
+        // Express logic: Regular events within date range OR any recurring events
+        const baseFilter = { appId };
 
         // Add category filter if provided
         if (categoryId) {
-            filter.categoryId = categoryId;
+            baseFilter.categoryId = categoryId;
         }
 
         // Add venue filter if provided
         if (venueId) {
-            filter.venueId = venueId;
+            baseFilter.venueId = venueId;
         }
+
+        // Combined query: (regular events in date range) OR (recurring events)
+        const filter = {
+            ...baseFilter,
+            $or: [
+                // Regular events within date range (no recurrence or empty recurrence)
+                {
+                    startDate: { $gte: startDate, $lte: endDate },
+                    $or: [
+                        { recurrenceRule: { $exists: false } },
+                        { recurrenceRule: null },
+                        { recurrenceRule: '' }
+                    ]
+                },
+                // ALL recurring events (returned regardless of date filter)
+                {
+                    recurrenceRule: { $exists: true, $ne: null, $ne: '' }
+                }
+            ]
+        };
+
+        context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
 
         // Build MongoDB query
         const eventQuery = collection
             .find(filter)
-            .sort({ startTime: 1 }) // Sort by start time ascending
+            .sort({ startDate: 1 }) // Sort by startDate ascending (Express uses startDate)
             .skip(skip)
             .limit(limitNum);
 
