@@ -660,7 +660,10 @@ async function eventsDebugHandler(request, context) {
             // Date range info
             dateRange: {
                 start: startDate.toISOString(),
-                end: endDate.toISOString()
+                end: endDate.toISOString(),
+                todayLocal: today.toISOString(),
+                month: today.getMonth(),
+                monthPlusSix: today.getMonth() + 6
             },
 
             // Total active events
@@ -687,6 +690,12 @@ async function eventsDebugHandler(request, context) {
                 ]
             }),
 
+            // Alternative: events with startDate in range, without recurrenceRule filter
+            eventsInRangeNoRecurrenceFilter: await collection.countDocuments({
+                ...baseFilter,
+                startDate: { $gte: startDate, $lte: endDate }
+            }),
+
             // Total from combined query (what AF Events returns)
             combinedQuery: await collection.countDocuments({
                 ...baseFilter,
@@ -707,6 +716,24 @@ async function eventsDebugHandler(request, context) {
                         ]
                     }
                 ]
+            }),
+
+            // Without applying recurrence conditions at all
+            simpleRangeOnly: await collection.countDocuments({
+                ...baseFilter,
+                startDate: { $gte: startDate, $lte: endDate }
+            }),
+
+            // Events before start date
+            beforeRange: await collection.countDocuments({
+                ...baseFilter,
+                startDate: { $lt: startDate }
+            }),
+
+            // Events after end date
+            afterRange: await collection.countDocuments({
+                ...baseFilter,
+                startDate: { $gt: endDate }
             }),
 
             // Has recurrenceRule field at all
@@ -732,6 +759,8 @@ async function eventsDebugHandler(request, context) {
 
         // Calculate expected total
         results.expectedTotal = results.recurringCount + results.nonRecurringInRange;
+        results.mathCheck = `${results.recurringCount} + ${results.nonRecurringInRange} = ${results.expectedTotal}`;
+        results.rangeCheck = `before:${results.beforeRange} + inRange:${results.eventsInRangeNoRecurrenceFilter} + after:${results.afterRange} = ${results.beforeRange + results.eventsInRangeNoRecurrenceFilter + results.afterRange} (should be ${results.totalActive})`;
 
         return {
             status: 200,
