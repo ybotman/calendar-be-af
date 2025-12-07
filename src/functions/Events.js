@@ -772,7 +772,7 @@ async function dbInfoHandler(request, context) {
         // Get total counts (no filters)
         const totalEvents = await db.collection('events').countDocuments({ appId: '1' });
         const totalOrganizers = await db.collection('organizers').countDocuments({ appId: '1' });
-        const totalVenues = await db.collection('Venues').countDocuments({ appId: '1' });
+        const totalVenues = await db.collection('venues').countDocuments({ appId: '1' });
 
         return {
             status: 200,
