@@ -632,3 +632,85 @@ app.http('Events_Delete', {
     route: 'events/{eventId}',
     handler: standardMiddleware(eventsDeleteHandler)
 });
+
+// ============================================
+// DEBUG: GET /api/events-debug - Recurring events analysis
+// ============================================
+async function eventsDebugHandler(request, context) {
+    const appId = request.query.get('appId') || '1';
+
+    let mongoClient;
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('events');
+
+        const baseFilter = { appId, isActive: true };
+
+        // Various recurring event queries
+        const results = {
+            // Total active events
+            totalActive: await collection.countDocuments(baseFilter),
+
+            // Mongoose-style query (what Express uses)
+            mongooseStyle: await collection.countDocuments({
+                ...baseFilter,
+                recurrenceRule: { $exists: true, $ne: null, $ne: '' }
+            }),
+
+            // $and style
+            andStyle: await collection.countDocuments({
+                ...baseFilter,
+                $and: [
+                    { recurrenceRule: { $exists: true } },
+                    { recurrenceRule: { $ne: null } },
+                    { recurrenceRule: { $ne: '' } }
+                ]
+            }),
+
+            // $type string only
+            typeString: await collection.countDocuments({
+                ...baseFilter,
+                recurrenceRule: { $exists: true, $type: 'string', $ne: '' }
+            }),
+
+            // Has recurrenceRule field at all
+            hasField: await collection.countDocuments({
+                ...baseFilter,
+                recurrenceRule: { $exists: true }
+            }),
+
+            // recurrenceRule is truthy (not null, not empty)
+            truthy: await collection.countDocuments({
+                ...baseFilter,
+                recurrenceRule: { $nin: [null, '', undefined] }
+            }),
+
+            // Sample of recurrenceRule values
+            sampleRecurrenceRules: await collection.aggregate([
+                { $match: { ...baseFilter, recurrenceRule: { $exists: true } } },
+                { $group: { _id: '$recurrenceRule', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 20 }
+            ]).toArray()
+        };
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(results, null, 2)
+        };
+    } finally {
+        if (mongoClient) await mongoClient.close();
+    }
+}
+
+app.http('Events_Debug', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'events-debug',
+    handler: eventsDebugHandler
+});
