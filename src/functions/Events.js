@@ -142,29 +142,29 @@ async function eventsGetHandler(request, context) {
         }
 
         // Combined query: (regular events in date range) OR (recurring events)
-        // CALBEAF-65: Express parity - recurring events returned regardless of date
+        // CALBEAF-65 v1.13.5: Match Express EXACTLY (serverEvents.js lines 311-325)
+        // Express uses Mongoose which interprets multiple operators on same field
+        // For native MongoDB driver, we need to structure this carefully
+        const dateConditions = [
+            // Regular events within the date range (no recurrence)
+            {
+                startDate: { $gte: startDate, $lte: endDate },
+                $or: [
+                    { recurrenceRule: { $exists: false } },
+                    { recurrenceRule: null },
+                    { recurrenceRule: '' }
+                ]
+            },
+            // ALL recurring events (no date filter) - events with valid recurrenceRule
+            {
+                recurrenceRule: { $exists: true, $nin: [null, ''] }
+            }
+        ];
+
+        // Build final filter: baseFilter + $or for date conditions
         const filter = {
             ...baseFilter,
-            $or: [
-                // Regular events within date range (no recurrence or empty recurrence)
-                {
-                    startDate: { $gte: startDate, $lte: endDate },
-                    $or: [
-                        { recurrenceRule: { $exists: false } },
-                        { recurrenceRule: null },
-                        { recurrenceRule: '' }
-                    ]
-                },
-                // ALL recurring events (returned regardless of date filter)
-                // CALBEAF-65 v1.13.4: Match Express exactly with $and for empty string check
-                {
-                    recurrenceRule: { $exists: true },
-                    $and: [
-                        { recurrenceRule: { $ne: null } },
-                        { recurrenceRule: { $ne: '' } }
-                    ]
-                }
-            ]
+            $or: dateConditions
         };
 
         context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
