@@ -142,11 +142,15 @@ async function eventsGetHandler(request, context) {
         }
 
         // Combined query: (regular events in date range) OR (recurring events)
-        // CALBEAF-65 v1.13.5: Match Express EXACTLY (serverEvents.js lines 311-325)
-        // Express uses Mongoose which interprets multiple operators on same field
-        // For native MongoDB driver, we need to structure this carefully
+        // CALBEAF-65 v1.13.6: Match Express EXACTLY (serverEvents.js lines 311-325)
+        //
+        // Express uses Mongoose which interprets { $ne: null, $ne: '' } by internally
+        // converting it. For native MongoDB driver, we need explicit structure.
+        //
+        // Key insight: Express { $exists: true, $ne: null, $ne: '' } is INVALID syntax
+        // but Mongoose converts it. For native driver, use $and array.
         const dateConditions = [
-            // Regular events within the date range (no recurrence)
+            // Condition 1: Regular events in date range (non-recurring)
             {
                 startDate: { $gte: startDate, $lte: endDate },
                 $or: [
@@ -155,9 +159,14 @@ async function eventsGetHandler(request, context) {
                     { recurrenceRule: '' }
                 ]
             },
-            // ALL recurring events (no date filter) - events with valid recurrenceRule
+            // Condition 2: ALL recurring events (no date filter)
+            // Use $and to properly check: exists AND not null AND not empty
             {
-                recurrenceRule: { $exists: true, $nin: [null, ''] }
+                $and: [
+                    { recurrenceRule: { $exists: true } },
+                    { recurrenceRule: { $ne: null } },
+                    { recurrenceRule: { $ne: '' } }
+                ]
             }
         ];
 
