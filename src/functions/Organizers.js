@@ -59,8 +59,9 @@ async function organizersGetHandler(request, context) {
         // Build query filter
         const query = { appId };
 
-        // Filter by isVisible unless includeHidden is true
-        if (!includeHidden) {
+        // Filter by isVisible unless includeHidden=true explicitly
+        // CALBEAF-65: Match Express logic (line 447-449)
+        if (!includeHidden || includeHidden !== 'true') {
             query.isVisible = { $ne: false };
         }
 
