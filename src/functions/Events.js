@@ -749,3 +749,57 @@ app.http('Events_Debug', {
     route: 'events-debug',
     handler: eventsDebugHandler
 });
+
+// ============================================
+// DEBUG: GET /api/db-info - MongoDB connection info
+// ============================================
+async function dbInfoHandler(request, context) {
+    let mongoClient;
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+
+        // Extract host (masked) and database name from URI
+        const uriParts = mongoUri.match(/mongodb\+srv:\/\/[^@]+@([^\/]+)\/([^?]+)/);
+        const clusterHost = uriParts ? uriParts[1] : 'unknown';
+        const dbName = uriParts ? uriParts[2] : 'unknown';
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const actualDbName = db.databaseName;
+
+        // Get total counts (no filters)
+        const totalEvents = await db.collection('events').countDocuments({ appId: '1' });
+        const totalOrganizers = await db.collection('organizers').countDocuments({ appId: '1' });
+        const totalVenues = await db.collection('Venues').countDocuments({ appId: '1' });
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                version: require('../../package.json').version,
+                mongodb: {
+                    clusterHost,
+                    configuredDb: dbName,
+                    actualDb: actualDbName
+                },
+                rawCounts: {
+                    events: totalEvents,
+                    organizers: totalOrganizers,
+                    venues: totalVenues
+                },
+                timestamp: new Date().toISOString()
+            }, null, 2)
+        };
+    } finally {
+        if (mongoClient) await mongoClient.close();
+    }
+}
+
+app.http('DB_Info', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'db-info',
+    handler: dbInfoHandler
+});
