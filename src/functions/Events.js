@@ -135,14 +135,44 @@ async function eventsGetHandler(request, context) {
             baseFilter.isActive = true;
         }
 
+        // Collection for $and conditions (like calendar-be's andConditions array)
+        const andConditions = [];
+
         // Add category filter if provided
+        // CALBEAF-65: Match calendar-be - search all 3 category fields with $or
         if (categoryId) {
-            baseFilter.categoryId = categoryId;
+            try {
+                const categoryObjId = new ObjectId(categoryId);
+                andConditions.push({
+                    $or: [
+                        { categoryFirstId: categoryObjId },
+                        { categorySecondId: categoryObjId },
+                        { categoryThirdId: categoryObjId }
+                    ]
+                });
+            } catch (err) {
+                context.log(`Invalid categoryId format: ${categoryId}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid categoryId format' })
+                };
+            }
         }
 
         // Add venue filter if provided
+        // CALBEAF-65: Match calendar-be - use venueID (capital ID)
         if (venueId) {
-            baseFilter.venueId = venueId;
+            try {
+                baseFilter.venueID = new ObjectId(venueId);
+            } catch (err) {
+                context.log(`Invalid venueId format: ${venueId}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid venueId format' })
+                };
+            }
         }
 
         // Combined query: (regular events in date range) OR (recurring events)
@@ -174,11 +204,22 @@ async function eventsGetHandler(request, context) {
             }
         ];
 
-        // Build final filter: baseFilter + $or for date conditions
-        const filter = {
+        // Build final filter: baseFilter + dateConditions + andConditions
+        // CALBEAF-65: Use $and to combine multiple $or clauses (like calendar-be)
+        let filter = {
             ...baseFilter,
             $or: dateConditions
         };
+
+        // If we have andConditions (e.g., category filter), wrap everything in $and
+        if (andConditions.length > 0) {
+            filter = {
+                $and: [
+                    { ...baseFilter, $or: dateConditions },
+                    ...andConditions
+                ]
+            };
+        }
 
         // CALBEAF-65 v1.13.10: Enhanced debug logging - check recurring counts
         context.log('Events_Get: baseFilter:', JSON.stringify(baseFilter));
