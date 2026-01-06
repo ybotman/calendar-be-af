@@ -59,8 +59,9 @@ async function organizersGetHandler(request, context) {
         // Build query filter
         const query = { appId };
 
-        // Filter by isVisible unless includeHidden is true
-        if (!includeHidden) {
+        // Filter by isVisible unless includeHidden=true explicitly
+        // CALBEAF-65: Match Express logic (line 447-449)
+        if (!includeHidden || includeHidden !== 'true') {
             query.isVisible = { $ne: false };
         }
 
@@ -848,4 +849,72 @@ app.http('Organizers_DisconnectUser', {
     authLevel: 'anonymous',
     route: 'organizers/{id}/disconnect-user',
     handler: standardMiddleware(organizersDisconnectUserHandler)
+});
+
+// ============================================
+// DEBUG: GET /api/organizers-debug - Organizers analysis (CALBEAF-65)
+// ============================================
+async function organizersDebugHandler(request, context) {
+    const appId = request.query.get('appId') || '1';
+
+    let mongoClient;
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('organizers');
+
+        const results = {
+            // Total organizers for appId
+            totalAll: await collection.countDocuments({ appId }),
+
+            // With isVisible filter (AF default query)
+            withIsVisibleNotFalse: await collection.countDocuments({
+                appId,
+                isVisible: { $ne: false }
+            }),
+
+            // Organizers where isVisible=false (hidden)
+            hiddenOrganizers: await collection.find({
+                appId,
+                isVisible: false
+            }).project({ _id: 1, fullName: 1, shortName: 1, isVisible: 1, isActive: 1 }).toArray(),
+
+            // Organizers where isVisible is missing/undefined
+            noVisibleField: await collection.find({
+                appId,
+                isVisible: { $exists: false }
+            }).project({ _id: 1, fullName: 1, shortName: 1 }).toArray(),
+
+            // Organizers where isVisible=null
+            nullVisible: await collection.find({
+                appId,
+                isVisible: null
+            }).project({ _id: 1, fullName: 1, shortName: 1 }).toArray(),
+
+            // Sample of isVisible field values
+            isVisibleValues: await collection.aggregate([
+                { $match: { appId } },
+                { $group: { _id: '$isVisible', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+            ]).toArray()
+        };
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(results, null, 2)
+        };
+    } finally {
+        if (mongoClient) await mongoClient.close();
+    }
+}
+
+app.http('Organizers_Debug', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'organizers-debug',
+    handler: organizersDebugHandler
 });

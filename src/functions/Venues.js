@@ -34,9 +34,11 @@ async function venuesGetHandler(request, context) {
         const name = request.query.get('name');
         const cityId = request.query.get('cityId') || request.query.get('masteredCityId');
         const select = request.query.get('select');
-        const populate = request.query.get('populate') === 'true';
+        // CALBEAF-64: Population is now DEFAULT to match Express parity
+        // Use ?populate=false to disable
+        const populate = request.query.get('populate') !== 'false';
 
-        context.log(`Fetching venues: appId=${appId}, page=${page}, limit=${limit}`);
+        context.log(`Fetching venues: appId=${appId}, page=${page}, limit=${limit}, populate=${populate}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -92,7 +94,8 @@ async function venuesGetHandler(request, context) {
         const total = await venuesCollection.countDocuments(query);
         const totalPages = Math.ceil(total / limit);
 
-        // Populate masteredCityId if requested
+        // CALBEAF-64: Populate masteredCityId by default to match Express parity
+        // Returns only {_id, cityName} - not full city object
         if (populate && venues.length > 0) {
             const citiesCollection = db.collection('masteredcities');
             const cityIds = [...new Set(venues
@@ -101,10 +104,11 @@ async function venuesGetHandler(request, context) {
 
             if (cityIds.length > 0) {
                 const cities = await citiesCollection
-                    .find({ _id: { $in: cityIds } })
+                    .find({ _id: { $in: cityIds } }, { projection: { _id: 1, cityName: 1 } })
                     .toArray();
 
-                const cityMap = new Map(cities.map(c => [c._id.toString(), c]));
+                // Map to {_id, cityName} format to match Express
+                const cityMap = new Map(cities.map(c => [c._id.toString(), { _id: c._id, cityName: c.cityName }]));
 
                 venues = venues.map(venue => ({
                     ...venue,
@@ -156,9 +160,10 @@ app.http('Venues_Get', {
  */
 async function venuesGetByIdHandler(request, context) {
     const venueId = request.params.id;
-    const populate = request.query.get('populate') === 'true';
+    // CALBEAF-64: Population is now DEFAULT to match Express parity
+    const populate = request.query.get('populate') !== 'false';
 
-    context.log(`Venues_GetById: Request for venue ${venueId}`);
+    context.log(`Venues_GetById: Request for venue ${venueId}, populate=${populate}`);
 
     let mongoClient;
 
@@ -190,14 +195,15 @@ async function venuesGetByIdHandler(request, context) {
             };
         }
 
-        // Populate masteredCityId if requested
+        // CALBEAF-64: Populate masteredCityId by default - returns only {_id, cityName}
         if (populate && venue.masteredCityId) {
             const citiesCollection = db.collection('masteredcities');
-            const city = await citiesCollection.findOne({
-                _id: venue.masteredCityId
-            });
+            const city = await citiesCollection.findOne(
+                { _id: venue.masteredCityId },
+                { projection: { _id: 1, cityName: 1 } }
+            );
             if (city) {
-                venue.masteredCityId = city;
+                venue.masteredCityId = { _id: city._id, cityName: city.cityName };
             }
         }
 
