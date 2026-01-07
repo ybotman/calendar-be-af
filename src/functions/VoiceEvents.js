@@ -171,6 +171,28 @@ async function voiceEventsHandler(request, context) {
             venueMap[v._id.toString()] = v;
         });
 
+        // Helper: Calculate next occurrence date for recurring events
+        const getNextOccurrence = (originalDate, queryStart, queryEnd) => {
+            const original = new Date(originalDate);
+            const start = new Date(queryStart);
+            const end = new Date(queryEnd);
+            const dayOfWeek = original.getDay(); // 0=Sunday, 1=Monday, etc.
+
+            // Find first occurrence of this day of week within query range
+            const candidate = new Date(start);
+            const startDayOfWeek = candidate.getDay();
+            let daysToAdd = dayOfWeek - startDayOfWeek;
+            if (daysToAdd < 0) daysToAdd += 7;
+
+            candidate.setDate(candidate.getDate() + daysToAdd);
+
+            // If candidate is within range, use it; otherwise use query start
+            if (candidate >= start && candidate <= end) {
+                return candidate;
+            }
+            return start;
+        };
+
         // Format events for voice
         const formattedEvents = events.map(event => {
             const venue = event.venueID ? venueMap[event.venueID.toString()] : null;
@@ -178,9 +200,20 @@ async function voiceEventsHandler(request, context) {
                 ? categoryMap[event.categoryFirstId.toString()] || 'Event'
                 : 'Event';
 
+            // Check if event has recurrence rule
+            const isRecurring = !!(event.recurrenceRule && event.recurrenceRule !== '');
+
+            // For recurring events, calculate occurrence date within query range
+            // For non-recurring events, use the original startDate
+            let displayDate;
+            if (isRecurring) {
+                displayDate = getNextOccurrence(event.startDate, startDate, endDate);
+            } else {
+                displayDate = new Date(event.startDate);
+            }
+
             // Format date: "Friday, January 10th"
-            const eventDate = new Date(event.startDate);
-            const dateFormatted = eventDate.toLocaleDateString('en-US', {
+            const dateFormatted = displayDate.toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric'
@@ -200,9 +233,6 @@ async function voiceEventsHandler(request, context) {
                     hour12: true
                 });
             }
-
-            // Check if event has recurrence rule
-            const isRecurring = !!(event.recurrenceRule && event.recurrenceRule !== '');
 
             return {
                 id: event._id.toString(),
