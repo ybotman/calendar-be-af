@@ -85,11 +85,6 @@ async function voiceEventsHandler(request, context) {
         const categoriesCollection = db.collection('categories');
         const venuesCollection = db.collection('Venues');
 
-        // Calculate 1 month before query start for recurring event filter
-        // Tighter window to exclude old recurring events (e.g., Nov events in Jan query)
-        const oneMonthBeforeStart = new Date(startDate);
-        oneMonthBeforeStart.setMonth(oneMonthBeforeStart.getMonth() - 1);
-
         // Build base filter
         const baseFilter = {
             appId,
@@ -132,9 +127,10 @@ async function voiceEventsHandler(request, context) {
                     { recurrenceRule: '' }
                 ]
             },
-            // Recurring events - startDate within 1 month before query start AND not after query end
+            // Recurring events - started before or during query range (no lower bound)
+            // These may have started months ago but still recur into the query range
             {
-                startDate: { $gte: oneMonthBeforeStart, $lte: endDate },
+                startDate: { $lte: endDate },
                 $and: [
                     { recurrenceRule: { $exists: true } },
                     { recurrenceRule: { $ne: null } },
