@@ -107,15 +107,21 @@ async function voiceEventsHandler(request, context) {
         };
 
         // Add category filter if provided
+        // Match both ObjectId and string formats (database may store either)
         const andConditions = [];
         if (categoryId) {
             try {
                 const categoryObjId = new ObjectId(categoryId);
                 andConditions.push({
                     $or: [
+                        // ObjectId comparison
                         { categoryFirstId: categoryObjId },
                         { categorySecondId: categoryObjId },
-                        { categoryThirdId: categoryObjId }
+                        { categoryThirdId: categoryObjId },
+                        // String comparison (some events store as string)
+                        { categoryFirstId: categoryId },
+                        { categorySecondId: categoryId },
+                        { categoryThirdId: categoryId }
                     ]
                 });
             } catch (err) {
