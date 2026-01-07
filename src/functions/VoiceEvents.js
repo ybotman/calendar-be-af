@@ -165,11 +165,11 @@ async function voiceEventsHandler(request, context) {
             .limit(limit)
             .toArray();
 
-        // Get category names for mapping
+        // Get category names for mapping (field is categoryName, not name)
         const categories = await categoriesCollection.find({ appId }).toArray();
         const categoryMap = {};
         categories.forEach(cat => {
-            categoryMap[cat._id.toString()] = cat.name;
+            categoryMap[cat._id.toString()] = cat.categoryName;
         });
 
         // If filtering by categoryId, also fetch that specific category (may not have appId match)
@@ -177,8 +177,8 @@ async function voiceEventsHandler(request, context) {
         if (categoryId && !categoryMap[categoryId]) {
             const filteredCategory = await categoriesCollection.findOne({ _id: new ObjectId(categoryId) });
             if (filteredCategory) {
-                filteredCategoryName = filteredCategory.name;
-                categoryMap[categoryId] = filteredCategory.name;
+                filteredCategoryName = filteredCategory.categoryName;
+                categoryMap[categoryId] = filteredCategory.categoryName;
             }
         } else if (categoryId) {
             filteredCategoryName = categoryMap[categoryId];
