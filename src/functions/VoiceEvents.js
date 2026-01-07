@@ -48,19 +48,24 @@ async function voiceEventsHandler(request, context) {
         };
     }
 
-    // Parse dates at noon UTC to avoid timezone boundary issues
-    // e.g., '2026-01-12' at midnight UTC = Jan 11 7PM EST
-    // Using noon avoids this: Jan 12 noon UTC = Jan 12 7AM EST (still Jan 12)
-    const parseDateAtNoon = (dateStr) => {
-        // If just YYYY-MM-DD, add noon time to avoid timezone shift
+    // Parse start date at start of day, end date at end of day (in UTC)
+    // This ensures events on the boundary days are included
+    const parseStartDate = (dateStr) => {
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            return new Date(dateStr + 'T12:00:00Z');
+            return new Date(dateStr + 'T00:00:00Z');
         }
         return new Date(dateStr);
     };
 
-    const startDate = parseDateAtNoon(startParam);
-    const endDate = parseDateAtNoon(endParam);
+    const parseEndDate = (dateStr) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return new Date(dateStr + 'T23:59:59Z');
+        }
+        return new Date(dateStr);
+    };
+
+    const startDate = parseStartDate(startParam);
+    const endDate = parseEndDate(endParam);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         return {
