@@ -172,6 +172,18 @@ async function voiceEventsHandler(request, context) {
             categoryMap[cat._id.toString()] = cat.name;
         });
 
+        // If filtering by categoryId, also fetch that specific category (may not have appId match)
+        let filteredCategoryName = null;
+        if (categoryId && !categoryMap[categoryId]) {
+            const filteredCategory = await categoriesCollection.findOne({ _id: new ObjectId(categoryId) });
+            if (filteredCategory) {
+                filteredCategoryName = filteredCategory.name;
+                categoryMap[categoryId] = filteredCategory.name;
+            }
+        } else if (categoryId) {
+            filteredCategoryName = categoryMap[categoryId];
+        }
+
         // Get unique venue IDs and fetch venue data
         const venueIds = [...new Set(events.map(e => e.venueID).filter(Boolean))];
         const venues = venueIds.length > 0
@@ -208,10 +220,6 @@ async function voiceEventsHandler(request, context) {
 
             return { description, until };
         };
-
-        // If categoryId filter was provided, use that category's name for display
-        // (since that's what the user asked for, even if event has multiple categories)
-        const filteredCategoryName = categoryId ? categoryMap[categoryId] : null;
 
         // Format events for voice
         const formattedEvents = events.map(event => {
