@@ -212,18 +212,35 @@ async function voiceEventsHandler(request, context) {
         };
 
         // Helper: Expand recurring event into occurrences within date range
-        const expandRecurringEvent = (event, queryStart, queryEnd) => {
+        const expandRecurringEvent = (event, queryStart, queryEnd, venueTimezone) => {
             if (!event.recurrenceRule) return [event];
 
             try {
-                // Parse RRULE string - add DTSTART from event's startDate
                 const eventStart = new Date(event.startDate);
-                const rruleStr = `DTSTART:${eventStart.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\nRRULE:${event.recurrenceRule}`;
+                const tz = venueTimezone || 'America/New_York';
+
+                // Convert UTC startDate to venue local time for DTSTART
+                // This ensures BYDAY=TU means Tuesday in LOCAL time, not UTC
+                const localParts = eventStart.toLocaleString('en-CA', {
+                    timeZone: tz,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+                // Format: "2026-01-06, 19:30:00" -> "20260106T193000"
+                const localDateStr = localParts.replace(/[^\d]/g, '').substring(0, 14);
+                const formattedLocal = localDateStr.substring(0, 8) + 'T' + localDateStr.substring(8);
+
+                // Build RRULE string with timezone-aware DTSTART
+                const rruleStr = `DTSTART;TZID=${tz}:${formattedLocal}\nRRULE:${event.recurrenceRule}`;
 
                 const rule = RRule.fromString(rruleStr);
 
-                // Get occurrences within the query range
-                // Extend end date by 1 day to include events on the end date
+                // Query range in venue local context - extend end by 1 day
                 const rangeEnd = new Date(queryEnd);
                 rangeEnd.setDate(rangeEnd.getDate() + 1);
 
@@ -232,12 +249,22 @@ async function voiceEventsHandler(request, context) {
                 if (occurrences.length === 0) return [];
 
                 // Create expanded event for each occurrence
-                return occurrences.map(occurrenceDate => ({
-                    ...event,
-                    _originalStartDate: event.startDate,
-                    startDate: occurrenceDate,
-                    _isExpandedOccurrence: true
-                }));
+                // Preserve original time-of-day from event.startDate
+                const originalHours = eventStart.getUTCHours();
+                const originalMinutes = eventStart.getUTCMinutes();
+
+                return occurrences.map(occurrenceDate => {
+                    // rrule returns dates - set the original time
+                    const newDate = new Date(occurrenceDate);
+                    newDate.setUTCHours(originalHours, originalMinutes, 0, 0);
+
+                    return {
+                        ...event,
+                        _originalStartDate: event.startDate,
+                        startDate: newDate,
+                        _isExpandedOccurrence: true
+                    };
+                });
             } catch (err) {
                 // If RRULE parsing fails, return original event
                 context.log(`RRULE parse error for event ${event._id}: ${err.message}`);
@@ -249,8 +276,12 @@ async function voiceEventsHandler(request, context) {
         const nonRecurringEvents = events.filter(e => !e.recurrenceRule || e.recurrenceRule === '');
         const recurringEvents = events.filter(e => e.recurrenceRule && e.recurrenceRule !== '');
 
-        // Expand all recurring events into occurrences
-        const expandedRecurring = recurringEvents.flatMap(e => expandRecurringEvent(e, startDate, endDate));
+        // Expand all recurring events into occurrences (pass venue timezone for each)
+        const expandedRecurring = recurringEvents.flatMap(e => {
+            const venue = e.venueID ? venueMap[e.venueID.toString()] : null;
+            const tz = venue?.timezone || 'America/New_York';
+            return expandRecurringEvent(e, startDate, endDate, tz);
+        });
 
         // Combine and sort by date
         const allEvents = [...nonRecurringEvents, ...expandedRecurring]
