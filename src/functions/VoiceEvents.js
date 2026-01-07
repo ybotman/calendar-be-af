@@ -57,9 +57,14 @@ async function voiceEventsHandler(request, context) {
         return new Date(dateStr);
     };
 
+    // End date: Use start of NEXT day to include events stored at midnight UTC
+    // (e.g., Monday 7PM Eastern stored as Tuesday 00:00 UTC should be included in Monday query)
     const parseEndDate = (dateStr) => {
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            return new Date(dateStr + 'T23:59:59Z');
+            const d = new Date(dateStr + 'T00:00:00Z');
+            d.setUTCDate(d.getUTCDate() + 1); // Start of next day
+            d.setUTCHours(5, 0, 0, 0); // 5 AM UTC = midnight Eastern
+            return d;
         }
         return new Date(dateStr);
     };
