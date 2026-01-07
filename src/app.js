@@ -44,6 +44,9 @@ require('./functions/Geo_EventDensity');
 // Cloudflare Info - Expose Cloudflare headers to frontend
 require('./functions/Cloudflare');
 
+// Voice API - Optimized endpoints for TangoVoice GPT
+require('./functions/VoiceEvents');
+
 // Note: Role_List, Venue_Create, Venue_Delete exist locally but not in git - commit them first
 
 module.exports = { app };
