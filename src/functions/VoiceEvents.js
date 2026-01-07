@@ -2,6 +2,7 @@
 // Domain: Voice - Optimized event API for TangoVoice GPT
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
+const { RRule } = require('rrule');
 const { standardMiddleware } = require('../middleware');
 
 /**
@@ -148,11 +149,10 @@ async function voiceEventsHandler(request, context) {
             };
         }
 
-        // Fetch events
+        // Fetch events (no limit here - applied after RRULE expansion)
         const events = await eventsCollection
             .find(filter)
             .sort({ startDate: 1 })
-            .limit(limit)
             .toArray();
 
         // Get category names for mapping (field is categoryName, not name)
@@ -185,8 +185,8 @@ async function voiceEventsHandler(request, context) {
         });
 
         // Helper: Parse RRULE to human-readable description
-        const parseRecurrence = (rrule) => {
-            if (!rrule) return null;
+        const parseRecurrence = (rruleStr) => {
+            if (!rruleStr) return null;
 
             const dayMap = { SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday' };
             const freqMap = { DAILY: 'Daily', WEEKLY: 'Weekly', MONTHLY: 'Monthly', YEARLY: 'Yearly' };
@@ -195,7 +195,7 @@ async function voiceEventsHandler(request, context) {
             let days = [];
             let until = null;
 
-            const parts = rrule.split(';');
+            const parts = rruleStr.split(';');
             for (const part of parts) {
                 const [key, value] = part.split('=');
                 if (key === 'FREQ') freq = freqMap[value] || value;
@@ -211,8 +211,56 @@ async function voiceEventsHandler(request, context) {
             return { description, until };
         };
 
+        // Helper: Expand recurring event into occurrences within date range
+        const expandRecurringEvent = (event, queryStart, queryEnd) => {
+            if (!event.recurrenceRule) return [event];
+
+            try {
+                // Parse RRULE string - add DTSTART from event's startDate
+                const eventStart = new Date(event.startDate);
+                const rruleStr = `DTSTART:${eventStart.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\nRRULE:${event.recurrenceRule}`;
+
+                const rule = RRule.fromString(rruleStr);
+
+                // Get occurrences within the query range
+                // Extend end date by 1 day to include events on the end date
+                const rangeEnd = new Date(queryEnd);
+                rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+                const occurrences = rule.between(queryStart, rangeEnd, true);
+
+                if (occurrences.length === 0) return [];
+
+                // Create expanded event for each occurrence
+                return occurrences.map(occurrenceDate => ({
+                    ...event,
+                    _originalStartDate: event.startDate,
+                    startDate: occurrenceDate,
+                    _isExpandedOccurrence: true
+                }));
+            } catch (err) {
+                // If RRULE parsing fails, return original event
+                context.log(`RRULE parse error for event ${event._id}: ${err.message}`);
+                return [event];
+            }
+        };
+
+        // Separate recurring and non-recurring events, then expand recurring ones
+        const nonRecurringEvents = events.filter(e => !e.recurrenceRule || e.recurrenceRule === '');
+        const recurringEvents = events.filter(e => e.recurrenceRule && e.recurrenceRule !== '');
+
+        // Expand all recurring events into occurrences
+        const expandedRecurring = recurringEvents.flatMap(e => expandRecurringEvent(e, startDate, endDate));
+
+        // Combine and sort by date
+        const allEvents = [...nonRecurringEvents, ...expandedRecurring]
+            .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
+            .slice(0, limit);
+
+        context.log(`Voice_Events: ${nonRecurringEvents.length} non-recurring, ${recurringEvents.length} recurring -> ${expandedRecurring.length} occurrences`);
+
         // Format events for voice
-        const formattedEvents = events.map(event => {
+        const formattedEvents = allEvents.map(event => {
             const venue = event.venueID ? venueMap[event.venueID.toString()] : null;
             // Use filtered category name if available, otherwise fall back to event's primary category
             const categoryName = filteredCategoryName
