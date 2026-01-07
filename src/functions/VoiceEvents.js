@@ -342,6 +342,7 @@ async function voiceEventsHandler(request, context) {
                 venueName: venue?.name || event.venueName || 'TBD',
                 venueCity: venue?.city || event.venueCityName || '',
                 venueAddress: venue?.address || '',
+                venueTimezone,
                 isRecurring,
                 recurrenceDescription: recurrence?.description || null,
                 isCanceled: event.isCanceled || false,
