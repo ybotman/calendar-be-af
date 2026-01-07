@@ -171,16 +171,26 @@ async function voiceEventsHandler(request, context) {
             venueMap[v._id.toString()] = v;
         });
 
+        // Helper: Get day of week in a specific timezone
+        const getDayOfWeekInTimezone = (date, timezone) => {
+            const options = { weekday: 'short', timeZone: timezone };
+            const dayName = date.toLocaleDateString('en-US', options);
+            const days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+            return days[dayName] ?? date.getDay();
+        };
+
         // Helper: Calculate next occurrence date for recurring events
-        const getNextOccurrence = (originalDate, queryStart, queryEnd) => {
+        const getNextOccurrence = (originalDate, queryStart, queryEnd, timezone = 'America/New_York') => {
             const original = new Date(originalDate);
             const start = new Date(queryStart);
             const end = new Date(queryEnd);
-            const dayOfWeek = original.getDay(); // 0=Sunday, 1=Monday, etc.
+
+            // Get day of week in venue's timezone (not UTC)
+            const dayOfWeek = getDayOfWeekInTimezone(original, timezone);
 
             // Find first occurrence of this day of week within query range
             const candidate = new Date(start);
-            const startDayOfWeek = candidate.getDay();
+            const startDayOfWeek = getDayOfWeekInTimezone(candidate, timezone);
             let daysToAdd = dayOfWeek - startDayOfWeek;
             if (daysToAdd < 0) daysToAdd += 7;
 
@@ -200,6 +210,9 @@ async function voiceEventsHandler(request, context) {
                 ? categoryMap[event.categoryFirstId.toString()] || 'Event'
                 : 'Event';
 
+            // Get venue timezone (default to Eastern if not set)
+            const venueTimezone = venue?.timezone || 'America/New_York';
+
             // Check if event has recurrence rule
             const isRecurring = !!(event.recurrenceRule && event.recurrenceRule !== '');
 
@@ -207,19 +220,21 @@ async function voiceEventsHandler(request, context) {
             // For non-recurring events, use the original startDate
             let displayDate;
             if (isRecurring) {
-                displayDate = getNextOccurrence(event.startDate, startDate, endDate);
+                displayDate = getNextOccurrence(event.startDate, startDate, endDate, venueTimezone);
             } else {
                 displayDate = new Date(event.startDate);
             }
 
-            // Format date: "Friday, January 10th"
+            // Format date in venue's local timezone: "Friday, January 10th"
             const dateFormatted = displayDate.toLocaleDateString('en-US', {
+                timeZone: venueTimezone,
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric'
             });
 
-            // Format time using venue display times if available
+            // Format time using venue display times if available (already in local time)
+            // Otherwise convert UTC to venue timezone
             let timeFormatted = '';
             if (event.venueStartDisplay) {
                 timeFormatted = event.venueEndDisplay
@@ -228,6 +243,7 @@ async function voiceEventsHandler(request, context) {
             } else if (event.startDate) {
                 const startTime = new Date(event.startDate);
                 timeFormatted = startTime.toLocaleTimeString('en-US', {
+                    timeZone: venueTimezone,
                     hour: 'numeric',
                     minute: '2-digit',
                     hour12: true
