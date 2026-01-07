@@ -116,7 +116,7 @@ async function voiceEventsHandler(request, context) {
             }
         }
 
-        // Date filtering with expired recurring event exclusion
+        // Date filtering - matches calendar-be approach
         const dateConditions = [
             // Non-recurring events in date range
             {
@@ -127,15 +127,9 @@ async function voiceEventsHandler(request, context) {
                     { recurrenceRule: '' }
                 ]
             },
-            // Recurring events - started before or during query range (no lower bound)
-            // These may have started months ago but still recur into the query range
+            // ALL recurring events (no date filter) - calendar expands via RRULE
             {
-                startDate: { $lte: endDate },
-                $and: [
-                    { recurrenceRule: { $exists: true } },
-                    { recurrenceRule: { $ne: null } },
-                    { recurrenceRule: { $ne: '' } }
-                ]
+                recurrenceRule: { $exists: true, $ne: null, $ne: '' }
             }
         ];
 
