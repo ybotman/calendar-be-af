@@ -74,9 +74,10 @@ async function voiceEventsHandler(request, context) {
         const categoriesCollection = db.collection('categories');
         const venuesCollection = db.collection('Venues');
 
-        // Calculate 2 months before query start for recurring event filter
-        const twoMonthsBeforeStart = new Date(startDate);
-        twoMonthsBeforeStart.setMonth(twoMonthsBeforeStart.getMonth() - 2);
+        // Calculate 1 month before query start for recurring event filter
+        // Tighter window to exclude old recurring events (e.g., Nov events in Jan query)
+        const oneMonthBeforeStart = new Date(startDate);
+        oneMonthBeforeStart.setMonth(oneMonthBeforeStart.getMonth() - 1);
 
         // Build base filter
         const baseFilter = {
@@ -120,9 +121,9 @@ async function voiceEventsHandler(request, context) {
                     { recurrenceRule: '' }
                 ]
             },
-            // Recurring events - but only if startDate is within 2 months of query start
+            // Recurring events - startDate within 1 month before query start AND not after query end
             {
-                startDate: { $gte: twoMonthsBeforeStart },
+                startDate: { $gte: oneMonthBeforeStart, $lte: endDate },
                 $and: [
                     { recurrenceRule: { $exists: true } },
                     { recurrenceRule: { $ne: null } },
@@ -200,6 +201,9 @@ async function voiceEventsHandler(request, context) {
                 });
             }
 
+            // Check if event has recurrence rule
+            const isRecurring = !!(event.recurrenceRule && event.recurrenceRule !== '');
+
             return {
                 id: event._id.toString(),
                 title: event.title,
@@ -209,6 +213,7 @@ async function voiceEventsHandler(request, context) {
                 venueName: venue?.name || event.venueName || 'TBD',
                 venueCity: venue?.city || event.venueCityName || '',
                 venueAddress: venue?.address || '',
+                isRecurring,
                 isCanceled: event.isCanceled || false,
                 description: event.description ? event.description.substring(0, 200) : ''
             };
