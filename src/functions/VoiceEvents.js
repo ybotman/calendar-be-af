@@ -209,12 +209,17 @@ async function voiceEventsHandler(request, context) {
             return { description, until };
         };
 
+        // If categoryId filter was provided, use that category's name for display
+        // (since that's what the user asked for, even if event has multiple categories)
+        const filteredCategoryName = categoryId ? categoryMap[categoryId] : null;
+
         // Format events for voice
         const formattedEvents = events.map(event => {
             const venue = event.venueID ? venueMap[event.venueID.toString()] : null;
-            const categoryName = event.categoryFirstId
-                ? categoryMap[event.categoryFirstId.toString()] || 'Event'
-                : 'Event';
+            // Use filtered category name if available, otherwise fall back to event's primary category
+            const categoryName = filteredCategoryName
+                || (event.categoryFirstId ? categoryMap[event.categoryFirstId.toString()] : null)
+                || 'Event';
 
             // Get venue timezone (default to Eastern if not set)
             const venueTimezone = venue?.timezone || 'America/New_York';
