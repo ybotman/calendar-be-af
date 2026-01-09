@@ -94,7 +94,7 @@ async function voiceEventsHandler(request, context) {
         const db = mongoClient.db();
         const eventsCollection = db.collection('events');
         const categoriesCollection = db.collection('categories');
-        const venuesCollection = db.collection('Venues');
+        const venuesCollection = db.collection('venues');
 
         // Build base filter
         const baseFilter = {
@@ -355,10 +355,11 @@ async function voiceEventsHandler(request, context) {
                 category: categoryName,
                 dateFormatted,
                 timeFormatted,
-                venueName: venue?.name || event.venueName || 'TBD',
+                venueName: venue?.name || venue?.shortName || event.venueName || 'TBD',
                 venueCity: venue?.city || event.venueCityName || '',
-                venueAddress: venue?.address || '',
+                venueAddress: venue?.address1 || venue?.address || '',
                 venueTimezone,
+                eventImage: event.eventImage || null,
                 isRecurring,
                 recurrenceDescription: recurrence?.description || null,
                 isCanceled: event.isCanceled || false,
