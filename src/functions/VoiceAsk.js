@@ -80,6 +80,48 @@ function applyFuzzyMatching(query) {
     return normalized;
 }
 
+/**
+ * Valid OpenAI TTS voices
+ */
+const VALID_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+/**
+ * Generate speech audio using OpenAI TTS
+ * @param {string} text - Text to convert to speech
+ * @param {string} voice - Voice to use (nova, shimmer, alloy, echo, fable, onyx)
+ * @param {object} context - Azure function context for logging
+ * @returns {Buffer|null} - Audio buffer or null on error
+ */
+async function generateSpeechAudio(text, voice, context) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+        context.log('VoiceAsk TTS: No OpenAI API key');
+        return null;
+    }
+
+    // Validate voice
+    const selectedVoice = VALID_VOICES.includes(voice) ? voice : 'nova';
+    context.log(`VoiceAsk TTS: Generating audio with voice "${selectedVoice}", text length: ${text.length}`);
+
+    try {
+        const openai = new OpenAI({ apiKey });
+        const response = await openai.audio.speech.create({
+            model: 'tts-1',
+            voice: selectedVoice,
+            input: text,
+            response_format: 'mp3'
+        });
+
+        // Get audio as buffer
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        context.log(`VoiceAsk TTS: Generated ${audioBuffer.length} bytes of audio`);
+        return audioBuffer;
+    } catch (err) {
+        context.error('VoiceAsk TTS error:', err.message);
+        return null;
+    }
+}
+
 // City mapping with coordinates
 const CITIES = {
     'boston': { lat: 42.3601, lng: -71.0589, range: 100 },
@@ -351,7 +393,7 @@ async function voiceAskHandler(request, context) {
     context.log('VoiceAsk: Request received, method:', request.method);
     context.log('VoiceAsk: Available cities:', Object.keys(CITIES).join(', '));
 
-    let query, appId;
+    let query, appId, voice;
 
     // Support both GET (query string) and POST (JSON body)
     if (request.method === 'GET') {
@@ -359,13 +401,15 @@ async function voiceAskHandler(request, context) {
         const url = new URL(request.url);
         query = url.searchParams.get('query') || url.searchParams.get('q');
         appId = url.searchParams.get('appId') || url.searchParams.get('app') || '1';
-        context.log('VoiceAsk: GET request, query from URL params');
+        voice = url.searchParams.get('voice'); // If set, return audio instead of JSON
+        context.log('VoiceAsk: GET request, query from URL params, voice:', voice || 'none');
     } else {
         // POST: Read from JSON body
         try {
             const body = await request.json();
             query = body.query;
             appId = body.appId || '1';
+            voice = body.voice; // If set, return audio instead of JSON
         } catch (err) {
             return {
                 status: 400,
@@ -652,6 +696,24 @@ async function voiceAskHandler(request, context) {
         const spoken = formatSpokenResponse(formattedEvents, parsed, parsed.city);
 
         context.log(`VoiceAsk: Returning ${formattedEvents.length} events`);
+
+        // If voice param is set, return audio instead of JSON
+        if (voice) {
+            const audioBuffer = await generateSpeechAudio(spoken, voice, context);
+            if (audioBuffer) {
+                return {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'audio/mpeg',
+                        'Content-Length': audioBuffer.length.toString(),
+                        'X-Spoken-Text': encodeURIComponent(spoken.substring(0, 200)) // For debugging
+                    },
+                    body: audioBuffer
+                };
+            }
+            // Fall through to JSON if TTS fails
+            context.log('VoiceAsk: TTS failed, falling back to JSON response');
+        }
 
         return {
             status: 200,
