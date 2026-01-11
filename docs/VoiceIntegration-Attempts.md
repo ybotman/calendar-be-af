@@ -142,21 +142,39 @@ Base: https://calendarbeaf-prod.azurewebsites.net/api/voice/ask
 ### Struggles / Issues 🔧
 | Issue | Status | Notes |
 |-------|--------|-------|
-| Siri + Shortcut Input | Partial | Words after shortcut name don't pass reliably |
+| Siri + Shortcut Input | Bypassed | Use Dictate Text + IF/OTHERWISE instead |
 | Siri + ChatGPT conflict | Workaround | Siri routes "ask..." queries to ChatGPT |
 | Play Sound vs Play Media | Fixed | Use "Play Media" for auto-play |
 | OpenAI TTS | Blocked | 429 quota error - switched to Azure |
-| Mobile shortcut | Broken | "Something is wrong" error - needs debug |
+| Mobile shortcut | Solution Found | Use IF/OTHERWISE pattern with Dictate Text |
 
-### Shortcut Flow (Target)
+### Shortcut Flow (WORKING SOLUTION) ✅
+
+**Final Shortcut Logic:**
 ```
-1. User: "Hey Siri, Banana"
-2. Play greeting: "Hello! What tango events would you like to know about?"
-3. Dictate Text: User speaks query (or "help")
-4. IF "help" → call ?help=true endpoint
-5. OTHERWISE → call ?query=[dictated]&voice=nova
-6. Play results audio
+1. Dictate Text → [Dictated Text]
+
+2. IF [Dictated Text] contains "help"
+   └─ URL: https://calendarbeaf-prod.azurewebsites.net/api/voice/ask?help=true&voice=nova
+
+3. OTHERWISE
+   └─ URL: https://calendarbeaf-prod.azurewebsites.net/api/voice/ask?query=[Dictated Text]&voice=nova
+
+4. Get Contents of URL
+
+5. Play Media
 ```
+
+**How to Build in Shortcuts:**
+1. **Dictate Text** action
+2. **If** → tap [Dictated Text] → contains → type `help`
+3. Inside If: **URL** → `https://calendarbeaf-prod.azurewebsites.net/api/voice/ask?help=true&voice=nova`
+4. Tap **Otherwise** at bottom of If block
+5. Inside Otherwise: **URL** → `https://calendarbeaf-prod.azurewebsites.net/api/voice/ask?query=[Dictated Text]&voice=nova`
+6. After End If: **Get Contents of URL**
+7. **Play Media**
+
+**Key Insight:** Backend already has `?help=true` ready. Shortcut just branches based on what user says. No backend changes needed!
 
 ### Key Learnings
 - Siri Shortcuts can't easily pass voice after shortcut name
@@ -214,6 +232,14 @@ Base: https://calendarbeaf-prod.azurewebsites.net/api/voice/ask
 
 ## Summary
 
-**The API works. The Shortcuts variable wiring is the blocker.**
+**SOLVED: Voice-in → Voice-out working!**
 
-The disconnect is between Apple Shortcuts' visual programming model and getting a voice-captured string into a JSON POST body. This is a Shortcuts UX limitation, not a code problem.
+**Solution:** Use Dictate Text + IF/OTHERWISE branching in Shortcuts:
+- Backend provides GET endpoints with `?query=`, `?help=true`, `?greeting=true`
+- Shortcut uses Dictate Text, branches on content
+- Audio returned via Azure Speech TTS (Jenny Neural)
+- Play Media action auto-plays response
+
+**Previous Blocker (Resolved):** The disconnect was between Apple Shortcuts' visual programming model and getting a voice-captured string into a JSON POST body. **Solution:** Use GET with query parameters instead of POST with JSON body.
+
+**Version:** v1.22.0 - Full voice integration ready for testing
