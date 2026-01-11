@@ -3,10 +3,26 @@
 **Date:** January 10, 2026
 **Goal:** Enable voice queries to TangoTiempo calendar from iPhone
 
-## The Goal
+## The Requirement
+
+### VOICE IN → VOICE OUT
+
+This is a **voice-first** integration. Both input AND output must be audio.
+
+| Direction | Requirement |
+|-----------|-------------|
+| **VOICE IN** | User speaks query naturally (no typing) |
+| **VOICE OUT** | Phone speaks response aloud (no reading) |
+
+### User Experience
 
 User says: **"Hey Siri, what practicas are this weekend in Boston?"**
-Phone responds: **"I found 3 practicas this weekend..."**
+Phone responds audibly: **"I found 3 practicas this weekend..."**
+
+**NOT acceptable:**
+- ❌ Type query → hear response (not voice in)
+- ❌ Speak query → read response on screen (not voice out)
+- ❌ Any interaction requiring the user to look at or touch the phone
 
 ## What We Built (Working)
 
@@ -66,23 +82,38 @@ The Shortcuts app:
 2. Can make POST requests with JSON ✅
 3. Cannot easily connect (1) to (2) ❌
 
-## Options Not Yet Tried
+## Solution Implemented (v1.19.0)
 
-### Option A: Siri Shortcut Input
-Instead of Dictate action, use Siri's built-in voice capture:
+### GET Endpoint + Fuzzy Matching ✅
+
+**API now supports GET requests:**
+```
+GET /api/voice/ask?query=practicas+this+weekend+boston
+```
+
+**Fuzzy matching handles Siri mishears:**
+| Siri Hears | Converts To |
+|------------|-------------|
+| practical, practice | practica |
+| melonga, my longa | milonga |
+| tangle | tango |
+
+### Siri Shortcut Setup (TO TEST)
+
+1. Create Shortcut named **"Tango"**
+2. Add **Text** action: `https://calendarbeaf-prod.azurewebsites.net/api/voice/ask?query=`
+3. Add **Combine Text**: [Text] + [Shortcut Input]
+4. Add **Get Contents of URL** (GET method)
+5. Add **Get Dictionary Value** → key: `spoken`
+6. Add **Speak Text**
+
+**Usage:** "Hey Siri, Tango practicas this weekend Boston"
+
+### Alternative: Shortcut Input Method
 - Name shortcut "Tango"
 - Say: "Hey Siri, Tango practicas this weekend"
 - Words after "Tango" become `⟨Shortcut Input⟩`
 - No Dictate action needed
-
-**Requires testing:** Does Shortcut Input work with JSON body?
-
-### Option B: URL with Query String Instead of POST Body
-Change API to accept GET with query params:
-```
-GET /api/voice/ask?query=practicas+this+weekend+boston&appId=1
-```
-Then Shortcut just builds a URL string (easier than JSON body)
 
 ### Option C: ChatGPT Custom GPT
 - Already exists: TangoTiempo GPT

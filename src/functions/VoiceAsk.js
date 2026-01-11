@@ -7,10 +7,16 @@ const OpenAI = require('openai');
 const { standardMiddleware } = require('../middleware');
 
 /**
- * POST /api/voice/ask
+ * GET/POST /api/voice/ask
  * Natural language voice queries for tango events
  *
- * Request Body:
+ * VOICE IN → VOICE OUT: Designed for Siri Shortcuts
+ * GET is preferred for Siri (easier URL string building)
+ *
+ * GET Request:
+ * - /api/voice/ask?query=practicas+this+weekend+boston&appId=1
+ *
+ * POST Request Body:
  * - query: Natural language query (required) e.g., "What practicas are this weekend in Boston?"
  * - appId: Application ID (optional, default: "1")
  *
@@ -21,6 +27,58 @@ const { standardMiddleware } = require('../middleware');
  * - count: Number of events found
  * - events: Array of event details
  */
+
+/**
+ * Fuzzy matching for tango terms
+ * Handles common Siri speech recognition errors
+ */
+const FUZZY_TERMS = {
+    // Practica variations (Siri often hears "practical")
+    'practical': 'practica',
+    'practicals': 'practicas',
+    'practice': 'practica',
+    'practices': 'practicas',
+    'practico': 'practica',
+    'pratico': 'practica',
+    'practic': 'practica',
+
+    // Milonga variations
+    'melonga': 'milonga',
+    'melongas': 'milongas',
+    'my longa': 'milonga',
+    'mylonga': 'milonga',
+    'mill onga': 'milonga',
+    'millonga': 'milonga',
+    'malonga': 'milonga',
+    'molonga': 'milonga',
+
+    // Tango variations
+    'tangle': 'tango',
+    'tangle events': 'tango events',
+
+    // Class variations
+    'tango class': 'class',
+    'tango classes': 'classes',
+    'tango lesson': 'lesson',
+    'tango lessons': 'lessons'
+};
+
+/**
+ * Apply fuzzy matching to normalize Siri speech recognition errors
+ */
+function applyFuzzyMatching(query) {
+    let normalized = query.toLowerCase();
+
+    // Sort by length descending to match longer phrases first
+    const sortedTerms = Object.keys(FUZZY_TERMS).sort((a, b) => b.length - a.length);
+
+    for (const term of sortedTerms) {
+        const regex = new RegExp('\\b' + term.replace(/\s+/g, '\\s+') + '\\b', 'gi');
+        normalized = normalized.replace(regex, FUZZY_TERMS[term]);
+    }
+
+    return normalized;
+}
 
 // City mapping with coordinates
 const CITIES = {
@@ -176,9 +234,10 @@ function resolveTimeframe(timeframe) {
         case 'tonight':
             return { start: formatDate(today), end: formatDate(today) };
 
-        case 'tomorrow':
+        case 'tomorrow': {
             const tomorrow = addDays(today, 1);
             return { start: formatDate(tomorrow), end: formatDate(tomorrow) };
+        }
 
         case 'this_weekend': {
             // Friday to Sunday
@@ -286,28 +345,38 @@ function titleCase(str) {
 }
 
 /**
- * Main handler
+ * Main handler - supports both GET and POST
  */
 async function voiceAskHandler(request, context) {
-    context.log('VoiceAsk: Request received');
+    context.log('VoiceAsk: Request received, method:', request.method);
     context.log('VoiceAsk: Available cities:', Object.keys(CITIES).join(', '));
 
-    let body;
-    try {
-        body = await request.json();
-    } catch (err) {
-        return {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                spoken: "I couldn't understand that request. Please try again.",
-                error: 'INVALID_JSON'
-            })
-        };
-    }
+    let query, appId;
 
-    const query = body.query;
-    const appId = body.appId || '1';
+    // Support both GET (query string) and POST (JSON body)
+    if (request.method === 'GET') {
+        // GET: Read from query string (preferred for Siri Shortcuts)
+        const url = new URL(request.url);
+        query = url.searchParams.get('query') || url.searchParams.get('q');
+        appId = url.searchParams.get('appId') || url.searchParams.get('app') || '1';
+        context.log('VoiceAsk: GET request, query from URL params');
+    } else {
+        // POST: Read from JSON body
+        try {
+            const body = await request.json();
+            query = body.query;
+            appId = body.appId || '1';
+        } catch (err) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    spoken: "I couldn't understand that request. Please try again.",
+                    error: 'INVALID_JSON'
+                })
+            };
+        }
+    }
 
     if (!query) {
         return {
@@ -318,6 +387,13 @@ async function voiceAskHandler(request, context) {
                 error: 'MISSING_QUERY'
             })
         };
+    }
+
+    // Apply fuzzy matching to handle Siri speech recognition errors
+    const originalQuery = query;
+    query = applyFuzzyMatching(query);
+    if (query !== originalQuery.toLowerCase()) {
+        context.log('VoiceAsk: Fuzzy matched:', originalQuery, '->', query);
     }
 
     context.log('VoiceAsk: Query:', query);
@@ -444,7 +520,7 @@ async function voiceAskHandler(request, context) {
                 ]
             },
             {
-                recurrenceRule: { $exists: true, $ne: null, $ne: '' }
+                recurrenceRule: { $exists: true, $nin: [null, ''] }
             }
         ];
 
@@ -614,7 +690,7 @@ async function voiceAskHandler(request, context) {
 }
 
 app.http('Voice_Ask', {
-    methods: ['POST'],
+    methods: ['GET', 'POST'],
     authLevel: 'anonymous',
     route: 'voice/ask',
     handler: standardMiddleware(voiceAskHandler)

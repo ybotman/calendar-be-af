@@ -4,6 +4,20 @@
 
 **TangoTiempoAsk** is a voice-first API endpoint that enables natural language queries for tango events. Users can ask questions like "What practicas are happening this weekend in Boston?" and receive spoken responses suitable for Siri, Alexa, or any voice assistant.
 
+## Core Requirement: VOICE IN → VOICE OUT
+
+| Direction | Requirement |
+|-----------|-------------|
+| **VOICE IN** | User speaks query naturally (no typing) |
+| **VOICE OUT** | Phone/device speaks response aloud (no reading) |
+
+**This is non-negotiable.** The entire interaction must be hands-free and eyes-free.
+
+**NOT acceptable:**
+- ❌ Type query → hear response (not voice in)
+- ❌ Speak query → read response on screen (not voice out)
+- ❌ Any interaction requiring the user to look at or touch the device
+
 ## User Experience
 
 ### Example Interactions
@@ -37,14 +51,30 @@ Response: "I found 5 events next week in Chicago. 2 practicas, 2 classes,
 
 ## API Design
 
-### Endpoint
+### Endpoints
 
+**GET (Preferred for Siri Shortcuts):**
+```
+GET /api/voice/ask?query=practicas+this+weekend+boston&appId=1
+```
+
+**POST (Alternative):**
 ```
 POST /api/voice/ask
 Content-Type: application/json
 ```
 
-### Request
+### GET Request (Siri-friendly)
+
+```
+GET /api/voice/ask?query=What+practicas+are+this+weekend+in+Boston
+```
+
+Query parameters:
+- `query` or `q`: Natural language query (required)
+- `appId` or `app`: Application ID (optional, default: "1")
+
+### POST Request
 
 ```json
 {
@@ -53,6 +83,17 @@ Content-Type: application/json
   "appId": "1"
 }
 ```
+
+### Fuzzy Matching (Siri Speech Recognition)
+
+The API automatically corrects common Siri mishears:
+
+| Siri Hears | Converts To |
+|------------|-------------|
+| practical, practice, practicals | practica |
+| melonga, my longa, millonga, malonga | milonga |
+| tangle, tangle events | tango |
+| tango class, tango classes | class |
 
 ### Response
 
