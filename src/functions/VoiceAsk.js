@@ -108,27 +108,25 @@ async function generateSpeechAudio(text, voice, context) {
         const openai = new OpenAI({ apiKey });
 
         context.log('VoiceAsk TTS: Calling speech.create...');
-        const response = await openai.audio.speech.create({
+        const mp3Response = await openai.audio.speech.create({
             model: 'tts-1',
             voice: selectedVoice,
-            input: text,
-            response_format: 'mp3'
+            input: text
         });
 
-        context.log('VoiceAsk TTS: Got response, type:', typeof response);
+        context.log('VoiceAsk TTS: Got response');
 
-        // Get audio as buffer
-        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        // Convert response to buffer - OpenAI SDK returns a Response-like object
+        const arrayBuffer = await mp3Response.arrayBuffer();
+        const audioBuffer = Buffer.from(arrayBuffer);
+
         context.log(`VoiceAsk TTS: Generated ${audioBuffer.length} bytes of audio`);
         return audioBuffer;
     } catch (err) {
         context.error('VoiceAsk TTS FAILED:', err.message);
-        context.error('VoiceAsk TTS error details:', JSON.stringify({
-            name: err.name,
-            code: err.code,
-            status: err.status,
-            stack: err.stack?.substring(0, 500)
-        }));
+        if (err.response) {
+            context.error('VoiceAsk TTS response status:', err.response.status);
+        }
         return null;
     }
 }
