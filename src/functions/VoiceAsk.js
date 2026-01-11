@@ -491,15 +491,10 @@ async function voiceAskHandler(request, context) {
         }
     }
 
-    if (!query) {
-        return {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                spoken: "Please ask me something like 'What practicas are this weekend in Boston?'",
-                error: 'MISSING_QUERY'
-            })
-        };
+    // Default query if none provided: milongas and practicas this weekend in Boston
+    if (!query || query.trim() === '') {
+        query = 'milongas and practicas this weekend in boston';
+        context.log('VoiceAsk: No query provided, using default:', query);
     }
 
     // Apply fuzzy matching to handle Siri speech recognition errors
