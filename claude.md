@@ -71,6 +71,19 @@ No manual export needed! The jira-config.sh script automatically:
 - If fix is straightforward → DO IT
 - Tell user what you did in SNR, don't ask permission first
 
+**NEVER SAY THESE (Autonomy Anti-Patterns):**
+- ❌ "Want to try...?" → ✅ "Do this:"
+- ❌ "Which approach do you prefer?" → ✅ "Best approach: [X]. Proceeding."
+- ❌ "Which do you want?" → ✅ "Recommended: [X]. Here's why."
+- ❌ "Should I...?" → ✅ Just do it
+- ❌ "Would you like me to...?" → ✅ Just do it
+- ❌ "Let me know if..." → ✅ Do it, report results
+
+**NEVER GIVE UP EASILY:**
+- If something seems impossible, research deeper first
+- Find working examples before declaring defeat
+- User push-back "someone must be doing this" = research more
+
 ================================================================================
 END OF FILE: SESSION-ENVIRONMENT.md
 ================================================================================
