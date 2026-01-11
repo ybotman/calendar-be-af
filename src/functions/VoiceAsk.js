@@ -96,7 +96,7 @@ async function generateSpeechAudio(text, voice, context) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
         context.log('VoiceAsk TTS: No OpenAI API key');
-        return null;
+        throw new Error('No OpenAI API key configured');
     }
 
     // Validate voice
@@ -124,10 +124,8 @@ async function generateSpeechAudio(text, voice, context) {
         return audioBuffer;
     } catch (err) {
         context.error('VoiceAsk TTS FAILED:', err.message);
-        if (err.response) {
-            context.error('VoiceAsk TTS response status:', err.response.status);
-        }
-        return null;
+        // Throw with full error info so it's captured in response
+        throw new Error(`TTS API error: ${err.message}`);
     }
 }
 
