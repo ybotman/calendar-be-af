@@ -462,7 +462,7 @@ async function voiceAskHandler(request, context) {
     context.log('VoiceAsk: Request received, method:', request.method);
     context.log('VoiceAsk: Available cities:', Object.keys(CITIES).join(', '));
 
-    let query, appId, voice;
+    let query, appId, voice, greeting, help;
 
     // Support both GET (query string) and POST (JSON body)
     if (request.method === 'GET') {
@@ -471,14 +471,18 @@ async function voiceAskHandler(request, context) {
         query = url.searchParams.get('query') || url.searchParams.get('q');
         appId = url.searchParams.get('appId') || url.searchParams.get('app') || '1';
         voice = url.searchParams.get('voice'); // If set, return audio instead of JSON
-        context.log('VoiceAsk: GET request, query from URL params, voice:', voice || 'none');
+        greeting = url.searchParams.get('greeting'); // Return greeting audio
+        help = url.searchParams.get('help'); // Return help audio
+        context.log('VoiceAsk: GET request, voice:', voice || 'none');
     } else {
         // POST: Read from JSON body
         try {
             const body = await request.json();
             query = body.query;
             appId = body.appId || '1';
-            voice = body.voice; // If set, return audio instead of JSON
+            voice = body.voice;
+            greeting = body.greeting;
+            help = body.help;
         } catch (err) {
             return {
                 status: 400,
@@ -489,6 +493,54 @@ async function voiceAskHandler(request, context) {
                 })
             };
         }
+    }
+
+    // Handle greeting request - returns audio prompt
+    if (greeting && voice) {
+        const greetingText = "Hello! What tango events would you like to know about?";
+        try {
+            const audioBuffer = await generateSpeechAudio(greetingText, voice, context);
+            if (audioBuffer && audioBuffer.length > 0) {
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': audioBuffer.length.toString() },
+                    body: audioBuffer
+                };
+            }
+        } catch (err) {
+            context.error('Greeting TTS error:', err.message);
+        }
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spoken: greetingText })
+        };
+    }
+
+    // Handle help request - explains what users can ask
+    if (help && voice) {
+        const helpText = "You can ask about tango events in Boston and other cities. " +
+            "Try asking for practicas, milongas, or classes. " +
+            "You can say things like: What practicas are this weekend? " +
+            "Any milongas tonight? Or, classes next week in Chicago. " +
+            "I know about Boston, New York, Chicago, San Francisco, and more.";
+        try {
+            const audioBuffer = await generateSpeechAudio(helpText, voice, context);
+            if (audioBuffer && audioBuffer.length > 0) {
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': audioBuffer.length.toString() },
+                    body: audioBuffer
+                };
+            }
+        } catch (err) {
+            context.error('Help TTS error:', err.message);
+        }
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spoken: helpText })
+        };
     }
 
     // Default query if none provided: milongas and practicas next 2 days in Boston
