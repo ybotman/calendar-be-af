@@ -104,7 +104,10 @@ async function generateSpeechAudio(text, voice, context) {
     context.log(`VoiceAsk TTS: Generating audio with voice "${selectedVoice}", text length: ${text.length}`);
 
     try {
+        context.log('VoiceAsk TTS: Creating OpenAI client...');
         const openai = new OpenAI({ apiKey });
+
+        context.log('VoiceAsk TTS: Calling speech.create...');
         const response = await openai.audio.speech.create({
             model: 'tts-1',
             voice: selectedVoice,
@@ -112,12 +115,20 @@ async function generateSpeechAudio(text, voice, context) {
             response_format: 'mp3'
         });
 
+        context.log('VoiceAsk TTS: Got response, type:', typeof response);
+
         // Get audio as buffer
         const audioBuffer = Buffer.from(await response.arrayBuffer());
         context.log(`VoiceAsk TTS: Generated ${audioBuffer.length} bytes of audio`);
         return audioBuffer;
     } catch (err) {
-        context.error('VoiceAsk TTS error:', err.message);
+        context.error('VoiceAsk TTS FAILED:', err.message);
+        context.error('VoiceAsk TTS error details:', JSON.stringify({
+            name: err.name,
+            code: err.code,
+            status: err.status,
+            stack: err.stack?.substring(0, 500)
+        }));
         return null;
     }
 }
