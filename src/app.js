@@ -47,6 +47,7 @@ require('./functions/Cloudflare');
 
 // Voice API - Optimized endpoints for TangoVoice GPT
 require('./functions/VoiceEvents');
+require('./functions/VoiceAsk');
 
 // Note: Role_List, Venue_Create, Venue_Delete exist locally but not in git - commit them first
 

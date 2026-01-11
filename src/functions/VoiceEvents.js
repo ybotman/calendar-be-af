@@ -14,22 +14,57 @@ const { standardMiddleware } = require('../middleware');
  * - Filters out expired recurring events
  * - Smaller response payload
  * - Summary field for GPT
+ * - Multi-category filtering
+ * - Geo-location filtering
  *
  * Query Parameters:
  * - appId: Application ID (required)
  * - start: Start date YYYY-MM-DD (required)
  * - end: End date YYYY-MM-DD (required)
- * - categoryId: Filter by category ObjectId (optional)
+ * - categoryId: Filter by category - supports:
+ *     - Single ObjectId: "66c4d370a87a956db06c49ea"
+ *     - Multiple (comma-separated): "66c4d370a87a956db06c49ea,66c4d370a87a956db06c49e9"
+ *     - Shortcuts: "social" (practica+milonga), "classes" (class+workshop+dayworkshop)
+ * - lat: Latitude for geo filter (default: 42.3601 - Boston)
+ * - lng: Longitude for geo filter (default: -71.0589 - Boston)
+ * - range: Range in miles (default: 100)
  * - limit: Max results (default: 20, max: 50)
  */
 async function voiceEventsHandler(request, context) {
     const appId = request.query.get('appId');
     const startParam = request.query.get('start');
     const endParam = request.query.get('end');
-    const categoryId = request.query.get('categoryId');
+    const categoryIdParam = request.query.get('categoryId');
     const limit = Math.min(50, Math.max(1, parseInt(request.query.get('limit')) || 20));
 
-    context.log('Voice_Events: Request received', { appId, start: startParam, end: endParam, categoryId, limit });
+    // Geo parameters with Boston defaults
+    const lat = parseFloat(request.query.get('lat')) || 42.3601;
+    const lng = parseFloat(request.query.get('lng')) || -71.0589;
+    const rangeMiles = parseFloat(request.query.get('range')) || 100;
+
+    // Category shortcuts mapping (appId=1 TangoTiempo)
+    const CATEGORY_SHORTCUTS = {
+        'social': ['66c4d370a87a956db06c49ea', '66c4d370a87a956db06c49e9'], // Practica, Milonga
+        'classes': ['66c4d370a87a956db06c49eb', '66c4d370a87a956db06c49ed', '6700258c9bde2a0fb8166f87'], // Class, Workshop, DayWorkshop
+        'practica': ['66c4d370a87a956db06c49ea'],
+        'milonga': ['66c4d370a87a956db06c49e9'],
+        'class': ['66c4d370a87a956db06c49eb']
+    };
+
+    // Parse categoryId - supports shortcuts, single ID, or comma-separated IDs
+    let categoryIds = [];
+    if (categoryIdParam) {
+        const lowerParam = categoryIdParam.toLowerCase();
+        if (CATEGORY_SHORTCUTS[lowerParam]) {
+            categoryIds = CATEGORY_SHORTCUTS[lowerParam];
+        } else if (categoryIdParam.includes(',')) {
+            categoryIds = categoryIdParam.split(',').map(id => id.trim()).filter(Boolean);
+        } else {
+            categoryIds = [categoryIdParam];
+        }
+    }
+
+    context.log('Voice_Events: Request received', { appId, start: startParam, end: endParam, categoryIds, lat, lng, rangeMiles, limit });
 
     // Validate required parameters
     if (!appId) {
@@ -106,24 +141,54 @@ async function voiceEventsHandler(request, context) {
             ]
         };
 
+        // Geo filter: Find venues within range first
+        const rangeMeters = rangeMiles * 1609.34; // Convert miles to meters
+        const nearbyVenues = await venuesCollection.find({
+            geolocation: {
+                $nearSphere: {
+                    $geometry: {
+                        type: 'Point',
+                        coordinates: [lng, lat]
+                    },
+                    $maxDistance: rangeMeters
+                }
+            }
+        }).toArray();
+        const nearbyVenueIds = nearbyVenues.map(v => v._id);
+        context.log(`Voice_Events: Found ${nearbyVenueIds.length} venues within ${rangeMiles} miles`);
+
         // Add category filter if provided
         // Match both ObjectId and string formats (database may store either)
         const andConditions = [];
-        if (categoryId) {
+
+        // Venue geo filter - only include events at nearby venues
+        if (nearbyVenueIds.length > 0) {
+            andConditions.push({
+                $or: [
+                    { venueID: { $in: nearbyVenueIds } },
+                    { venueID: { $in: nearbyVenueIds.map(id => id.toString()) } }
+                ]
+            });
+        }
+
+        // Multi-category filter
+        if (categoryIds.length > 0) {
             try {
-                const categoryObjId = new ObjectId(categoryId);
-                andConditions.push({
-                    $or: [
+                const categoryConditions = [];
+                for (const catId of categoryIds) {
+                    const categoryObjId = new ObjectId(catId);
+                    categoryConditions.push(
                         // ObjectId comparison
                         { categoryFirstId: categoryObjId },
                         { categorySecondId: categoryObjId },
                         { categoryThirdId: categoryObjId },
                         // String comparison (some events store as string)
-                        { categoryFirstId: categoryId },
-                        { categorySecondId: categoryId },
-                        { categoryThirdId: categoryId }
-                    ]
-                });
+                        { categoryFirstId: catId },
+                        { categorySecondId: catId },
+                        { categoryThirdId: catId }
+                    );
+                }
+                andConditions.push({ $or: categoryConditions });
             } catch (err) {
                 return {
                     status: 400,
@@ -178,16 +243,19 @@ async function voiceEventsHandler(request, context) {
             categoryMap[cat._id.toString()] = cat.categoryName;
         });
 
-        // If filtering by categoryId, also fetch that specific category (may not have appId match)
-        let filteredCategoryName = null;
-        if (categoryId && !categoryMap[categoryId]) {
-            const filteredCategory = await categoriesCollection.findOne({ _id: new ObjectId(categoryId) });
-            if (filteredCategory) {
-                filteredCategoryName = filteredCategory.categoryName;
-                categoryMap[categoryId] = filteredCategory.categoryName;
+        // If filtering by categoryIds, fetch any missing category names
+        // Don't set a single filteredCategoryName since we may have multiple categories
+        for (const catId of categoryIds) {
+            if (!categoryMap[catId]) {
+                try {
+                    const filteredCategory = await categoriesCollection.findOne({ _id: new ObjectId(catId) });
+                    if (filteredCategory) {
+                        categoryMap[catId] = filteredCategory.categoryName;
+                    }
+                } catch (e) {
+                    // Invalid ObjectId, skip
+                }
             }
-        } else if (categoryId) {
-            filteredCategoryName = categoryMap[categoryId];
         }
 
         // Get unique venue IDs and fetch venue data
@@ -309,9 +377,8 @@ async function voiceEventsHandler(request, context) {
         // Format events for voice
         const formattedEvents = allEvents.map(event => {
             const venue = event.venueID ? venueMap[event.venueID.toString()] : null;
-            // Use filtered category name if available, otherwise fall back to event's primary category
-            const categoryName = filteredCategoryName
-                || (event.categoryFirstId ? categoryMap[event.categoryFirstId.toString()] : null)
+            // Get category name from event's primary category
+            const categoryName = (event.categoryFirstId ? categoryMap[event.categoryFirstId.toString()] : null)
                 || 'Event';
 
             // Get venue timezone (default to Eastern if not set)
