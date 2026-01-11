@@ -290,6 +290,7 @@ function titleCase(str) {
  */
 async function voiceAskHandler(request, context) {
     context.log('VoiceAsk: Request received');
+    context.log('VoiceAsk: Available cities:', Object.keys(CITIES).join(', '));
 
     let body;
     try {
@@ -330,7 +331,14 @@ async function voiceAskHandler(request, context) {
     const location = resolveCity(parsed.city);
     const categoryId = CATEGORY_MAP[parsed.category] || null;
 
-    context.log('VoiceAsk: Resolved:', { dates, location, categoryId });
+    context.log('VoiceAsk: Resolved:', {
+        dates,
+        city: parsed.city || 'boston (default)',
+        lat: location.lat,
+        lng: location.lng,
+        range: location.range + ' miles',
+        categoryId
+    });
 
     let mongoClient;
 
