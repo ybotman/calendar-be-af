@@ -115,6 +115,56 @@ GET /api/voice/ask?query=practicas+this+weekend+boston
 - Words after "Tango" become `⟨Shortcut Input⟩`
 - No Dictate action needed
 
+---
+
+## Current Status (January 11, 2026)
+
+### What's Working ✅
+| Component | Status |
+|-----------|--------|
+| **API v1.22.0** | GET + fuzzy matching + Azure TTS |
+| **Azure Speech TTS** | Jenny Neural voice (sounds good) |
+| **Greeting endpoint** | `?greeting=true&voice=nova` |
+| **Help endpoint** | `?help=true&voice=nova` |
+| **Default query** | No input → "milongas and practicas next 2 days boston" |
+| **Hardcoded Shortcut** | Works on desktop |
+
+### API Endpoints
+```
+Base: https://calendarbeaf-prod.azurewebsites.net/api/voice/ask
+
+?greeting=true&voice=nova     → "Hello! What tango events..."
+?help=true&voice=nova         → Explains what users can ask
+?query=...&voice=nova         → Returns events as audio
+?voice=nova                   → Default query (next 2 days Boston)
+```
+
+### Struggles / Issues 🔧
+| Issue | Status | Notes |
+|-------|--------|-------|
+| Siri + Shortcut Input | Partial | Words after shortcut name don't pass reliably |
+| Siri + ChatGPT conflict | Workaround | Siri routes "ask..." queries to ChatGPT |
+| Play Sound vs Play Media | Fixed | Use "Play Media" for auto-play |
+| OpenAI TTS | Blocked | 429 quota error - switched to Azure |
+| Mobile shortcut | Broken | "Something is wrong" error - needs debug |
+
+### Shortcut Flow (Target)
+```
+1. User: "Hey Siri, Banana"
+2. Play greeting: "Hello! What tango events would you like to know about?"
+3. Dictate Text: User speaks query (or "help")
+4. IF "help" → call ?help=true endpoint
+5. OTHERWISE → call ?query=[dictated]&voice=nova
+6. Play results audio
+```
+
+### Key Learnings
+- Siri Shortcuts can't easily pass voice after shortcut name
+- "Ask [name]" triggers ChatGPT, not shortcuts
+- Use "Play Media" not "Play Sound" for audio
+- Azure Speech works when OpenAI quota exceeded
+- Backend handles help/greeting - Shortcut just needs IF/OTHERWISE branch
+
 ### Option C: ChatGPT Custom GPT
 - Already exists: TangoTiempo GPT
 - Works with text + mic transcription
