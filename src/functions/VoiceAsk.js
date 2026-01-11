@@ -83,49 +83,111 @@ function applyFuzzyMatching(query) {
 /**
  * Valid OpenAI TTS voices
  */
-const VALID_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const VALID_OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+/**
+ * Azure Speech voice mapping
+ */
+const AZURE_VOICE_MAP = {
+    'nova': 'en-US-JennyNeural',      // Female, warm (like OpenAI nova)
+    'shimmer': 'en-US-AriaNeural',    // Female, soft
+    'alloy': 'en-US-GuyNeural',       // Male, neutral
+    'echo': 'en-US-DavisNeural',      // Male
+    'fable': 'en-GB-SoniaNeural',     // British female
+    'onyx': 'en-US-TonyNeural'        // Deep male
+};
+
+/**
+ * Generate speech audio using Azure Speech Services
+ */
+async function generateAzureSpeechAudio(text, voice, context) {
+    const speechKey = process.env.AZURE_SPEECH_KEY;
+    const speechRegion = process.env.AZURE_SPEECH_REGION || 'eastus';
+
+    if (!speechKey) {
+        throw new Error('No Azure Speech key configured');
+    }
+
+    const azureVoice = AZURE_VOICE_MAP[voice] || 'en-US-JennyNeural';
+    context.log(`VoiceAsk Azure TTS: Using voice "${azureVoice}"`);
+
+    // Build SSML
+    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+        <voice name='${azureVoice}'>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</voice>
+    </speak>`;
+
+    const response = await fetch(
+        `https://${speechRegion}.tts.speech.microsoft.com/cognitiveservices/v1`,
+        {
+            method: 'POST',
+            headers: {
+                'Ocp-Apim-Subscription-Key': speechKey,
+                'Content-Type': 'application/ssml+xml',
+                'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3'
+            },
+            body: ssml
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Azure Speech API error: ${response.status} ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
+    context.log(`VoiceAsk Azure TTS: Generated ${audioBuffer.length} bytes`);
+    return audioBuffer;
+}
 
 /**
  * Generate speech audio using OpenAI TTS
- * @param {string} text - Text to convert to speech
- * @param {string} voice - Voice to use (nova, shimmer, alloy, echo, fable, onyx)
- * @param {object} context - Azure function context for logging
- * @returns {Buffer|null} - Audio buffer or null on error
  */
-async function generateSpeechAudio(text, voice, context) {
+async function generateOpenAISpeechAudio(text, voice, context) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-        context.log('VoiceAsk TTS: No OpenAI API key');
         throw new Error('No OpenAI API key configured');
     }
 
-    // Validate voice
-    const selectedVoice = VALID_VOICES.includes(voice) ? voice : 'nova';
-    context.log(`VoiceAsk TTS: Generating audio with voice "${selectedVoice}", text length: ${text.length}`);
+    const selectedVoice = VALID_OPENAI_VOICES.includes(voice) ? voice : 'nova';
+    context.log(`VoiceAsk OpenAI TTS: Using voice "${selectedVoice}"`);
 
+    const openai = new OpenAI({ apiKey });
+    const mp3Response = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: selectedVoice,
+        input: text
+    });
+
+    const arrayBuffer = await mp3Response.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
+    context.log(`VoiceAsk OpenAI TTS: Generated ${audioBuffer.length} bytes`);
+    return audioBuffer;
+}
+
+/**
+ * Generate speech audio - tries OpenAI first, falls back to Azure
+ * @param {string} text - Text to convert to speech
+ * @param {string} voice - Voice to use
+ * @param {object} context - Azure function context for logging
+ * @returns {Buffer} - Audio buffer
+ */
+async function generateSpeechAudio(text, voice, context) {
+    context.log(`VoiceAsk TTS: Generating audio, text length: ${text.length}`);
+
+    // Try OpenAI first
     try {
-        context.log('VoiceAsk TTS: Creating OpenAI client...');
-        const openai = new OpenAI({ apiKey });
+        return await generateOpenAISpeechAudio(text, voice, context);
+    } catch (openaiErr) {
+        context.log('VoiceAsk TTS: OpenAI failed:', openaiErr.message);
 
-        context.log('VoiceAsk TTS: Calling speech.create...');
-        const mp3Response = await openai.audio.speech.create({
-            model: 'tts-1',
-            voice: selectedVoice,
-            input: text
-        });
-
-        context.log('VoiceAsk TTS: Got response');
-
-        // Convert response to buffer - OpenAI SDK returns a Response-like object
-        const arrayBuffer = await mp3Response.arrayBuffer();
-        const audioBuffer = Buffer.from(arrayBuffer);
-
-        context.log(`VoiceAsk TTS: Generated ${audioBuffer.length} bytes of audio`);
-        return audioBuffer;
-    } catch (err) {
-        context.error('VoiceAsk TTS FAILED:', err.message);
-        // Throw with full error info so it's captured in response
-        throw new Error(`TTS API error: ${err.message}`);
+        // Fall back to Azure Speech
+        try {
+            context.log('VoiceAsk TTS: Trying Azure Speech fallback...');
+            return await generateAzureSpeechAudio(text, voice, context);
+        } catch (azureErr) {
+            context.error('VoiceAsk TTS: Azure also failed:', azureErr.message);
+            throw new Error(`TTS failed - OpenAI: ${openaiErr.message}, Azure: ${azureErr.message}`);
+        }
     }
 }
 
