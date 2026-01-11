@@ -497,7 +497,7 @@ async function voiceAskHandler(request, context) {
 
     // Handle greeting request - returns audio prompt
     if (greeting && voice) {
-        const greetingText = "Hello! What tango events would you like to know about?";
+        const greetingText = "What tango events?";
         try {
             const audioBuffer = await generateSpeechAudio(greetingText, voice, context);
             if (audioBuffer && audioBuffer.length > 0) {
