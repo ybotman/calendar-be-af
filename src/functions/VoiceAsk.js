@@ -491,9 +491,9 @@ async function voiceAskHandler(request, context) {
         }
     }
 
-    // Default query if none provided: milongas and practicas this weekend in Boston
+    // Default query if none provided: milongas and practicas next 2 days in Boston
     if (!query || query.trim() === '') {
-        query = 'milongas and practicas this weekend in boston';
+        query = 'milongas and practicas next 2 days in boston';
         context.log('VoiceAsk: No query provided, using default:', query);
     }
 
