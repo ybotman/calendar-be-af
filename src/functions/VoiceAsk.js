@@ -707,39 +707,52 @@ async function voiceAskHandler(request, context) {
         context.log(`VoiceAsk: Returning ${formattedEvents.length} events`);
 
         // If voice param is set, return audio instead of JSON
+        let ttsError = null;
         if (voice) {
-            const audioBuffer = await generateSpeechAudio(spoken, voice, context);
-            if (audioBuffer) {
-                return {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'audio/mpeg',
-                        'Content-Length': audioBuffer.length.toString(),
-                        'X-Spoken-Text': encodeURIComponent(spoken.substring(0, 200)) // For debugging
-                    },
-                    body: audioBuffer
-                };
+            try {
+                const audioBuffer = await generateSpeechAudio(spoken, voice, context);
+                if (audioBuffer && audioBuffer.length > 0) {
+                    return {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'audio/mpeg',
+                            'Content-Length': audioBuffer.length.toString(),
+                            'X-Spoken-Text': encodeURIComponent(spoken.substring(0, 200))
+                        },
+                        body: audioBuffer
+                    };
+                }
+                ttsError = 'TTS returned empty or null buffer';
+            } catch (ttsErr) {
+                ttsError = ttsErr.message;
             }
-            // Fall through to JSON if TTS fails
-            context.log('VoiceAsk: TTS failed, falling back to JSON response');
+            context.log('VoiceAsk: TTS failed:', ttsError);
+        }
+
+        const jsonResponse = {
+            spoken,
+            summary: `Found ${formattedEvents.length} events.`,
+            parsed: {
+                category: parsed.category,
+                timeframe: parsed.timeframe,
+                city: parsed.city || 'boston',
+                startDate: dates.start,
+                endDate: dates.end
+            },
+            count: formattedEvents.length,
+            events: formattedEvents
+        };
+
+        // Include TTS error info if voice was requested but failed
+        if (voice && ttsError) {
+            jsonResponse.ttsError = ttsError;
+            jsonResponse.ttsRequested = voice;
         }
 
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                spoken,
-                summary: `Found ${formattedEvents.length} events.`,
-                parsed: {
-                    category: parsed.category,
-                    timeframe: parsed.timeframe,
-                    city: parsed.city || 'boston',
-                    startDate: dates.start,
-                    endDate: dates.end
-                },
-                count: formattedEvents.length,
-                events: formattedEvents
-            })
+            body: JSON.stringify(jsonResponse)
         };
 
     } catch (error) {
