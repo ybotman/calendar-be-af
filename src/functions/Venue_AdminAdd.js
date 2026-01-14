@@ -38,7 +38,8 @@ async function venueAdminAddHandler(request, context) {
     }
 
     const firebaseUserId = decodedToken.uid;
-    context.log(`Venue_AdminAdd: User authenticated - ${firebaseUserId}`);
+    const appId = request.query.get('appId') || request.headers.get('x-app-id') || '1';
+    context.log(`Venue_AdminAdd: User authenticated - ${firebaseUserId}, appId: ${appId}`);
 
     let mongoClient;
 
@@ -57,7 +58,7 @@ async function venueAdminAddHandler(request, context) {
         const venuesCollection = db.collection('venues');
 
         // Step 2: Look up user and verify RegionalAdmin role
-        const user = await userLoginsCollection.findOne({ firebaseUserId });
+        const user = await userLoginsCollection.findOne({ firebaseUserId, appId });
 
         if (!user) {
             context.log(`Venue_AdminAdd: User not found in userlogins - ${firebaseUserId}`);

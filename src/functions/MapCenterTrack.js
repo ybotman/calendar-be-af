@@ -121,6 +121,7 @@ async function mapCenterTrackHandler(request, context) {
         }
 
         const page = requestBody.page || '/calendar';
+        const appId = requestBody.appId || '1';
         const userTimezone = requestBody.timezone || null;
         const timezoneOffset = requestBody.timezoneOffset || null;
 
@@ -226,6 +227,7 @@ async function mapCenterTrackHandler(request, context) {
 
         const trackingEvent = {
             firebaseUserId: firebaseUid,
+            appId: appId,
             ip: userIp,
             timestamp: trackingTime,
             mapCenter: {
