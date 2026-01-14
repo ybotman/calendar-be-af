@@ -13,11 +13,13 @@ const { standardMiddleware } = require('../middleware');
  */
 
 // Joi validation schema for PUT requests
+// Note: radiusMiles max varies by app - TT=200, HJ=2500 (validated separately)
 const mapCenterSchema = Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
     zoom: Joi.number().integer().min(1).max(20).optional(), // Map zoom level (visual)
-    radiusMiles: Joi.number().min(5).max(200).optional() // Search radius in miles
+    radiusMiles: Joi.number().min(5).max(2500).optional(), // Search radius (app-specific max below)
+    appId: Joi.string().valid('1', '2', 'TangoTiempo', 'HarmonyJunction').optional() // Application ID
 });
 
 // Handler function
@@ -115,6 +117,23 @@ async function mapCenterHandler(request, context) {
                     body: JSON.stringify({
                         success: false,
                         error: error.details[0].message,
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+
+            // App-specific radiusMiles validation
+            // TangoTiempo (appId=1): max 200 miles
+            // HarmonyJunction (appId=2): max 2500 miles
+            const maxRadius = (putAppId === '2' || putAppId === 'HarmonyJunction') ? 2500 : 200;
+            if (value.radiusMiles && value.radiusMiles > maxRadius) {
+                context.log(`radiusMiles ${value.radiusMiles} exceeds max ${maxRadius} for appId=${putAppId}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: `radiusMiles must be <= ${maxRadius} for this application`,
                         timestamp: new Date().toISOString()
                     })
                 };
