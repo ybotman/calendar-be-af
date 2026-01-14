@@ -64,6 +64,7 @@ async function fcmTokenHandler(request, context) {
         const requestBody = await request.json();
         const fcmToken = requestBody.fcmToken;
         const deviceType = requestBody.deviceType || 'unknown';
+        const appId = requestBody.appId || '1';
 
         // Validate FCM token
         if (!fcmToken || typeof fcmToken !== 'string') {
@@ -115,8 +116,8 @@ async function fcmTokenHandler(request, context) {
         const db = mongoClient.db();
         const usersCollection = db.collection('userlogins');
 
-        // Find user by firebaseUid
-        const existingUser = await usersCollection.findOne({ firebaseUid: firebaseUid });
+        // Find user by firebaseUid and appId
+        const existingUser = await usersCollection.findOne({ firebaseUid: firebaseUid, appId });
 
         if (!existingUser) {
             return {
@@ -145,6 +146,7 @@ async function fcmTokenHandler(request, context) {
             await usersCollection.updateOne(
                 {
                     firebaseUid: firebaseUid,
+                    appId,
                     'fcmTokens.token': fcmToken
                 },
                 {
@@ -185,7 +187,7 @@ async function fcmTokenHandler(request, context) {
         };
 
         await usersCollection.updateOne(
-            { firebaseUid: firebaseUid },
+            { firebaseUid: firebaseUid, appId },
             {
                 $push: {
                     fcmTokens: {

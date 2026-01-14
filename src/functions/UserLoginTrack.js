@@ -109,6 +109,7 @@ async function loginTrackHandler(request, context) {
 
         const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
+        const appId = requestBody.appId || '1'; // Application ID (1=TangoTiempo, 2=HarmonyJunction)
 
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
@@ -214,7 +215,7 @@ async function loginTrackHandler(request, context) {
         const usersCollection = db.collection('userlogins');
 
         // TIEMPO-329: Detect first-time login for entry state detection
-        const priorLoginCount = await loginHistoryCollection.countDocuments({ firebaseUserId: firebaseUid });
+        const priorLoginCount = await loginHistoryCollection.countDocuments({ firebaseUserId: firebaseUid, appId });
         const isFirstLogin = priorLoginCount === 0;
 
         if (isFirstLogin) {
@@ -226,7 +227,7 @@ async function loginTrackHandler(request, context) {
         // TIEMPO-329: Get user role for personalized entry flow
         let userRole = 'Milonguero'; // Default role (80% of users)
         const userProfile = await usersCollection.findOne(
-            { firebaseUid: firebaseUid },
+            { firebaseUid: firebaseUid, appId },
             { projection: { roles: 1, backendInfo: 1 } }
         );
 
@@ -256,6 +257,7 @@ async function loginTrackHandler(request, context) {
 
         const loginEvent = {
             firebaseUserId: firebaseUid,
+            appId: appId,
             timestamp: loginTime,
             ip: userIp,
             userAgent: userAgent,
@@ -310,6 +312,7 @@ async function loginTrackHandler(request, context) {
         const analyticsUpdate = {
             $setOnInsert: {
                 firebaseUserId: firebaseUid,
+                appId: appId,
                 createdAt: new Date()
             },
             $set: {
@@ -355,6 +358,7 @@ async function loginTrackHandler(request, context) {
             const existingAnalytics = await loginAnalyticsCollection.findOne(
                 {
                     firebaseUserId: firebaseUid,
+                    appId,
                     'locationHistory.city': locationKey
                 },
                 { projection: { 'locationHistory.$': 1 } }
@@ -365,6 +369,7 @@ async function loginTrackHandler(request, context) {
                 await loginAnalyticsCollection.updateOne(
                     {
                         firebaseUserId: firebaseUid,
+                        appId,
                         'locationHistory.city': locationKey
                     },
                     {
@@ -375,7 +380,7 @@ async function loginTrackHandler(request, context) {
             } else {
                 // New location - add to array (limit to 20 locations)
                 await loginAnalyticsCollection.updateOne(
-                    { firebaseUserId: firebaseUid },
+                    { firebaseUserId: firebaseUid, appId },
                     {
                         $push: {
                             locationHistory: {
@@ -401,7 +406,7 @@ async function loginTrackHandler(request, context) {
 
         // Apply main analytics update
         await loginAnalyticsCollection.updateOne(
-            { firebaseUserId: firebaseUid },
+            { firebaseUserId: firebaseUid, appId },
             analyticsUpdate,
             { upsert: true }
         );

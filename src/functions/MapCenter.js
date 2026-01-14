@@ -47,6 +47,9 @@ async function mapCenterHandler(request, context) {
 
         const firebaseUid = user.uid;
 
+        // Get appId from query (GET) or we'll get it from body (PUT)
+        const appId = request.query.get('appId') || '1';
+
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
@@ -64,7 +67,7 @@ async function mapCenterHandler(request, context) {
             context.log(`Fetching map center for user: ${firebaseUid}`);
 
             const userDoc = await usersCollection.findOne(
-                { firebaseUserId: firebaseUid },
+                { firebaseUserId: firebaseUid, appId },
                 { projection: { mapCenter: 1 } }
             );
 
@@ -101,6 +104,9 @@ async function mapCenterHandler(request, context) {
             const requestBody = await request.json();
             const { error, value } = mapCenterSchema.validate(requestBody);
 
+            // Get appId from body (overrides query param for PUT)
+            const putAppId = requestBody.appId || appId;
+
             if (error) {
                 context.log('Validation error:', error.details[0].message);
                 return {
@@ -125,11 +131,12 @@ async function mapCenterHandler(request, context) {
 
             // Update user's map center (upsert: create if doesn't exist)
             const result = await usersCollection.updateOne(
-                { firebaseUserId: firebaseUid },
+                { firebaseUserId: firebaseUid, appId: putAppId },
                 {
                     $set: { mapCenter: mapCenterData },
                     $setOnInsert: {
                         firebaseUserId: firebaseUid,
+                        appId: putAppId,
                         createdAt: new Date()
                     }
                 },

@@ -59,7 +59,8 @@ async function onboardingStatusHandler(request, context) {
         }
 
         const firebaseUid = user.uid;
-        context.log(`Checking onboarding status for user: ${firebaseUid}`);
+        const appId = request.query.get('appId') || '1';
+        context.log(`Checking onboarding status for user: ${firebaseUid}, appId: ${appId}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -76,7 +77,7 @@ async function onboardingStatusHandler(request, context) {
 
         // Find user profile
         const userProfile = await usersCollection.findOne(
-            { firebaseUid: firebaseUid },
+            { firebaseUid: firebaseUid, appId },
             {
                 projection: {
                     roles: 1,
@@ -112,6 +113,7 @@ async function onboardingStatusHandler(request, context) {
         // STEP 1: Check if location (MapCenter) is set
         const mapCenter = await cloudDefaultCollection.findOne({
             owner: firebaseUid,
+            appId,
             defaultType: 'MapCenter'
         });
         const locationSet = mapCenter !== null;
