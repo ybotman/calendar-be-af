@@ -345,14 +345,11 @@ async function eventsGetByIdHandler(request, context) {
 
         context.log(`Event found: ${eventId}`);
 
+        // Return event at root level to match calendar-be response format
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                success: true,
-                data: event,
-                timestamp: new Date().toISOString()
-            })
+            body: JSON.stringify(event)
         };
     } catch (error) {
         // Let errorHandler middleware handle the error
