@@ -37,6 +37,9 @@ require('./functions/Organizers');
 // Roles API
 require('./functions/Roles');
 
+// UserLogins API
+require('./functions/UserLogins');
+
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
 require('./functions/Geo_GoogleGeolocate');
