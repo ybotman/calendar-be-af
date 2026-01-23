@@ -367,7 +367,7 @@ async function eventsGetByIdHandler(request, context) {
 app.http('Events_GetById', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'events/{eventId}',
+    route: 'events/id/{eventId}',
     handler: standardMiddleware(eventsGetByIdHandler)
 });
 
@@ -623,7 +623,7 @@ async function eventsUpdateHandler(request, context) {
 app.http('Events_Update', {
     methods: ['PUT'],
     authLevel: 'function',
-    route: 'events/{eventId}',
+    route: 'events/id/{eventId}',
     handler: standardMiddleware(eventsUpdateHandler)
 });
 
@@ -696,7 +696,7 @@ async function eventsDeleteHandler(request, context) {
 app.http('Events_Delete', {
     methods: ['DELETE'],
     authLevel: 'function',
-    route: 'events/{eventId}',
+    route: 'events/id/{eventId}',
     handler: standardMiddleware(eventsDeleteHandler)
 });
 
