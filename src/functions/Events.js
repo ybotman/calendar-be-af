@@ -620,7 +620,7 @@ async function eventsUpdateHandler(request, context) {
 app.http('Events_Update', {
     methods: ['PUT'],
     authLevel: 'function',
-    route: 'events/id/{eventId}',
+    route: 'events/{eventId}',
     handler: standardMiddleware(eventsUpdateHandler)
 });
 
@@ -693,7 +693,7 @@ async function eventsDeleteHandler(request, context) {
 app.http('Events_Delete', {
     methods: ['DELETE'],
     authLevel: 'function',
-    route: 'events/id/{eventId}',
+    route: 'events/{eventId}',
     handler: standardMiddleware(eventsDeleteHandler)
 });
 
