@@ -377,10 +377,10 @@ app.http('Events_GetById', {
 
 /**
  * POST /api/events
- * Create new event
+ * Create new event - Express parity with calendar-be
  *
  * @body {object} event - Event data
- * Required fields: appId, title, startTime, endTime
+ * Required fields: appId, title, startDate, endDate (matches calendar-be)
  */
 async function eventsCreateHandler(request, context) {
     context.log('Events_Create: Request received');
@@ -390,7 +390,7 @@ async function eventsCreateHandler(request, context) {
     try {
         const requestBody = await request.json();
 
-        // Validate required fields
+        // Validate required fields - match calendar-be exactly
         if (!requestBody.appId) {
             return {
                 status: 400,
@@ -403,13 +403,41 @@ async function eventsCreateHandler(request, context) {
             };
         }
 
-        if (!requestBody.title || !requestBody.startTime || !requestBody.endTime) {
+        // Express parity: calendar-be requires title, startDate, endDate
+        if (!requestBody.title || !requestBody.startDate || !requestBody.endDate) {
             return {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     success: false,
-                    error: 'title, startTime, and endTime are required',
+                    error: 'Title, Start Date, and End Date are required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Parse and validate dates
+        const parsedStartDate = new Date(requestBody.startDate);
+        if (isNaN(parsedStartDate.getTime())) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Invalid startDate format',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const parsedEndDate = new Date(requestBody.endDate);
+        if (isNaN(parsedEndDate.getTime())) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Invalid endDate format',
                     timestamp: new Date().toISOString()
                 })
             };
@@ -427,18 +455,14 @@ async function eventsCreateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Build new event document
+        // Build new event document - use startDate/endDate like calendar-be
+        // Pass through all fields from request, with explicit date parsing
         const newEvent = {
-            appId: requestBody.appId,
-            title: requestBody.title,
-            description: requestBody.description || '',
-            startTime: new Date(requestBody.startTime),
-            endTime: new Date(requestBody.endTime),
+            ...requestBody,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
             isAllDay: requestBody.isAllDay || false,
-            location: requestBody.location || '',
-            categoryId: requestBody.categoryId || null,
-            venueId: requestBody.venueId || null,
-            attendees: requestBody.attendees || [],
+            isActive: requestBody.isActive !== undefined ? requestBody.isActive : true,
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -450,12 +474,14 @@ async function eventsCreateHandler(request, context) {
 
         // CALBEAF-57: Reactivate venue if it's currently inactive
         // When an event is created with an inactive venue, set venue.isActive=true
-        if (newEvent.venueId) {
+        // Note: calendar-be uses venueID (capital ID)
+        const venueId = newEvent.venueID || newEvent.venueId;
+        if (venueId) {
             try {
                 const venuesCollection = db.collection('Venues');
-                const venueObjectId = typeof newEvent.venueId === 'string'
-                    ? new ObjectId(newEvent.venueId)
-                    : newEvent.venueId;
+                const venueObjectId = typeof venueId === 'string'
+                    ? new ObjectId(venueId)
+                    : venueId;
 
                 const venueUpdateResult = await venuesCollection.updateOne(
                     { _id: venueObjectId, isActive: false },
@@ -469,11 +495,11 @@ async function eventsCreateHandler(request, context) {
                 );
 
                 if (venueUpdateResult.modifiedCount > 0) {
-                    context.log(`CALBEAF-57: Venue ${newEvent.venueId} reactivated due to event creation ${result.insertedId}`);
+                    context.log(`CALBEAF-57: Venue ${venueId} reactivated due to event creation ${result.insertedId}`);
                 }
             } catch (venueError) {
                 // Log but don't fail event creation if venue update fails
-                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${newEvent.venueId}: ${venueError.message}`);
+                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${venueId}: ${venueError.message}`);
             }
         }
 
@@ -538,12 +564,12 @@ async function eventsUpdateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Build update document
+        // Build update document - use startDate/endDate like calendar-be
         const updateDoc = {
             $set: {
                 ...requestBody,
-                startTime: requestBody.startTime ? new Date(requestBody.startTime) : undefined,
-                endTime: requestBody.endTime ? new Date(requestBody.endTime) : undefined,
+                startDate: requestBody.startDate ? new Date(requestBody.startDate) : undefined,
+                endDate: requestBody.endDate ? new Date(requestBody.endDate) : undefined,
                 updatedAt: new Date()
             }
         };
