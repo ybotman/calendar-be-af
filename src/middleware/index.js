@@ -19,6 +19,11 @@ const {
   clearMetrics,
   exportToAppInsights
 } = require('./metrics');
+const {
+  requireRegionalAdmin,
+  checkRAPermission,
+  forbiddenResponse
+} = require('./requireRegionalAdmin');
 
 /**
  * CORS preflight middleware
@@ -114,5 +119,10 @@ module.exports = {
   asyncHandler,
   getMetricsSummary,
   clearMetrics,
-  exportToAppInsights
+  exportToAppInsights,
+
+  // Regional Admin middleware
+  requireRegionalAdmin,
+  checkRAPermission,
+  forbiddenResponse
 };

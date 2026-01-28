@@ -2251,44 +2251,183 @@
       "Event": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
+          "_id": { "type": "string", "description": "Event ID (MongoDB ObjectId)" },
+          "appId": { "type": "string", "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
+          "title": { "type": "string", "description": "Event title" },
+          "standardsTitle": { "type": "string", "description": "Standardized title" },
+          "shortTitle": { "type": "string", "description": "Short title for display" },
+          "description": { "type": "string", "description": "Event description" },
+          "startDate": { "type": "string", "format": "date-time", "description": "Event start date/time" },
+          "endDate": { "type": "string", "format": "date-time", "description": "Event end date/time" },
+          "isAllDay": { "type": "boolean", "default": false, "description": "Whether event is all-day" },
+          "categoryFirst": { "type": "string", "description": "Primary category name" },
+          "categorySecond": { "type": "string", "description": "Secondary category name" },
+          "categoryThird": { "type": "string", "description": "Third category name" },
+          "categoryFirstId": { "type": "string", "description": "Primary category ObjectId" },
+          "categorySecondId": { "type": "string", "description": "Secondary category ObjectId" },
+          "categoryThirdId": { "type": "string", "description": "Third category ObjectId" },
+          "ownerOrganizerID": { "type": "string", "description": "Owner organizer ObjectId (OLD structure)" },
+          "ownerOrganizerName": { "type": "string", "description": "Owner organizer name (OLD structure)" },
+          "ownerOrganizerShortName": { "type": "string", "description": "Owner organizer short name (OLD structure)" },
+          "grantedOrganizerID": { "type": "string", "description": "Granted organizer ObjectId (OLD structure)" },
+          "grantedOrganizerName": { "type": "string", "description": "Granted organizer name (OLD structure)" },
+          "alternateOrganizerID": { "type": "string", "description": "Alternate organizer ObjectId (OLD structure)" },
+          "alternateOrganizerName": { "type": "string", "description": "Alternate organizer name (OLD structure)" },
+          "ownerOrganizer": {
+            "type": "object",
+            "description": "Owner organizer (NEW structure)",
+            "properties": {
+              "id": { "type": "string", "description": "Organizer ObjectId" },
+              "name": { "type": "string", "description": "Organizer full name" },
+              "shortName": { "type": "string", "description": "Organizer short name" },
+              "eventRole": { "type": "string", "default": "Owner", "description": "Role in this event" }
+            }
           },
-          "title": {
-            "type": "string"
+          "alternateOrganizers": {
+            "type": "array",
+            "description": "Additional organizers (NEW structure)",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "shortName", "eventRole"],
+              "properties": {
+                "id": { "type": "string", "description": "Organizer ObjectId" },
+                "name": { "type": "string", "description": "Organizer full name" },
+                "shortName": { "type": "string", "description": "Organizer short name" },
+                "eventRole": { "type": "string", "description": "Role: Owner, Host, DJ, Orchestra, Maestro, Teacher (appId 1) or Owner, Role1-5 (appId 2)" }
+              }
+            }
           },
-          "description": {
-            "type": "string"
+          "locationName": { "type": "string", "description": "Location name" },
+          "masteredRegionName": { "type": "string", "description": "Mastered region name" },
+          "masteredDivisionName": { "type": "string", "description": "Mastered division name" },
+          "masteredCityName": { "type": "string", "description": "Mastered city name" },
+          "masteredRegionId": { "type": "string", "description": "Mastered region ObjectId" },
+          "masteredDivisionId": { "type": "string", "description": "Mastered division ObjectId" },
+          "masteredCityId": { "type": "string", "description": "Mastered city ObjectId" },
+          "masteredCityGeolocation": {
+            "type": "object",
+            "description": "City geolocation for geo queries",
+            "properties": {
+              "type": { "type": "string", "enum": ["Point"], "default": "Point" },
+              "coordinates": { "type": "array", "items": { "type": "number" }, "description": "[longitude, latitude]" }
+            }
           },
-          "startDate": {
-            "type": "string",
-            "format": "date-time"
+          "eventImage": { "type": "string", "description": "Event image URL" },
+          "bannerImage": { "type": "string", "description": "Banner image URL" },
+          "featuredImage": { "type": "string", "description": "Featured image URL" },
+          "seriesImages": { "type": "array", "items": { "type": "string" }, "description": "Series image URLs" },
+          "venueID": { "type": "string", "description": "Venue ObjectId" },
+          "venueGeolocation": {
+            "type": "object",
+            "description": "Venue geolocation for geo queries",
+            "properties": {
+              "type": { "type": "string", "enum": ["Point"], "default": "Point" },
+              "coordinates": { "type": "array", "items": { "type": "number" }, "description": "[longitude, latitude]" }
+            }
           },
-          "endDate": {
-            "type": "string",
-            "format": "date-time"
+          "venueCityName": { "type": "string", "description": "Venue city name" },
+          "venueTimezone": { "type": "string", "description": "IANA timezone identifier (e.g., America/New_York)" },
+          "recurrenceRule": { "type": "string", "description": "RRULE string (e.g., FREQ=WEEKLY;BYDAY=TU)" },
+          "excludedDates": { "type": "array", "items": { "type": "string", "format": "date-time" }, "description": "Dates excluded from recurrence" },
+          "isDiscovered": { "type": "boolean", "default": false, "description": "Whether event was discovered (scraped)" },
+          "isOwnerManaged": { "type": "boolean", "default": true, "description": "Whether managed by owner" },
+          "isActive": { "type": "boolean", "default": true, "description": "Whether event is active" },
+          "isFeatured": { "type": "boolean", "default": false, "description": "Whether event is featured" },
+          "isBtcImported": { "type": "boolean", "default": false, "description": "Whether imported from BTC" },
+          "isAiGenerated": { "type": "boolean", "default": false, "description": "Whether AI-generated" },
+          "isCanceled": { "type": "boolean", "default": false, "description": "Whether event is canceled" },
+          "isRepeating": { "type": "boolean", "default": false, "description": "Whether event repeats (auto-set from recurrenceRule)" },
+          "discoverySource": { "type": "string", "description": "Source of discovery" },
+          "source": { "type": "string", "description": "Event source" },
+          "discoveredLastDate": { "type": "string", "format": "date-time", "description": "Last discovery date" },
+          "discoveredFirstDate": { "type": "string", "format": "date-time", "description": "First discovery date" },
+          "discoveredComments": { "type": "string", "description": "Discovery comments" },
+          "cost": { "type": "string", "description": "Event cost/price info" },
+          "expiresAt": { "type": "string", "format": "date-time", "description": "Event expiration date" },
+          "createdByRA": {
+            "type": "object",
+            "description": "Regional Admin who created event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          },
+          "lastModifiedByRA": {
+            "type": "object",
+            "description": "Regional Admin who last modified event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          },
+          "deletedByRA": {
+            "type": "object",
+            "description": "Regional Admin who deleted event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "reason": { "type": "string", "description": "Deletion reason" }
+            }
           }
-        }
+        },
+        "required": ["appId", "title", "startDate", "masteredCityId", "expiresAt"]
       },
       "EventInput": {
         "type": "object",
+        "description": "Input for creating/updating events",
         "properties": {
-          "title": {
-            "type": "string"
+          "appId": { "type": "string", "description": "Application ID (required)" },
+          "title": { "type": "string", "description": "Event title (required)" },
+          "standardsTitle": { "type": "string" },
+          "shortTitle": { "type": "string" },
+          "description": { "type": "string" },
+          "startDate": { "type": "string", "format": "date-time", "description": "Start date (required)" },
+          "endDate": { "type": "string", "format": "date-time", "description": "End date (required)" },
+          "isAllDay": { "type": "boolean", "default": false },
+          "categoryFirstId": { "type": "string" },
+          "categorySecondId": { "type": "string" },
+          "categoryThirdId": { "type": "string" },
+          "ownerOrganizerID": { "type": "string", "description": "Owner organizer ID (OLD)" },
+          "grantedOrganizerID": { "type": "string", "description": "Granted organizer ID (OLD)" },
+          "alternateOrganizerID": { "type": "string", "description": "Alternate organizer ID (OLD)" },
+          "ownerOrganizer": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "shortName": { "type": "string" },
+              "eventRole": { "type": "string", "default": "Owner" }
+            }
           },
-          "description": {
-            "type": "string"
+          "alternateOrganizers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "shortName", "eventRole"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "shortName": { "type": "string" },
+                "eventRole": { "type": "string" }
+              }
+            }
           },
-          "startDate": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "masteredCityId": { "type": "string", "description": "Mastered city ID (required)" },
+          "masteredDivisionId": { "type": "string" },
+          "masteredRegionId": { "type": "string" },
+          "venueID": { "type": "string" },
+          "venueTimezone": { "type": "string" },
+          "recurrenceRule": { "type": "string" },
+          "excludedDates": { "type": "array", "items": { "type": "string", "format": "date-time" } },
+          "isActive": { "type": "boolean", "default": true },
+          "isFeatured": { "type": "boolean", "default": false },
+          "cost": { "type": "string" },
+          "expiresAt": { "type": "string", "format": "date-time" }
         },
-        "required": ["title", "startDate"]
+        "required": ["appId", "title", "startDate", "endDate"]
       },
       "Pagination": {
         "type": "object",

@@ -40,6 +40,9 @@ require('./functions/Roles');
 // UserLogins API
 require('./functions/UserLogins');
 
+// Events RA (Regional Admin) API
+require('./functions/EventsRA');
+
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
 require('./functions/Geo_GoogleGeolocate');
