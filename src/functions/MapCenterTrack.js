@@ -139,7 +139,7 @@ async function mapCenterTrackHandler(request, context) {
                    || 'unknown';
 
         const userIp = stripPortFromIP(rawIp);
-        context.log(`User IP: ${userIp}, MapCenter: ${mapCenter.lat}, ${mapCenter.lng}`);
+        context.log(`MapCenterTrack: MapCenter: ${mapCenter.lat}, ${mapCenter.lng}`);
 
         // Extract user agent and device info
         const userAgent = request.headers.get('User-Agent') || 'unknown';
@@ -153,14 +153,14 @@ async function mapCenterTrackHandler(request, context) {
             geoData.google_browser_lat = google_browser_lat;
             geoData.google_browser_long = google_browser_long;
             geoData.google_browser_accuracy = google_browser_accuracy;
-            context.log(`Browser geolocation: ${google_browser_lat}, ${google_browser_long}`);
+            // Browser geolocation captured
         }
 
         // Priority 2: Google API Geolocation (if provided by frontend)
         if (google_api_lat && google_api_long) {
             geoData.google_api_lat = google_api_lat;
             geoData.google_api_long = google_api_long;
-            context.log(`Google API geolocation: ${google_api_lat}, ${google_api_long}`);
+            // Google API geolocation captured
         }
 
         // Priority 3: ipinfo.io Geolocation (fallback)
@@ -190,7 +190,7 @@ async function mapCenterTrackHandler(request, context) {
                     geoData.ipinfo_timezone = data.timezone || null;
                     geoData.ipinfo_postal = data.postal || null;
 
-                    context.log(`ipinfo.io: ${data.city}, ${data.region}, ${data.country}`);
+                    // ipinfo.io geolocation captured
                 } else {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }

@@ -33,7 +33,6 @@ function corsMiddleware(handler) {
   return async (request, context) => {
     // Handle OPTIONS (CORS preflight) requests
     if (request.method === 'OPTIONS') {
-      context.log('CORS preflight request (OPTIONS) - returning 200 OK');
       return {
         status: 200,
         headers: {

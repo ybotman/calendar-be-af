@@ -246,15 +246,38 @@ function clearMetrics() {
  * Export metrics to Application Insights (when configured)
  */
 function exportToAppInsights(context) {
-  // TODO: Implement Application Insights export when connection configured
-  // For now, just log metrics
+  const appInsights = require('applicationinsights');
+  const client = appInsights.defaultClient;
+
+  if (!client) {
+    // App Insights not configured, fall back to context.log
+    const summary = metricsCollector.getSummary();
+    if (context.logger) {
+      context.logger.info('Metrics summary', summary);
+    } else {
+      context.log('Metrics summary:', JSON.stringify(summary, null, 2));
+    }
+    return;
+  }
+
   const summary = metricsCollector.getSummary();
 
-  if (context.logger) {
-    context.logger.info('Metrics summary', summary);
-  } else {
-    context.log('Metrics summary:', JSON.stringify(summary, null, 2));
-  }
+  // Track as custom event with metrics
+  client.trackEvent({
+    name: 'MetricsSummary',
+    properties: {
+      totalRequests: String(summary.last5Minutes.totalRequests),
+      totalErrors: String(summary.last5Minutes.totalErrors),
+      errorRate: summary.last5Minutes.errorRate
+    },
+    measurements: {
+      avgResponseTime: summary.last5Minutes.avgResponseTime,
+      requestCount: summary.last5Minutes.totalRequests,
+      errorCount: summary.last5Minutes.totalErrors
+    }
+  });
+
+  client.flush();
 }
 
 module.exports = {

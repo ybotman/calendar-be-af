@@ -459,8 +459,7 @@ function titleCase(str) {
  * Main handler - supports both GET and POST
  */
 async function voiceAskHandler(request, context) {
-    context.log('VoiceAsk: Request received, method:', request.method);
-    context.log('VoiceAsk: Available cities:', Object.keys(CITIES).join(', '));
+    context.log('VoiceAsk: Request received');
 
     let query, appId, voice, greeting, help;
 
@@ -473,7 +472,7 @@ async function voiceAskHandler(request, context) {
         voice = url.searchParams.get('voice'); // If set, return audio instead of JSON
         greeting = url.searchParams.get('greeting'); // Return greeting audio
         help = url.searchParams.get('help'); // Return help audio
-        context.log('VoiceAsk: GET request, voice:', voice || 'none');
+        // GET request parsed
     } else {
         // POST: Read from JSON body
         try {
@@ -556,25 +555,13 @@ async function voiceAskHandler(request, context) {
         context.log('VoiceAsk: Fuzzy matched:', originalQuery, '->', query);
     }
 
-    context.log('VoiceAsk: Query:', query);
-
     // Parse the query
     const parsed = await parseQueryWithAI(query, context);
-    context.log('VoiceAsk: Parsed:', parsed);
 
     // Resolve parameters
     const dates = resolveTimeframe(parsed.timeframe);
     const location = resolveCity(parsed.city);
     const categoryId = CATEGORY_MAP[parsed.category] || null;
-
-    context.log('VoiceAsk: Resolved:', {
-        dates,
-        city: parsed.city || 'boston (default)',
-        lat: location.lat,
-        lng: location.lng,
-        range: location.range + ' miles',
-        categoryId
-    });
 
     let mongoClient;
 

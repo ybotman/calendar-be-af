@@ -221,35 +221,6 @@ async function eventsGetHandler(request, context) {
             };
         }
 
-        // CALBEAF-65 v1.13.10: Enhanced debug logging - check recurring counts
-        context.log('Events_Get: baseFilter:', JSON.stringify(baseFilter));
-        context.log('Events_Get: final filter:', JSON.stringify(filter));
-        context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
-
-        // Debug: Count recurring events with different query approaches
-        const recurringQuery1 = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true, $ne: null, $ne: '' }
-        });
-        const recurringQuery2 = await collection.countDocuments({
-            ...baseFilter,
-            $and: [
-                { recurrenceRule: { $exists: true } },
-                { recurrenceRule: { $ne: null } },
-                { recurrenceRule: { $ne: '' } }
-            ]
-        });
-        const recurringQuery3 = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true, $type: 'string', $ne: '' }
-        });
-        // Check for any recurrenceRule that exists (including empty/null)
-        const hasAnyRecurrence = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true }
-        });
-        context.log(`RECURRING DEBUG - Query1(mongoose-style): ${recurringQuery1}, Query2($and): ${recurringQuery2}, Query3($type string): ${recurringQuery3}, HasAny: ${hasAnyRecurrence}`);
-
         // Build MongoDB query
         const eventQuery = collection
             .find(filter)

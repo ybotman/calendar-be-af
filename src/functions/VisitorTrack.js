@@ -118,7 +118,7 @@ async function visitorTrackHandler(request, context) {
             context.log('Using localhost IP fallback for development: 127.0.0.1');
         }
 
-        context.log(`Visitor IP: ${userIp}, Page: ${page}`);
+        context.log(`VisitorTrack: Page: ${page}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -194,14 +194,14 @@ async function visitorTrackHandler(request, context) {
             geoData.google_browser_lat = google_browser_lat;
             geoData.google_browser_long = google_browser_long;
             geoData.google_browser_accuracy = google_browser_accuracy;
-            context.log(`Browser geolocation: ${google_browser_lat}, ${google_browser_long} (accuracy: ${google_browser_accuracy}m)`);
+            // Browser geolocation captured
         }
 
         // Priority 2: Google API Geolocation (if provided by frontend)
         if (google_api_lat && google_api_long) {
             geoData.google_api_lat = google_api_lat;
             geoData.google_api_long = google_api_long;
-            context.log(`Google API geolocation: ${google_api_lat}, ${google_api_long}`);
+            // Google API geolocation captured
         }
 
         // Priority 3: ipinfo.io Geolocation (fallback)
@@ -231,7 +231,7 @@ async function visitorTrackHandler(request, context) {
                     geoData.ipinfo_timezone = data.timezone || null;
                     geoData.ipinfo_postal = data.postal || null;
 
-                    context.log(`ipinfo.io: ${data.city}, ${data.region}, ${data.country}`);
+                    // ipinfo.io geolocation captured
                 } else {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }
