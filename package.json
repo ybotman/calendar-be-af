@@ -16,11 +16,13 @@
     "@azure/cosmos": "^4.0.0",
     "@azure/functions": "^4.5.1",
     "@azure/service-bus": "^7.9.4",
+    "@azure/storage-blob": "^12.30.0",
     "applicationinsights": "^3.13.0",
     "firebase-admin": "^13.5.0",
     "joi": "^17.13.3",
     "mongodb": "^6.20.0",
     "openai": "^4.77.0",
+    "parse-multipart-data": "^1.5.0",
     "rrule": "^2.8.1",
     "uuid": "^9.0.1"
   },

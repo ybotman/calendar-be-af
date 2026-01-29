@@ -47,6 +47,7 @@ require('./functions/Venue_AgeOut_Timer');
 
 // Organizers API
 require('./functions/Organizers');
+require('./functions/OrganizersSASToken');
 
 // Roles API
 require('./functions/Roles');
@@ -57,8 +58,9 @@ require('./functions/UserLogins');
 // Events RA (Regional Admin) API
 require('./functions/EventsRA');
 
-// Events Summary - Explorer page clusters/events/cities
+// Events Summary + Image Upload
 require('./functions/EventsSummary');
+require('./functions/EventsImageUpload');
 
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
