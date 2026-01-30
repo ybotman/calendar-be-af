@@ -571,14 +571,17 @@ async function eventsUpdateHandler(request, context) {
             updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
         );
 
-        // Update document
-        const result = await collection.findOneAndUpdate(
+        // Remove _id from update body (immutable in MongoDB)
+        delete updateDoc.$set._id;
+
+        // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
+        const updatedDoc = await collection.findOneAndUpdate(
             { _id: new ObjectId(eventId) },
             updateDoc,
             { returnDocument: 'after' }
         );
 
-        if (!result.value) {
+        if (!updatedDoc) {
             context.log(`Event not found: ${eventId}`);
             return {
                 status: 404,
@@ -598,7 +601,7 @@ async function eventsUpdateHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: true,
-                data: result.value,
+                data: updatedDoc,
                 timestamp: new Date().toISOString()
             })
         };
