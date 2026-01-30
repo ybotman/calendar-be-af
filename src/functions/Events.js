@@ -500,6 +500,15 @@ app.http('Events_Create', {
     handler: standardMiddleware(eventsCreateHandler)
 });
 
+// Legacy route alias: calendar-be used POST /api/events/post
+// Multiple frontends (TangoTiempo, HarmonyJunction) call this path
+app.http('Events_Create_Legacy', {
+    methods: ['POST'],
+    authLevel: 'function',
+    route: 'events/post',
+    handler: standardMiddleware(eventsCreateHandler)
+});
+
 // ============================================
 // FUNCTION 4: PUT /api/events/{eventId}
 // ============================================
