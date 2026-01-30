@@ -283,8 +283,6 @@ async function userLoginsGetAllHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -408,8 +406,6 @@ async function userLoginsCreateHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -513,8 +509,6 @@ async function userLoginsUpdateUserInfoHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -648,8 +642,6 @@ async function userLoginsUpdateRolesHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -767,8 +759,6 @@ async function userLoginsActivateOrganizerHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

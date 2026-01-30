@@ -203,9 +203,6 @@ async function eventsSummaryHandler(request, context) {
             return await handleCities(collection, db, matchStage, context);
         }
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

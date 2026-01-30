@@ -214,9 +214,6 @@ async function geoEventDensityHandler(request, context) {
             body: JSON.stringify(result)
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

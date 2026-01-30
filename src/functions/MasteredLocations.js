@@ -74,8 +74,6 @@ async function masteredCountriesGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -192,8 +190,6 @@ async function masteredRegionsGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -310,8 +306,6 @@ async function masteredDivisionsGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -438,8 +432,6 @@ async function masteredCitiesGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -586,8 +578,6 @@ async function nearestMasteredGetHandler(request, context) {
             body: JSON.stringify(result)
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -666,8 +656,6 @@ async function activeRegionsGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

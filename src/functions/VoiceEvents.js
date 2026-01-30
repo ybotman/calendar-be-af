@@ -211,7 +211,7 @@ async function voiceEventsHandler(request, context) {
             },
             // ALL recurring events (no date filter) - calendar expands via RRULE
             {
-                recurrenceRule: { $exists: true, $ne: null, $ne: '' }
+                recurrenceRule: { $exists: true, $nin: [null, ''] }
             }
         ];
 

@@ -15,60 +15,55 @@ const { StorageSharedKeyCredential, BlobServiceClient, generateBlobSASQueryParam
 async function organizersGenerateSASTokenHandler(request, context) {
     context.log('Organizers_GenerateSASToken: Request received');
 
-    try {
-        const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-        const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-        if (!accountName || !accountKey) {
-            context.log('Organizers_GenerateSASToken: Missing storage credentials');
-            return {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'ServiceUnavailable',
-                    message: 'Azure Storage credentials are not configured. Set AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables.',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        const containerName = 'organizer-images';
-
-        // Create shared key credential
-        const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
-
-        // Set SAS token to expire in 1 hour
-        const startsOn = new Date();
-        const expiresOn = new Date(startsOn.getTime() + 60 * 60 * 1000); // 1 hour
-
-        // Generate container-level SAS token with read, write, list permissions
-        const sasToken = generateBlobSASQueryParameters({
-            containerName,
-            permissions: ContainerSASPermissions.parse('rwl'), // read, write, list
-            startsOn,
-            expiresOn,
-            protocol: SASProtocol.Https
-        }, sharedKeyCredential).toString();
-
-        const containerUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
-
-        context.log(`Organizers_GenerateSASToken: SAS token generated, expires at ${expiresOn.toISOString()}`);
-
+    if (!accountName || !accountKey) {
+        context.log('Organizers_GenerateSASToken: Missing storage credentials');
         return {
-            status: 200,
+            status: 503,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                sasToken: `?${sasToken}`,
-                containerUrl,
-                expiresAt: expiresOn.toISOString()
+                success: false,
+                error: 'ServiceUnavailable',
+                message: 'Azure Storage credentials are not configured. Set AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables.',
+                timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        throw error;
     }
+
+    const containerName = 'organizer-images';
+
+    // Create shared key credential
+    const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+
+    // Set SAS token to expire in 1 hour
+    const startsOn = new Date();
+    const expiresOn = new Date(startsOn.getTime() + 60 * 60 * 1000); // 1 hour
+
+    // Generate container-level SAS token with read, write, list permissions
+    const sasToken = generateBlobSASQueryParameters({
+        containerName,
+        permissions: ContainerSASPermissions.parse('rwl'), // read, write, list
+        startsOn,
+        expiresOn,
+        protocol: SASProtocol.Https
+    }, sharedKeyCredential).toString();
+
+    const containerUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
+
+    context.log(`Organizers_GenerateSASToken: SAS token generated, expires at ${expiresOn.toISOString()}`);
+
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            success: true,
+            sasToken: `?${sasToken}`,
+            containerUrl,
+            expiresAt: expiresOn.toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
