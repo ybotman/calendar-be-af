@@ -3,6 +3,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 
 // ============================================
 // FUNCTION 1: GET /api/events
@@ -353,6 +354,13 @@ app.http('Events_GetById', {
 async function eventsCreateHandler(request, context) {
     context.log('Events_Create: Request received');
 
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Create: Authenticated user ${user.uid}`);
+
     let mongoClient;
 
     try {
@@ -495,7 +503,7 @@ async function eventsCreateHandler(request, context) {
 
 app.http('Events_Create', {
     methods: ['POST'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events',
     handler: standardMiddleware(eventsCreateHandler)
 });
@@ -504,7 +512,7 @@ app.http('Events_Create', {
 // Multiple frontends (TangoTiempo, HarmonyJunction) call this path
 app.http('Events_Create_Legacy', {
     methods: ['POST'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/post',
     handler: standardMiddleware(eventsCreateHandler)
 });
@@ -523,6 +531,13 @@ app.http('Events_Create_Legacy', {
 async function eventsUpdateHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Update: Request for event ${eventId}`);
+
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Update: Authenticated user ${user.uid}`);
 
     let mongoClient;
 
@@ -599,7 +614,7 @@ async function eventsUpdateHandler(request, context) {
 
 app.http('Events_Update', {
     methods: ['PUT'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/{eventId}',
     handler: standardMiddleware(eventsUpdateHandler)
 });
@@ -617,6 +632,13 @@ app.http('Events_Update', {
 async function eventsDeleteHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Delete: Request for event ${eventId}`);
+
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Delete: Authenticated user ${user.uid}`);
 
     let mongoClient;
 
@@ -672,7 +694,7 @@ async function eventsDeleteHandler(request, context) {
 
 app.http('Events_Delete', {
     methods: ['DELETE'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/{eventId}',
     handler: standardMiddleware(eventsDeleteHandler)
 });
