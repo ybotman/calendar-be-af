@@ -6,7 +6,6 @@ jest.mock('mongodb');
 
 // Mock Azure Functions
 const mockContext = {
-  log: jest.fn(),
   log: Object.assign(jest.fn(), {
     error: jest.fn(),
     warn: jest.fn(),

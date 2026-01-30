@@ -28,103 +28,98 @@ async function eventsUploadImageHandler(request, context) {
         return unauthorizedResponse();
     }
 
-    try {
-        const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-        const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-        if (!accountName || !accountKey) {
-            context.log('Events_UploadImage: Missing storage credentials');
-            return {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'ServiceUnavailable',
-                    message: 'Azure Storage credentials are not configured. Set AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables.',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        // Parse multipart form data
-        const contentType = request.headers.get('content-type') || '';
-        const boundary = contentType.split('boundary=')[1];
-
-        if (!boundary) {
-            return {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'ValidationError',
-                    message: 'Request must be multipart/form-data with a boundary',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        const bodyBuffer = Buffer.from(await request.arrayBuffer());
-        const parts = multipart.parse(bodyBuffer, boundary);
-
-        // Find the image file part
-        const imagePart = parts.find(part => part.name === 'image');
-        if (!imagePart || !imagePart.data || imagePart.data.length === 0) {
-            return {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'ValidationError',
-                    message: 'No image file found. Upload with field name "image".',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        // Extract appId from form data or default
-        const appIdPart = parts.find(part => part.name === 'appId');
-        const appId = appIdPart ? appIdPart.data.toString() : '1';
-
-        // Build blob name: {appId}/{uuid}-{originalFilename}
-        const originalFilename = imagePart.filename || 'image.jpg';
-        const blobName = `${appId}/${uuidv4()}-${originalFilename}`;
-        const containerName = 'event-images';
-
-        // Create blob client and upload
-        const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
-        const blobServiceClient = new BlobServiceClient(
-            `https://${accountName}.blob.core.windows.net`,
-            sharedKeyCredential
-        );
-
-        const containerClient = blobServiceClient.getContainerClient(containerName);
-        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-
-        // Determine content type from the file
-        const mimeType = imagePart.type || 'application/octet-stream';
-
-        await blockBlobClient.upload(imagePart.data, imagePart.data.length, {
-            blobHTTPHeaders: {
-                blobContentType: mimeType
-            }
-        });
-
-        const imageUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}`;
-
-        context.log(`[EVENT IMAGE UPLOAD] blobName: ${blobName}, size: ${imagePart.data.length}, type: ${mimeType}, user: ${user.uid}`);
-
+    if (!accountName || !accountKey) {
+        context.log('Events_UploadImage: Missing storage credentials');
         return {
-            status: 200,
+            status: 503,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                imageUrl
+                success: false,
+                error: 'ServiceUnavailable',
+                message: 'Azure Storage credentials are not configured. Set AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables.',
+                timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        throw error;
     }
+
+    // Parse multipart form data
+    const contentType = request.headers.get('content-type') || '';
+    const boundary = contentType.split('boundary=')[1];
+
+    if (!boundary) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: false,
+                error: 'ValidationError',
+                message: 'Request must be multipart/form-data with a boundary',
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
+
+    const bodyBuffer = Buffer.from(await request.arrayBuffer());
+    const parts = multipart.parse(bodyBuffer, boundary);
+
+    // Find the image file part
+    const imagePart = parts.find(part => part.name === 'image');
+    if (!imagePart || !imagePart.data || imagePart.data.length === 0) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: false,
+                error: 'ValidationError',
+                message: 'No image file found. Upload with field name "image".',
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
+
+    // Extract appId from form data or default
+    const appIdPart = parts.find(part => part.name === 'appId');
+    const appId = appIdPart ? appIdPart.data.toString() : '1';
+
+    // Build blob name: {appId}/{uuid}-{originalFilename}
+    const originalFilename = imagePart.filename || 'image.jpg';
+    const blobName = `${appId}/${uuidv4()}-${originalFilename}`;
+    const containerName = 'event-images';
+
+    // Create blob client and upload
+    const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+    const blobServiceClient = new BlobServiceClient(
+        `https://${accountName}.blob.core.windows.net`,
+        sharedKeyCredential
+    );
+
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+    // Determine content type from the file
+    const mimeType = imagePart.type || 'application/octet-stream';
+
+    await blockBlobClient.upload(imagePart.data, imagePart.data.length, {
+        blobHTTPHeaders: {
+            blobContentType: mimeType
+        }
+    });
+
+    const imageUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}`;
+
+    context.log(`[EVENT IMAGE UPLOAD] blobName: ${blobName}, size: ${imagePart.data.length}, type: ${mimeType}, user: ${user.uid}`);
+
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            success: true,
+            imageUrl
+        })
+    };
 }
 
 // Register function with standard middleware

@@ -146,9 +146,6 @@ async function organizersGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -217,9 +214,6 @@ async function organizersGetByIdHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(organizer)
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -289,9 +283,6 @@ async function organizersGetByFirebaseIdHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(organizer)
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -423,8 +414,6 @@ async function organizersCreateHandler(request, context) {
             body: JSON.stringify(newOrganizer)
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -543,8 +532,6 @@ async function organizersUpdateHandler(request, context) {
             body: JSON.stringify(result)
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -620,8 +607,6 @@ async function organizersDeleteHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -785,8 +770,6 @@ async function organizersConnectUserHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -907,8 +890,6 @@ async function organizersDisconnectUserHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
