@@ -1,220 +1,253 @@
 # Azure Functions - Available Endpoints
 
-**Last Updated**: 2025-10-13
+**Last Updated**: 2026-01-30
+**Version**: 1.19.0
 **Base URL (Local)**: `http://localhost:7071`
-**Base URL (TEST)**: `https://calbeaf-test.azurewebsites.net`
+**Base URL (TEST)**: `https://calendarbeaf-test.azurewebsites.net`
+**Total HTTP Endpoints**: 73
+**Total Timer Functions**: 1
+**Source Files**: 35 (`src/functions/*.js`)
 
 ---
 
-## ✅ Currently Available Endpoints
+## Endpoint Inventory
 
-### Health Checks (No Auth Required)
-- `GET /api/health` - Basic health check
-- `GET /api/health/version` - Version information
-- `GET /api/health/mongodb` - MongoDB connection test
-- `GET /api/health/mongodb/test` - TEST database health
-- `GET /api/health/mongodb/prod` - PROD database health
+### Health (5 endpoints)
 
-### Metrics (No Auth Required)
-- `GET /api/metrics` - Service metrics
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/health` | Health_Basic | anonymous | Health_Basic.js |
+| GET | `/api/health/version` | Health_Version | anonymous | Health_Version.js |
+| GET | `/api/health/mongodb` | Health_MongoDB | anonymous | Health_MongoDB.js |
+| GET | `/api/health/mongodb/prod` | Health_MongoDB_Prod | anonymous | Health_MongoDB_Prod.js |
+| GET | `/api/health/mongodb/test` | Health_MongoDB_Test | anonymous | Health_MongoDB_Test.js |
 
-### Categories (No Auth Required)
-- `GET /api/categories` - List all categories
+### Events (12 endpoints)
 
-### Events
-- `GET /api/events` - List events
-- `POST /api/events` - Create event
-- `GET /api/events/{eventId}` - Get event by ID
-- `PUT /api/events/{eventId}` - Update event
-- `DELETE /api/events/{eventId}` - Delete event
-- `GET /api/events/id/{id}` - Get event by ID (for social sharing)
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/events` | Events_Get | anonymous | Events.js |
+| GET | `/api/events/id/{eventId}` | Events_GetById | anonymous | Events.js |
+| GET | `/api/events/count` | Events_Count | anonymous | Events.js |
+| POST | `/api/events` | Events_Create | **firebase** | Events.js |
+| POST | `/api/events/post` | Events_Create_Legacy | **firebase** | Events.js |
+| PUT | `/api/events/{eventId}` | Events_Update | **firebase** | Events.js |
+| DELETE | `/api/events/{eventId}` | Events_Delete | **firebase** | Events.js |
+| GET | `/api/events/summary` | EventsSummary_Get | anonymous | EventsSummary.js |
+| POST,OPTIONS | `/api/events/upload-image` | Events_UploadImage | anonymous | EventsImageUpload.js |
+| POST | `/api/events/ra/create` | EventsRA_Create | anonymous | EventsRA.js |
+| PUT | `/api/events/ra/{eventId}` | EventsRA_Update | anonymous | EventsRA.js |
+| DELETE | `/api/events/ra/{eventId}` | EventsRA_Delete | anonymous | EventsRA.js |
 
-### MapCenter API (Requires Firebase Auth) ✅
-- `GET /api/mapcenter` - Get user's saved map center
-- `PUT /api/mapcenter` - Save user's map center
-- **Documented in Swagger:** Yes (as of 2025-10-15)
+**Note**: Legacy route `POST /api/events/post` is an alias for event creation (Express parity).
+RegionalOrganizer (RO) uses standard CRUD. RegionalAdmin (RA) uses `/events/ra/*`.
 
-### Documentation
-- `GET /api/docs` - Swagger UI
-- `GET /api/swagger.json` - OpenAPI spec
+### Venues (8 endpoints + 1 timer)
 
----
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/venues` | Venues_Get | anonymous | Venues.js |
+| GET | `/api/venues/{id}` | Venues_GetById | anonymous | Venues.js |
+| POST | `/api/venues` | Venues_Create | anonymous | Venues.js |
+| PUT | `/api/venues/{id}` | Venues_Update | anonymous | Venues.js |
+| DELETE | `/api/venues/{id}` | Venues_Delete | anonymous | Venues.js |
+| GET | `/api/venues/geocode` | Venues_Geocode | anonymous | VenuesGeocode.js |
+| GET,POST | `/api/venues/check-proximity` | Venues_CheckProximity | anonymous | VenuesGeocode.js |
+| POST | `/api/venues/admin` | Venue_AdminAdd | anonymous | Venue_AdminAdd.js |
+| Timer | Sunday 3AM UTC | Venue_AgeOut_Timer_App1 | - | Venue_AgeOut_Timer.js |
 
-## ❌ NOT YET Implemented (Will Return 404)
+### Organizers (10 endpoints)
 
-These are planned but not yet built:
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/organizers` | Organizers_Get | anonymous | Organizers.js |
+| GET | `/api/organizers/{id}` | Organizers_GetById | anonymous | Organizers.js |
+| GET | `/api/organizers/firebase/{firebaseUserId}` | Organizers_GetByFirebaseId | anonymous | Organizers.js |
+| POST | `/api/organizers` | Organizers_Create | anonymous | Organizers.js |
+| PUT | `/api/organizers/{id}` | Organizers_Update | anonymous | Organizers.js |
+| DELETE | `/api/organizers/{id}` | Organizers_Delete | anonymous | Organizers.js |
+| PATCH | `/api/organizers/{id}/connect-user` | Organizers_ConnectUser | anonymous | Organizers.js |
+| PATCH | `/api/organizers/{id}/disconnect-user` | Organizers_DisconnectUser | anonymous | Organizers.js |
+| GET | `/api/organizers-debug` | Organizers_Debug | anonymous | Organizers.js |
+| POST,OPTIONS | `/api/organizers/generate-sas-token` | Organizers_GenerateSASToken | anonymous | OrganizersSASToken.js |
 
-### Venues (CALBEAF-8, CALBEAF-27-32, CALBEAF-42)
-- ❌ `GET /api/venues` - List venues
-- ❌ `POST /api/venues` - Create venue
-- ❌ `GET /api/venues/:id` - Get venue by ID
-- ❌ `PUT /api/venues/:id` - Update venue
-- ❌ `DELETE /api/venues/:id` - Delete venue
-- ❌ `GET /api/venues/nearest-city` - Get nearest city
+### User Logins (6 endpoints)
 
-### User Logins (CALBEAF-9)
-- ❌ All user login endpoints
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/userlogins/firebase/{firebaseId}` | UserLogins_GetByFirebaseId | anonymous | UserLogins.js |
+| GET | `/api/userlogins/all` | UserLogins_GetAll | anonymous | UserLogins.js |
+| POST,OPTIONS | `/api/userlogins` | UserLogins_Create | anonymous | UserLogins.js |
+| PUT,OPTIONS | `/api/userlogins/updateUserInfo` | UserLogins_UpdateUserInfo | anonymous | UserLogins.js |
+| PUT,OPTIONS | `/api/userlogins/{firebaseUserId}/roles` | UserLogins_UpdateRoles | anonymous | UserLogins.js |
+| POST,OPTIONS | `/api/userlogins/activate-organizer` | UserLogins_ActivateOrganizer | anonymous | UserLogins.js |
 
-### Organizers (CALBEAF-10)
-- ❌ All organizer endpoints
+### User Services (4 endpoints)
 
-### Firebase Integration (CALBEAF-12)
-- ❌ All Firebase integration endpoints
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| POST,OPTIONS | `/api/user/fcm-token` | User_FCMToken | anonymous | User_FCMToken.js |
+| GET,OPTIONS | `/api/user/onboarding-status` | User_OnboardingStatus | anonymous | User_OnboardingStatus.js |
+| POST,OPTIONS | `/api/user/mapcenter-track` | MapCenterTrack | anonymous | MapCenterTrack.js |
+| POST,OPTIONS | `/api/user/login-track` | UserLoginTrack | anonymous | UserLoginTrack.js |
 
-### Roles (CALBEAF-13)
-- ❌ All role management endpoints
+### Map Center (1 endpoint)
 
----
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET,PUT,OPTIONS | `/api/mapcenter` | MapCenter | anonymous | MapCenter.js |
 
-## 🔄 Frontend Health Check Update Required
+### Categories (1 endpoint)
 
-**Current Issue**: Frontend is checking `/api/venues?appId=1&limit=1` which doesn't exist yet.
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/categories` | Categories_Get | anonymous | Categories.js |
 
-**Recommended Fix**: Update frontend health check to use available endpoints:
+### Roles (1 endpoint)
 
-```javascript
-// useServiceHealth.js
-async function checkAzureFunctions() {
-  try {
-    // Use /api/health instead of /api/venues
-    const response = await fetch(`${AZURE_FUNCTIONS_URL}/api/health`);
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/roles` | Roles_Get | anonymous | Roles.js |
 
-    if (!response.ok) {
-      throw new Error(`Health check failed: ${response.status}`);
-    }
+### Geolocation (9 endpoints)
 
-    const data = await response.json();
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET,OPTIONS | `/api/geo/reverse` | Geo_Reverse | anonymous | Geo.js |
+| GET,OPTIONS | `/api/geo/geocode` | Geo_Geocode | anonymous | Geo.js |
+| GET,OPTIONS | `/api/geo/timezone` | Geo_Timezone | anonymous | Geo.js |
+| GET,OPTIONS | `/api/geo/ipapico/ip` | Geo_IpapiCo_Get | anonymous | Geo.js |
+| GET,OPTIONS | `/api/geo/bigdatacloud/ip` | Geo_BigDataCloud_Get | anonymous | Geo.js |
+| GET,OPTIONS | `/api/geo/abstract/ip` | Geo_Abstract_Get | anonymous | Geo.js |
+| POST,OPTIONS | `/api/geo/mapbox/reverse` | Geo_Mapbox_Reverse | anonymous | Geo.js |
+| POST,OPTIONS | `/api/geo/google-geolocate` | Geo_GoogleGeolocate | anonymous | Geo_GoogleGeolocate.js |
+| GET | `/api/geo/event-density` | Geo_EventDensity | anonymous | Geo_EventDensity.js |
 
-    return {
-      status: 'healthy',
-      service: data.service,
-      version: data.version,
-      timestamp: data.timestamp
-    };
+### Mastered Locations (6 endpoints)
 
-  } catch (error) {
-    console.error('Azure Functions health check failed:', error);
-    return { status: 'unhealthy', error: error.message };
-  }
-}
-```
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/masteredLocations/countries` | MasteredLocations_Countries | anonymous | MasteredLocations.js |
+| GET | `/api/masteredLocations/regions` | MasteredLocations_Regions | anonymous | MasteredLocations.js |
+| GET | `/api/masteredLocations/divisions` | MasteredLocations_Divisions | anonymous | MasteredLocations.js |
+| GET | `/api/masteredLocations/cities` | MasteredLocations_Cities | anonymous | MasteredLocations.js |
+| GET | `/api/masteredLocations/nearestMastered` | MasteredLocations_NearestMastered | anonymous | MasteredLocations.js |
+| GET | `/api/regions/activeRegions` | Regions_ActiveRegions | anonymous | MasteredLocations.js |
 
-**Alternative**: Check multiple endpoints to verify full functionality:
+**Note**: Sarah confirmed FE has disconnected all masteredLocations UI paths. These exist but are not actively called by TangoTiempo FE.
 
-```javascript
-async function checkAzureFunctions() {
-  const checks = [
-    { name: 'health', url: '/api/health' },
-    { name: 'categories', url: '/api/categories' },
-    { name: 'events', url: '/api/events' }
-  ];
+### Frontend Logs (2 endpoints)
 
-  const results = await Promise.allSettled(
-    checks.map(check =>
-      fetch(`${AZURE_FUNCTIONS_URL}${check.url}`)
-        .then(r => ({ ...check, ok: r.ok }))
-    )
-  );
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| POST,OPTIONS | `/api/frontend-logs` | FrontendLogs_Create | anonymous | FrontendLogs.js |
+| POST,OPTIONS | `/api/frontend-logs/batch` | FrontendLogs_Batch | anonymous | FrontendLogs.js |
 
-  const allHealthy = results.every(r =>
-    r.status === 'fulfilled' && r.value.ok
-  );
+### Analytics (1 endpoint)
 
-  return { status: allHealthy ? 'healthy' : 'degraded', checks: results };
-}
-```
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/analytics/visitor-heatmap` | Analytics_VisitorHeatmap | anonymous | Analytics_VisitorHeatmap.js |
 
----
+### Visitor Tracking (1 endpoint)
 
-## 📊 Migration Status by Domain
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| POST,OPTIONS | `/api/visitor/track` | VisitorTrack | anonymous | VisitorTrack.js |
 
-| Domain | JIRA | Status | Endpoints Available |
-|--------|------|--------|---------------------|
-| Health Checks | CALBEAF-14 | ✅ Complete | 5/5 |
-| Categories | CALBEAF-6, CALBEAF-16 | ✅ Complete | 1/1 |
-| Events | CALBEAF-7, CALBEAF-17-26, CALBEAF-43 | 🟡 Partial | 6/10 |
-| MapCenter | CALBEAF-48 | ✅ Complete | 2/2 |
-| Venues | CALBEAF-8, CALBEAF-27-32, CALBEAF-42 | ❌ Not Started | 0/6 |
-| User Logins | CALBEAF-9 | ❌ Not Started | 0/18 |
-| Organizers | CALBEAF-10 | ❌ Not Started | 0/? |
-| Firebase | CALBEAF-12 | ❌ Not Started | 0/3 |
-| Roles | CALBEAF-13 | ❌ Not Started | 0/? |
+### Voice (2 endpoints)
 
----
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/voice/events` | Voice_Events | anonymous | VoiceEvents.js |
+| GET,POST | `/api/voice/ask` | Voice_Ask | anonymous | VoiceAsk.js |
 
-## 🚦 Frontend Integration Priority
+### Cloudflare (1 endpoint)
 
-1. **Immediate** (Ready Now):
-   - Update health checks to use `/api/health`
-   - Integrate MapCenter API for TIEMPO-312
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/cloudflare/info` | Cloudflare_Info | anonymous | Cloudflare.js |
 
-2. **Next** (Requires Implementation):
-   - Venues API (CALBEAF-42)
-   - User Login API (CALBEAF-9)
-   - Firebase Integration (CALBEAF-12)
+### Metrics (1 endpoint)
 
----
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/metrics` | Metrics_Get | anonymous | Metrics_Get.js |
 
-## 🔍 Testing Available Endpoints
+### Documentation (2 endpoints)
 
-### Quick Test Script
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/docs` | SwaggerUI | anonymous | API_Docs.js |
+| GET | `/api/swagger.json` | SwaggerJSON | anonymous | API_Docs.js |
 
-```bash
-# Base URL
-BASE="http://localhost:7071"
+### Debug (2 endpoints)
 
-# Health check
-curl $BASE/api/health
-
-# Categories
-curl $BASE/api/categories
-
-# Events list
-curl $BASE/api/events
-
-# MapCenter (requires Firebase token)
-TOKEN="your-firebase-id-token"
-curl -H "Authorization: Bearer $TOKEN" $BASE/api/mapcenter
-```
-
-### Test with Postman/Insomnia
-
-Import this collection to test all available endpoints:
-- Collection available at: `./docs/postman-collection.json` (to be created)
-
----
-
-## 📝 Notes
-
-- All endpoints use JSON request/response format
-- Authentication uses Firebase Bearer tokens where required
-- CORS is configured for `https://tangotiempo.com`
-- Rate limiting: TBD
-- API versioning: TBD
+| Method | Route | Function | Auth | File |
+|--------|-------|----------|------|------|
+| GET | `/api/events-debug` | Events_Debug | anonymous | Events.js |
+| GET | `/api/db-info` | DB_Info | anonymous | Events.js |
 
 ---
 
-## 🆘 Troubleshooting
+## Summary by Domain
 
-**404 Not Found**
-- Endpoint not implemented yet
-- Check this document for available endpoints
-- Verify URL spelling and method (GET/POST/PUT/DELETE)
-
-**401 Unauthorized**
-- Missing Authorization header
-- Invalid Firebase token
-- Token expired (get new token from Firebase)
-
-**500 Internal Server Error**
-- Check Azure Functions logs
-- Verify MongoDB connection
-- Check Application Insights
+| Domain | Endpoints | Status |
+|--------|-----------|--------|
+| Health | 5 | Complete |
+| Events (standard) | 7 | Complete |
+| Events (RA) | 3 | Complete |
+| Events (summary/image) | 2 | Complete |
+| Venues | 8 (+1 timer) | Complete |
+| Organizers | 10 | Complete |
+| User Logins | 6 | Complete |
+| User Services | 4 | Complete |
+| Map Center | 1 | Complete |
+| Categories | 1 | Complete |
+| Roles | 1 | Complete |
+| Geo | 9 | Complete |
+| Mastered Locations | 6 | Complete (FE disconnected) |
+| Frontend Logs | 2 | Complete (FE disabled) |
+| Analytics | 1 | Complete |
+| Visitor Tracking | 1 | Complete |
+| Voice | 2 | Complete |
+| Cloudflare | 1 | Complete |
+| Metrics | 1 | Complete |
+| Docs | 2 | Complete |
+| Debug | 2 | Complete |
+| **TOTAL** | **73 HTTP + 1 timer** | |
 
 ---
 
-## Contact
+## Known Route Differences (BE vs AF)
 
-**Questions?** Reference:
-- JIRA Epic: CALBEAF-5 (BE to AF Migration)
-- Documentation: `/docs/MAPCENTER-API.md`
+| BE Route | AF Route | Notes |
+|----------|----------|-------|
+| `POST /api/events/post` | `POST /api/events/post` (legacy alias) | **RESOLVED** v1.20.0 — both paths work |
+
+---
+
+## TT Migration Gap Status (2026-01-30, updated v1.20.0)
+
+Based on Sarah's corrected audit (msg_002, Jan 29):
+
+**Tier 1 (Originally "Missing")**: ALL 4 now EXIST in AF
+- Events_UploadImage, Organizers_GenerateSASToken, FrontendLogs (x2)
+
+**Tier 2 (Verify sub-routes)**: ALL 13 EXIST in AF
+- EventsSummary, VenuesGeocode, Organizers CRUD, UserLogins CRUD
+
+**v1.20.0 Fixes (Sarah's 4 TEST blockers)**:
+1. `GET /api/events/count` — **IMPLEMENTED** (Events_Count in Events.js)
+2. `POST /api/venues/check-proximity` — **IMPLEMENTED** (added POST method + body parsing)
+3. check-proximity response shape — **FIXED** (mapped distanceInYards→distance, address1→address to match Express)
+4. Organizer default projection — **NOT AN AF BUG** (Express BE has same restrictive projection)
+5. isApproved filter — **NOT AN AF BUG** (Express BE also ignores; field doesn't exist on Organizer model)
+
+**Open Tickets**:
+- CALBEAF-70: RO granted/alternate events visibility
+- CALBEAF-68: MasteredLocations (dropped per Sarah - FE disconnected)
+
+---
+
+*Updated by Fulton, 2026-01-30*

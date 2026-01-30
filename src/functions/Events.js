@@ -3,6 +3,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 
 // ============================================
 // FUNCTION 1: GET /api/events
@@ -221,35 +222,6 @@ async function eventsGetHandler(request, context) {
             };
         }
 
-        // CALBEAF-65 v1.13.10: Enhanced debug logging - check recurring counts
-        context.log('Events_Get: baseFilter:', JSON.stringify(baseFilter));
-        context.log('Events_Get: final filter:', JSON.stringify(filter));
-        context.log(`Fetching events for appId: ${appId} with pagination: page ${pageNum}, limit ${limitNum}`);
-
-        // Debug: Count recurring events with different query approaches
-        const recurringQuery1 = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true, $ne: null, $ne: '' }
-        });
-        const recurringQuery2 = await collection.countDocuments({
-            ...baseFilter,
-            $and: [
-                { recurrenceRule: { $exists: true } },
-                { recurrenceRule: { $ne: null } },
-                { recurrenceRule: { $ne: '' } }
-            ]
-        });
-        const recurringQuery3 = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true, $type: 'string', $ne: '' }
-        });
-        // Check for any recurrenceRule that exists (including empty/null)
-        const hasAnyRecurrence = await collection.countDocuments({
-            ...baseFilter,
-            recurrenceRule: { $exists: true }
-        });
-        context.log(`RECURRING DEBUG - Query1(mongoose-style): ${recurringQuery1}, Query2($and): ${recurringQuery2}, Query3($type string): ${recurringQuery3}, HasAny: ${hasAnyRecurrence}`);
-
         // Build MongoDB query
         const eventQuery = collection
             .find(filter)
@@ -299,6 +271,104 @@ app.http('Events_Get', {
 });
 
 // ============================================
+// FUNCTION 1b: GET /api/events/count
+// ============================================
+
+/**
+ * GET /api/events/count
+ * Return count of events matching appId and ownerId - used by useMigratedOrganizers.js
+ *
+ * Query Parameters:
+ * - appId: Application ID (required)
+ * - ownerId: Organizer ObjectId (required) — matches ownerOrganizerID, grantedOrganizerID, or alternateOrganizerID
+ *
+ * Response: { count: <number> }
+ */
+async function eventsCountHandler(request, context) {
+    const appId = request.query.get('appId');
+    const ownerId = request.query.get('ownerId');
+
+    context.log('Events_Count: Request received', { appId, ownerId });
+
+    if (!appId) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'appId is required' })
+        };
+    }
+
+    if (!ownerId) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'ownerId is required' })
+        };
+    }
+
+    let mongoClient;
+
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('events');
+
+        // Match Express owner lookup: check all 3 organizer ID fields
+        // See calendar-be serverEvents.js lines 1240-1242
+        let ownerObjectId;
+        try {
+            ownerObjectId = new ObjectId(ownerId);
+        } catch {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Invalid ownerId format' })
+            };
+        }
+
+        const filter = {
+            appId,
+            isActive: true,
+            $or: [
+                { ownerOrganizerID: ownerObjectId },
+                { grantedOrganizerID: ownerObjectId },
+                { alternateOrganizerID: ownerObjectId }
+            ]
+        };
+
+        const count = await collection.countDocuments(filter);
+
+        context.log(`Events_Count: Found ${count} events for ownerId ${ownerId}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count })
+        };
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Events_Count', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'events/count',
+    handler: standardMiddleware(eventsCountHandler)
+});
+
+// ============================================
 // FUNCTION 2: GET /api/events/{eventId}
 // ============================================
 
@@ -345,14 +415,11 @@ async function eventsGetByIdHandler(request, context) {
 
         context.log(`Event found: ${eventId}`);
 
+        // Return event at root level to match calendar-be response format
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                success: true,
-                data: event,
-                timestamp: new Date().toISOString()
-            })
+            body: JSON.stringify(event)
         };
     } catch (error) {
         // Let errorHandler middleware handle the error
@@ -367,7 +434,7 @@ async function eventsGetByIdHandler(request, context) {
 app.http('Events_GetById', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'events/{eventId}',
+    route: 'events/id/{eventId}',
     handler: standardMiddleware(eventsGetByIdHandler)
 });
 
@@ -377,20 +444,27 @@ app.http('Events_GetById', {
 
 /**
  * POST /api/events
- * Create new event
+ * Create new event - Express parity with calendar-be
  *
  * @body {object} event - Event data
- * Required fields: appId, title, startTime, endTime
+ * Required fields: appId, title, startDate, endDate (matches calendar-be)
  */
 async function eventsCreateHandler(request, context) {
     context.log('Events_Create: Request received');
+
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Create: Authenticated user ${user.uid}`);
 
     let mongoClient;
 
     try {
         const requestBody = await request.json();
 
-        // Validate required fields
+        // Validate required fields - match calendar-be exactly
         if (!requestBody.appId) {
             return {
                 status: 400,
@@ -403,13 +477,41 @@ async function eventsCreateHandler(request, context) {
             };
         }
 
-        if (!requestBody.title || !requestBody.startTime || !requestBody.endTime) {
+        // Express parity: calendar-be requires title, startDate, endDate
+        if (!requestBody.title || !requestBody.startDate || !requestBody.endDate) {
             return {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     success: false,
-                    error: 'title, startTime, and endTime are required',
+                    error: 'Title, Start Date, and End Date are required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Parse and validate dates
+        const parsedStartDate = new Date(requestBody.startDate);
+        if (isNaN(parsedStartDate.getTime())) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Invalid startDate format',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const parsedEndDate = new Date(requestBody.endDate);
+        if (isNaN(parsedEndDate.getTime())) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Invalid endDate format',
                     timestamp: new Date().toISOString()
                 })
             };
@@ -427,18 +529,14 @@ async function eventsCreateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Build new event document
+        // Build new event document - use startDate/endDate like calendar-be
+        // Pass through all fields from request, with explicit date parsing
         const newEvent = {
-            appId: requestBody.appId,
-            title: requestBody.title,
-            description: requestBody.description || '',
-            startTime: new Date(requestBody.startTime),
-            endTime: new Date(requestBody.endTime),
+            ...requestBody,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
             isAllDay: requestBody.isAllDay || false,
-            location: requestBody.location || '',
-            categoryId: requestBody.categoryId || null,
-            venueId: requestBody.venueId || null,
-            attendees: requestBody.attendees || [],
+            isActive: requestBody.isActive !== undefined ? requestBody.isActive : true,
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -450,12 +548,14 @@ async function eventsCreateHandler(request, context) {
 
         // CALBEAF-57: Reactivate venue if it's currently inactive
         // When an event is created with an inactive venue, set venue.isActive=true
-        if (newEvent.venueId) {
+        // Note: calendar-be uses venueID (capital ID)
+        const venueId = newEvent.venueID || newEvent.venueId;
+        if (venueId) {
             try {
                 const venuesCollection = db.collection('Venues');
-                const venueObjectId = typeof newEvent.venueId === 'string'
-                    ? new ObjectId(newEvent.venueId)
-                    : newEvent.venueId;
+                const venueObjectId = typeof venueId === 'string'
+                    ? new ObjectId(venueId)
+                    : venueId;
 
                 const venueUpdateResult = await venuesCollection.updateOne(
                     { _id: venueObjectId, isActive: false },
@@ -469,11 +569,11 @@ async function eventsCreateHandler(request, context) {
                 );
 
                 if (venueUpdateResult.modifiedCount > 0) {
-                    context.log(`CALBEAF-57: Venue ${newEvent.venueId} reactivated due to event creation ${result.insertedId}`);
+                    context.log(`CALBEAF-57: Venue ${venueId} reactivated due to event creation ${result.insertedId}`);
                 }
             } catch (venueError) {
                 // Log but don't fail event creation if venue update fails
-                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${newEvent.venueId}: ${venueError.message}`);
+                context.warn(`CALBEAF-57: Failed to check/reactivate venue ${venueId}: ${venueError.message}`);
             }
         }
 
@@ -501,8 +601,17 @@ async function eventsCreateHandler(request, context) {
 
 app.http('Events_Create', {
     methods: ['POST'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events',
+    handler: standardMiddleware(eventsCreateHandler)
+});
+
+// Legacy route alias: calendar-be used POST /api/events/post
+// Multiple frontends (TangoTiempo, HarmonyJunction) call this path
+app.http('Events_Create_Legacy', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'events/post',
     handler: standardMiddleware(eventsCreateHandler)
 });
 
@@ -521,6 +630,13 @@ async function eventsUpdateHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Update: Request for event ${eventId}`);
 
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Update: Authenticated user ${user.uid}`);
+
     let mongoClient;
 
     try {
@@ -538,12 +654,12 @@ async function eventsUpdateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Build update document
+        // Build update document - use startDate/endDate like calendar-be
         const updateDoc = {
             $set: {
                 ...requestBody,
-                startTime: requestBody.startTime ? new Date(requestBody.startTime) : undefined,
-                endTime: requestBody.endTime ? new Date(requestBody.endTime) : undefined,
+                startDate: requestBody.startDate ? new Date(requestBody.startDate) : undefined,
+                endDate: requestBody.endDate ? new Date(requestBody.endDate) : undefined,
                 updatedAt: new Date()
             }
         };
@@ -553,14 +669,17 @@ async function eventsUpdateHandler(request, context) {
             updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
         );
 
-        // Update document
-        const result = await collection.findOneAndUpdate(
+        // Remove _id from update body (immutable in MongoDB)
+        delete updateDoc.$set._id;
+
+        // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
+        const updatedDoc = await collection.findOneAndUpdate(
             { _id: new ObjectId(eventId) },
             updateDoc,
             { returnDocument: 'after' }
         );
 
-        if (!result.value) {
+        if (!updatedDoc) {
             context.log(`Event not found: ${eventId}`);
             return {
                 status: 404,
@@ -580,7 +699,7 @@ async function eventsUpdateHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: true,
-                data: result.value,
+                data: updatedDoc,
                 timestamp: new Date().toISOString()
             })
         };
@@ -596,7 +715,7 @@ async function eventsUpdateHandler(request, context) {
 
 app.http('Events_Update', {
     methods: ['PUT'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/{eventId}',
     handler: standardMiddleware(eventsUpdateHandler)
 });
@@ -614,6 +733,13 @@ app.http('Events_Update', {
 async function eventsDeleteHandler(request, context) {
     const eventId = request.params.eventId;
     context.log(`Events_Delete: Request for event ${eventId}`);
+
+    // Firebase auth — matches calendar-be authenticateToken middleware
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Delete: Authenticated user ${user.uid}`);
 
     let mongoClient;
 
@@ -669,7 +795,7 @@ async function eventsDeleteHandler(request, context) {
 
 app.http('Events_Delete', {
     methods: ['DELETE'],
-    authLevel: 'function',
+    authLevel: 'anonymous',
     route: 'events/{eventId}',
     handler: standardMiddleware(eventsDeleteHandler)
 });

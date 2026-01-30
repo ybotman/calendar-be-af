@@ -235,6 +235,78 @@ app.http('Organizers_GetById', {
 });
 
 /**
+ * GET /api/organizers/firebase/{firebaseUserId}
+ * Get single organizer by Firebase User ID
+ *
+ * @param {string} firebaseUserId - The Firebase user ID to look up
+ * Query Parameters:
+ * - appId: Application ID (default: "1")
+ */
+async function organizersGetByFirebaseIdHandler(request, context) {
+    const firebaseUserId = request.params.firebaseUserId;
+    const appId = request.query.get('appId') || '1';
+
+    context.log(`Organizers_GetByFirebaseId: Request for firebaseUserId ${firebaseUserId}`);
+
+    let mongoClient;
+
+    try {
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('organizers');
+
+        // Find organizer by firebaseUserId and appId
+        const organizer = await collection.findOne({
+            firebaseUserId,
+            appId
+        });
+
+        if (!organizer) {
+            context.log(`Organizer not found for firebaseUserId: ${firebaseUserId}`);
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Organizer not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log(`Organizer found for firebaseUserId: ${firebaseUserId}, organizerId: ${organizer._id}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(organizer)
+        };
+    } catch (error) {
+        // Let errorHandler middleware handle the error
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Organizers_GetByFirebaseId', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'organizers/firebase/{firebaseUserId}',
+    handler: standardMiddleware(organizersGetByFirebaseIdHandler)
+});
+
+/**
  * POST /api/organizers
  * Create a new organizer
  */

@@ -19,6 +19,11 @@ const {
   clearMetrics,
   exportToAppInsights
 } = require('./metrics');
+const {
+  requireRegionalAdmin,
+  checkRAPermission,
+  forbiddenResponse
+} = require('./requireRegionalAdmin');
 
 /**
  * CORS preflight middleware
@@ -28,7 +33,6 @@ function corsMiddleware(handler) {
   return async (request, context) => {
     // Handle OPTIONS (CORS preflight) requests
     if (request.method === 'OPTIONS') {
-      context.log('CORS preflight request (OPTIONS) - returning 200 OK');
       return {
         status: 200,
         headers: {
@@ -114,5 +118,10 @@ module.exports = {
   asyncHandler,
   getMetricsSummary,
   clearMetrics,
-  exportToAppInsights
+  exportToAppInsights,
+
+  // Regional Admin middleware
+  requireRegionalAdmin,
+  checkRAPermission,
+  forbiddenResponse
 };

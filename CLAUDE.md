@@ -733,7 +733,9 @@ START OF FILE: YBOTBOT-TRACKING.md
 
 This is an Important TRACKING terminology definition. Tracking is a generic term and needs to be defined. Here is where we define it.
 
-All references to TRACKING, now mean "JIRA MCP" All rules and guidance for generic TRACKING are to be understood as the "JIRA MCP" tool.
+All references to TRACKING mean "JIRA via CLI scripts". All rules and guidance for generic TRACKING are to be understood as using the JIRA REST API via the bash scripts in `.ybotbot/jira-tools/`.
+
+**CRITICAL: DO NOT USE MCP for JIRA.** MCP JIRA functions are broken. Always use direct API calls or the CLI scripts.
 
 ## What TRACKING Means
 
@@ -745,16 +747,16 @@ When any playbook, role, or instruction mentions:
 - "TRACKING documentation"
 
 It specifically refers to:
-- **"JIRA MCP"**
-- Using the functions documented.
+- **JIRA via CLI scripts** (`.ybotbot/jira-tools/`)
+- Using direct REST API with macOS keychain authentication
 - The project key will be replaced from user configuration
 
 ## TRACKING Requirements
 
 All TRACKING operations must:
-1. Use the appropriate "JIRA MCP" function
-2. Include the cloudId parameter
-3. Reference the configured project key
+1. Use the `.ybotbot/jira-tools/` bash scripts (jira-get.sh, jira-comment.sh, jira-search.sh, etc.)
+2. Authenticate via macOS keychain (account: toby.balsley@gmail.com)
+3. Reference the configured project key (CALBEAF)
 
 
 
@@ -762,11 +764,11 @@ All TRACKING operations must:
 
 ## Tracking Implementation
 
-See JIRA-MCP-STRATEGY section for detailed JIRA integration instructions.
+See `.ybotbot/jira-tools/README.md` for detailed JIRA CLI script usage.
 
 ## Important Note
 
-This definition centralizes all TRACKING references to use "JIRA MCP", ensuring consistency across all playbooks and roles.
+This definition centralizes all TRACKING references to use JIRA CLI scripts, ensuring consistency across all playbooks and roles.
 
 ================================================================================
 END OF FILE: YBOTBOT-TRACKING.md
@@ -831,7 +833,7 @@ CLI
 -- CO-PILOT
 
 TOOLS
--- ATLASSIAN, JIRA: MCP, 
+-- ATLASSIAN, JIRA: CLI scripts (.ybotbot/jira-tools/) + direct REST API
 -- GITHUB
 
 ================================================================================
@@ -851,70 +853,51 @@ END OF FILE: GIT-Strategy.md
 
 
 ================================================================================
-START OF FILE: JIRA-MCP-STRATEGY.md
+START OF FILE: JIRA-CLI-STRATEGY.md
 ================================================================================
 
-# JIRA MCP Strategy - API Fallback
+# JIRA CLI Strategy - Direct API via Bash Scripts
 
 ## Purpose
-This document defines the fallback strategy for JIRA integration when direct API access fails or is not working.
+This document defines the ONLY supported method for JIRA integration: direct REST API via CLI bash scripts.
 
-## When to Use
-1. **This is a failover for JIRA API** - Only use when API calls are failing consistently
-2. **MCP Method** - Uses Model Context Protocol for JIRA integration
-3. **Requires MCP Setup** - Claude desktop app must have MCP configured properly
+## CRITICAL: DO NOT USE MCP FOR JIRA
+MCP JIRA functions (`mcp__atlassian__*`) are broken and must NEVER be used. All JIRA operations go through the `.ybotbot/jira-tools/` bash scripts which use direct REST API calls.
 
-# FALLBACK JIRA
-You are to UTILIZE jira via MCP for all TRACKING and JIRA commands ONLY when API method fails.
-
-## 3 Examples
-
-### Example 1: Search Issues
-```javascript
-// Using site URL - MCP automatically converts to cloud ID
-mcp__atlassian__searchJiraIssuesUsingJql({
-  cloudId: "http://hdtsllc@atlassian.net",
-  jql: "project = CALBEAF AND status = 'In Progress'",
-  fields: ["summary", "status", "assignee"],
-  maxResults: 10
-})
+## Authentication
+```bash
+export JIRA_EMAIL="toby.balsley@gmail.com"
+export JIRA_API_TOKEN=$(security find-generic-password -a "toby.balsley@gmail.com" -s "jira-api-token" -w 2>/dev/null)
+export JIRA_BASE_URL="https://hdtsllc.atlassian.net"
 ```
 
-### Example 2: Create a New Issue
-```javascript
-// Using site URL from a JIRA link - MCP extracts and converts
-mcp__atlassian__createJiraIssue({
-  cloudId: "http://hdtsllc@atlassian.net",
-  projectKey: "CALBEAF",
-  issueTypeName: "Story",
-  summary: "Implement user authentication",
-  description: "Add login functionality with JWT tokens"
-})
-```
+## Available Scripts (`.ybotbot/jira-tools/`)
 
-### Example 3: Get Issue Details
-```javascript
-// Even from a full issue URL - MCP is smart enough to extract the site
-mcp__atlassian__getJiraIssue({
-  cloudId: "http://hdtsllc@atlassian.net",
-  issueIdOrKey: "CALBEAF-123",
-  fields: ["description", "status", "comments"]
-})
-```
+| Script | Purpose | Example |
+|--------|---------|---------|
+| `jira-get.sh` | Get issue details | `./.ybotbot/jira-tools/jira-get.sh CALBEAF-67` |
+| `jira-search.sh` | Search issues (JQL) | `./.ybotbot/jira-tools/jira-search.sh "project = CALBEAF" 10` |
+| `jira-comment.sh` | Add comment | `./.ybotbot/jira-tools/jira-comment.sh CALBEAF-67 "Status update"` |
+| `jira-create.sh` | Create issue | `./.ybotbot/jira-tools/jira-create.sh "Summary" Task "Description" High` |
+| `jira-create-subtask.sh` | Create subtask | `./.ybotbot/jira-tools/jira-create-subtask.sh CALBEAF-67 "Subtask" "Desc"` |
+| `jira-transition.sh` | Change status | `./.ybotbot/jira-tools/jira-transition.sh CALBEAF-67 "In Progress"` |
+| `jira-update.sh` | Update fields | `./.ybotbot/jira-tools/jira-update.sh CALBEAF-67 summary "New title"` |
+| `jira-add-to-epic.sh` | Add to epic | `./.ybotbot/jira-tools/jira-add-to-epic.sh CALBEAF-68 CALBEAF-5` |
+| `jira-get-epic-issues.sh` | List epic issues | `./.ybotbot/jira-tools/jira-get-epic-issues.sh CALBEAF-5` |
+| `jira-link-issues.sh` | Link issues | `./.ybotbot/jira-tools/jira-link-issues.sh CALBEAF-67 CALBEAF-68 "blocks"` |
 
 ## Configuration
-Both values are found in `./.ybotbot/user-config.ini`:
-- Cloud URL: `jira-url` in [JIRA] section
-- Project Key: `jira-project_key` in [JIRA] section
+- Project Key: `CALBEAF`
+- Base URL: `https://hdtsllc.atlassian.net`
+- Auth: macOS keychain (account: toby.balsley@gmail.com)
+- Prefer REST API v2 over v3
 
-## MCP Failure Fallback
-If API failures occur and it appears API access is not working, you must use this MCP strategy as a backup method.
-
-## Primary Method
-The primary JIRA integration method is direct API access. See JIRA-API-STRATEGY.md for the main implementation.
+## See Also
+- `.ybotbot/jira-tools/README.md` for full usage docs
+- `.ybotbot/retrospectivePlaybook.md` for auth troubleshooting history
 
 ================================================================================
-END OF FILE: JIRA-MCP-STRATEGY.md
+END OF FILE: JIRA-CLI-STRATEGY.md
 ================================================================================
 
 

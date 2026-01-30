@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.10.0",
+    "version": "1.20.0",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -644,6 +644,47 @@
           "204": {
             "description": "Event deleted successfully"
           }
+        }
+      }
+    },
+    "/api/events/count": {
+      "get": {
+        "summary": "Count events by owner",
+        "description": "Return the count of active events matching appId and ownerId. Used by useMigratedOrganizers.js to show event counts per organizer. Matches ownerOrganizerID, grantedOrganizerID, or alternateOrganizerID.",
+        "tags": ["Events"],
+        "operationId": "countEvents",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "description": "Application ID (e.g., '1' for TangoTiempo, '2' for HarmonyJunction)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "required": true,
+            "description": "Organizer ObjectId — checked against ownerOrganizerID, grantedOrganizerID, alternateOrganizerID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event count returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer", "description": "Number of active events matching the filter" }
+                  }
+                },
+                "example": { "count": 12 }
+              }
+            }
+          },
+          "400": { "description": "Missing appId or ownerId, or invalid ownerId format" }
         }
       }
     },
@@ -1780,6 +1821,108 @@
         }
       }
     },
+    "/api/venues/check-proximity": {
+      "get": {
+        "summary": "Check nearby venues (GET)",
+        "description": "Check if existing venues are near a given coordinate. Returns venues within the specified radius in yards. Response fields match Express BE: distance (rounded integer in yards) and address (mapped from address1).",
+        "tags": ["Venues"],
+        "operationId": "checkProximityGet",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "description": "Latitude coordinate",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "description": "Longitude coordinate",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "description": "Search radius in yards",
+            "schema": { "type": "number", "default": 100 }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID",
+            "schema": { "type": "string", "default": "1" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proximity check completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hasNearbyVenues": { "type": "boolean" },
+                    "count": { "type": "integer" },
+                    "nearbyVenues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "distance": { "type": "integer", "description": "Distance in yards (rounded)" },
+                          "address": { "type": "string", "description": "Street address" },
+                          "city": { "type": "string" },
+                          "latitude": { "type": "number" },
+                          "longitude": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "hasNearbyVenues": true,
+                  "count": 1,
+                  "nearbyVenues": [{ "_id": "abc123", "name": "Dance Studio", "distance": 45, "address": "123 Main St", "city": "Boston", "latitude": 42.36, "longitude": -71.06 }]
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing lat or lng parameter" }
+        }
+      },
+      "post": {
+        "summary": "Check nearby venues (POST)",
+        "description": "POST variant of check-proximity. Used by VenueModalAddWithSearch.js. Accepts lat/lng/radius/appId in request body instead of query params.",
+        "tags": ["Venues"],
+        "operationId": "checkProximityPost",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["lat", "lng"],
+                "properties": {
+                  "lat": { "type": "number", "description": "Latitude coordinate" },
+                  "lng": { "type": "number", "description": "Longitude coordinate" },
+                  "radius": { "type": "number", "default": 100, "description": "Search radius in yards" },
+                  "appId": { "type": "string", "default": "1", "description": "Application ID" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proximity check completed (same response as GET variant)"
+          },
+          "400": { "description": "Missing lat or lng in body" }
+        }
+      }
+    },
     "/api/venues": {
       "get": {
         "summary": "List venues",
@@ -2251,44 +2394,183 @@
       "Event": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
+          "_id": { "type": "string", "description": "Event ID (MongoDB ObjectId)" },
+          "appId": { "type": "string", "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
+          "title": { "type": "string", "description": "Event title" },
+          "standardsTitle": { "type": "string", "description": "Standardized title" },
+          "shortTitle": { "type": "string", "description": "Short title for display" },
+          "description": { "type": "string", "description": "Event description" },
+          "startDate": { "type": "string", "format": "date-time", "description": "Event start date/time" },
+          "endDate": { "type": "string", "format": "date-time", "description": "Event end date/time" },
+          "isAllDay": { "type": "boolean", "default": false, "description": "Whether event is all-day" },
+          "categoryFirst": { "type": "string", "description": "Primary category name" },
+          "categorySecond": { "type": "string", "description": "Secondary category name" },
+          "categoryThird": { "type": "string", "description": "Third category name" },
+          "categoryFirstId": { "type": "string", "description": "Primary category ObjectId" },
+          "categorySecondId": { "type": "string", "description": "Secondary category ObjectId" },
+          "categoryThirdId": { "type": "string", "description": "Third category ObjectId" },
+          "ownerOrganizerID": { "type": "string", "description": "Owner organizer ObjectId (OLD structure)" },
+          "ownerOrganizerName": { "type": "string", "description": "Owner organizer name (OLD structure)" },
+          "ownerOrganizerShortName": { "type": "string", "description": "Owner organizer short name (OLD structure)" },
+          "grantedOrganizerID": { "type": "string", "description": "Granted organizer ObjectId (OLD structure)" },
+          "grantedOrganizerName": { "type": "string", "description": "Granted organizer name (OLD structure)" },
+          "alternateOrganizerID": { "type": "string", "description": "Alternate organizer ObjectId (OLD structure)" },
+          "alternateOrganizerName": { "type": "string", "description": "Alternate organizer name (OLD structure)" },
+          "ownerOrganizer": {
+            "type": "object",
+            "description": "Owner organizer (NEW structure)",
+            "properties": {
+              "id": { "type": "string", "description": "Organizer ObjectId" },
+              "name": { "type": "string", "description": "Organizer full name" },
+              "shortName": { "type": "string", "description": "Organizer short name" },
+              "eventRole": { "type": "string", "default": "Owner", "description": "Role in this event" }
+            }
           },
-          "title": {
-            "type": "string"
+          "alternateOrganizers": {
+            "type": "array",
+            "description": "Additional organizers (NEW structure)",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "shortName", "eventRole"],
+              "properties": {
+                "id": { "type": "string", "description": "Organizer ObjectId" },
+                "name": { "type": "string", "description": "Organizer full name" },
+                "shortName": { "type": "string", "description": "Organizer short name" },
+                "eventRole": { "type": "string", "description": "Role: Owner, Host, DJ, Orchestra, Maestro, Teacher (appId 1) or Owner, Role1-5 (appId 2)" }
+              }
+            }
           },
-          "description": {
-            "type": "string"
+          "locationName": { "type": "string", "description": "Location name" },
+          "masteredRegionName": { "type": "string", "description": "Mastered region name" },
+          "masteredDivisionName": { "type": "string", "description": "Mastered division name" },
+          "masteredCityName": { "type": "string", "description": "Mastered city name" },
+          "masteredRegionId": { "type": "string", "description": "Mastered region ObjectId" },
+          "masteredDivisionId": { "type": "string", "description": "Mastered division ObjectId" },
+          "masteredCityId": { "type": "string", "description": "Mastered city ObjectId" },
+          "masteredCityGeolocation": {
+            "type": "object",
+            "description": "City geolocation for geo queries",
+            "properties": {
+              "type": { "type": "string", "enum": ["Point"], "default": "Point" },
+              "coordinates": { "type": "array", "items": { "type": "number" }, "description": "[longitude, latitude]" }
+            }
           },
-          "startDate": {
-            "type": "string",
-            "format": "date-time"
+          "eventImage": { "type": "string", "description": "Event image URL" },
+          "bannerImage": { "type": "string", "description": "Banner image URL" },
+          "featuredImage": { "type": "string", "description": "Featured image URL" },
+          "seriesImages": { "type": "array", "items": { "type": "string" }, "description": "Series image URLs" },
+          "venueID": { "type": "string", "description": "Venue ObjectId" },
+          "venueGeolocation": {
+            "type": "object",
+            "description": "Venue geolocation for geo queries",
+            "properties": {
+              "type": { "type": "string", "enum": ["Point"], "default": "Point" },
+              "coordinates": { "type": "array", "items": { "type": "number" }, "description": "[longitude, latitude]" }
+            }
           },
-          "endDate": {
-            "type": "string",
-            "format": "date-time"
+          "venueCityName": { "type": "string", "description": "Venue city name" },
+          "venueTimezone": { "type": "string", "description": "IANA timezone identifier (e.g., America/New_York)" },
+          "recurrenceRule": { "type": "string", "description": "RRULE string (e.g., FREQ=WEEKLY;BYDAY=TU)" },
+          "excludedDates": { "type": "array", "items": { "type": "string", "format": "date-time" }, "description": "Dates excluded from recurrence" },
+          "isDiscovered": { "type": "boolean", "default": false, "description": "Whether event was discovered (scraped)" },
+          "isOwnerManaged": { "type": "boolean", "default": true, "description": "Whether managed by owner" },
+          "isActive": { "type": "boolean", "default": true, "description": "Whether event is active" },
+          "isFeatured": { "type": "boolean", "default": false, "description": "Whether event is featured" },
+          "isBtcImported": { "type": "boolean", "default": false, "description": "Whether imported from BTC" },
+          "isAiGenerated": { "type": "boolean", "default": false, "description": "Whether AI-generated" },
+          "isCanceled": { "type": "boolean", "default": false, "description": "Whether event is canceled" },
+          "isRepeating": { "type": "boolean", "default": false, "description": "Whether event repeats (auto-set from recurrenceRule)" },
+          "discoverySource": { "type": "string", "description": "Source of discovery" },
+          "source": { "type": "string", "description": "Event source" },
+          "discoveredLastDate": { "type": "string", "format": "date-time", "description": "Last discovery date" },
+          "discoveredFirstDate": { "type": "string", "format": "date-time", "description": "First discovery date" },
+          "discoveredComments": { "type": "string", "description": "Discovery comments" },
+          "cost": { "type": "string", "description": "Event cost/price info" },
+          "expiresAt": { "type": "string", "format": "date-time", "description": "Event expiration date" },
+          "createdByRA": {
+            "type": "object",
+            "description": "Regional Admin who created event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          },
+          "lastModifiedByRA": {
+            "type": "object",
+            "description": "Regional Admin who last modified event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          },
+          "deletedByRA": {
+            "type": "object",
+            "description": "Regional Admin who deleted event",
+            "properties": {
+              "userId": { "type": "string", "description": "UserLogin ObjectId" },
+              "firebaseUserId": { "type": "string", "description": "Firebase user ID" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "reason": { "type": "string", "description": "Deletion reason" }
+            }
           }
-        }
+        },
+        "required": ["appId", "title", "startDate", "masteredCityId", "expiresAt"]
       },
       "EventInput": {
         "type": "object",
+        "description": "Input for creating/updating events",
         "properties": {
-          "title": {
-            "type": "string"
+          "appId": { "type": "string", "description": "Application ID (required)" },
+          "title": { "type": "string", "description": "Event title (required)" },
+          "standardsTitle": { "type": "string" },
+          "shortTitle": { "type": "string" },
+          "description": { "type": "string" },
+          "startDate": { "type": "string", "format": "date-time", "description": "Start date (required)" },
+          "endDate": { "type": "string", "format": "date-time", "description": "End date (required)" },
+          "isAllDay": { "type": "boolean", "default": false },
+          "categoryFirstId": { "type": "string" },
+          "categorySecondId": { "type": "string" },
+          "categoryThirdId": { "type": "string" },
+          "ownerOrganizerID": { "type": "string", "description": "Owner organizer ID (OLD)" },
+          "grantedOrganizerID": { "type": "string", "description": "Granted organizer ID (OLD)" },
+          "alternateOrganizerID": { "type": "string", "description": "Alternate organizer ID (OLD)" },
+          "ownerOrganizer": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "shortName": { "type": "string" },
+              "eventRole": { "type": "string", "default": "Owner" }
+            }
           },
-          "description": {
-            "type": "string"
+          "alternateOrganizers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "shortName", "eventRole"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "shortName": { "type": "string" },
+                "eventRole": { "type": "string" }
+              }
+            }
           },
-          "startDate": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "masteredCityId": { "type": "string", "description": "Mastered city ID (required)" },
+          "masteredDivisionId": { "type": "string" },
+          "masteredRegionId": { "type": "string" },
+          "venueID": { "type": "string" },
+          "venueTimezone": { "type": "string" },
+          "recurrenceRule": { "type": "string" },
+          "excludedDates": { "type": "array", "items": { "type": "string", "format": "date-time" } },
+          "isActive": { "type": "boolean", "default": true },
+          "isFeatured": { "type": "boolean", "default": false },
+          "cost": { "type": "string" },
+          "expiresAt": { "type": "string", "format": "date-time" }
         },
-        "required": ["title", "startDate"]
+        "required": ["appId", "title", "startDate", "endDate"]
       },
       "Pagination": {
         "type": "object",
