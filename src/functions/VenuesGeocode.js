@@ -223,8 +223,11 @@ async function venuesCheckProximityHandler(request, context) {
 
     if (request.method === 'POST') {
         const body = await request.json();
-        lat = body.lat != null ? String(body.lat) : null;
-        lng = body.lng != null ? String(body.lng) : null;
+        // Accept both lat/lng and latitude/longitude — FE sends latitude/longitude
+        const rawLat = body.lat != null ? body.lat : body.latitude;
+        const rawLng = body.lng != null ? body.lng : body.longitude;
+        lat = rawLat != null ? String(rawLat) : null;
+        lng = rawLng != null ? String(rawLng) : null;
         radius = body.radius != null ? String(body.radius) : '100';
         appId = body.appId != null ? String(body.appId) : '1';
     } else {
