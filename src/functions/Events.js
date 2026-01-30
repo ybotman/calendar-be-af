@@ -252,9 +252,6 @@ async function eventsGetHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -352,8 +349,6 @@ async function eventsCountHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ count })
         };
-    } catch (error) {
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -421,9 +416,6 @@ async function eventsGetByIdHandler(request, context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(event)
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -589,9 +581,6 @@ async function eventsCreateHandler(request, context) {
                 timestamp: new Date().toISOString()
             })
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -703,9 +692,6 @@ async function eventsUpdateHandler(request, context) {
                 timestamp: new Date().toISOString()
             })
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -783,9 +769,6 @@ async function eventsDeleteHandler(request, context) {
                 timestamp: new Date().toISOString()
             })
         };
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -955,7 +938,7 @@ async function dbInfoHandler(request, context) {
         const mongoUri = process.env.MONGODB_URI;
 
         // Extract host (masked) and database name from URI
-        const uriParts = mongoUri.match(/mongodb\+srv:\/\/[^@]+@([^\/]+)\/([^?]+)/);
+        const uriParts = mongoUri.match(/mongodb\+srv:\/\/[^@]+@([^/]+)\/([^?]+)/);
         const clusterHost = uriParts ? uriParts[1] : 'unknown';
         const dbName = uriParts ? uriParts[2] : 'unknown';
 

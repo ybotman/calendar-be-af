@@ -148,9 +148,6 @@ async function frontendLogsCreateHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -311,9 +308,6 @@ async function frontendLogsBatchHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

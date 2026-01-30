@@ -64,117 +64,111 @@ async function geoReverseHandler(request, context) {
         };
     }
 
-    try {
-        const googleApiKey = process.env.GOOGLE_API_KEY;
-        if (!googleApiKey) {
-            throw new Error('GOOGLE_API_KEY not configured');
-        }
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    if (!googleApiKey) {
+        throw new Error('GOOGLE_API_KEY not configured');
+    }
 
-        // Call Google Geocoding API (reverse)
-        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleApiKey}`;
-        const geocodeResponse = await fetch(geocodeUrl);
-        const geocodeData = await geocodeResponse.json();
+    // Call Google Geocoding API (reverse)
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleApiKey}`;
+    const geocodeResponse = await fetch(geocodeUrl);
+    const geocodeData = await geocodeResponse.json();
 
-        if (geocodeData.status !== 'OK' || !geocodeData.results || geocodeData.results.length === 0) {
-            context.log('Geocoding API error:', geocodeData.status);
-            return {
-                status: 404,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Address not found for coordinates',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        // Parse address components
-        const result = geocodeData.results[0];
-        const addressComponents = result.address_components;
-
-        const address = {
-            formatted: result.formatted_address,
-            street: null,
-            city: null,
-            state: null,
-            stateCode: null,
-            country: null,
-            countryCode: null,
-            postalCode: null
-        };
-
-        // Extract components
-        addressComponents.forEach(component => {
-            const types = component.types;
-            if (types.includes('street_number')) {
-                address.street = component.long_name;
-            }
-            if (types.includes('route')) {
-                address.street = address.street
-                    ? `${address.street} ${component.long_name}`
-                    : component.long_name;
-            }
-            if (types.includes('locality')) {
-                address.city = component.long_name;
-            }
-            if (types.includes('administrative_area_level_1')) {
-                address.state = component.long_name;
-                address.stateCode = component.short_name;
-            }
-            if (types.includes('country')) {
-                address.country = component.long_name;
-                address.countryCode = component.short_name;
-            }
-            if (types.includes('postal_code')) {
-                address.postalCode = component.long_name;
-            }
-        });
-
-        // Call Google Timezone API
-        const timestamp = Math.floor(Date.now() / 1000);
-        const timezoneUrl = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${timestamp}&key=${googleApiKey}`;
-        const timezoneResponse = await fetch(timezoneUrl);
-        const timezoneData = await timezoneResponse.json();
-
-        let timezone = null;
-        if (timezoneData.status === 'OK') {
-            timezone = {
-                id: timezoneData.timeZoneId,
-                name: timezoneData.timeZoneName,
-                offset: timezoneData.rawOffset + timezoneData.dstOffset
-            };
-        }
-
-        context.log('Reverse geocoding successful:', address.city, address.state);
-
+    if (geocodeData.status !== 'OK' || !geocodeData.results || geocodeData.results.length === 0) {
+        context.log('Geocoding API error:', geocodeData.status);
         return {
-            status: 200,
+            status: 404,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                data: {
-                    address: address.formatted,
-                    street: address.street,
-                    city: address.city,
-                    state: address.state,
-                    stateCode: address.stateCode,
-                    country: address.country,
-                    countryCode: address.countryCode,
-                    postalCode: address.postalCode,
-                    timezone: timezone?.id || null,
-                    timezoneName: timezone?.name || null,
-                    timezoneOffset: timezone?.offset || null,
-                    lat: parseFloat(lat),
-                    lng: parseFloat(lng)
-                },
+                success: false,
+                error: 'Address not found for coordinates',
                 timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     }
+
+    // Parse address components
+    const result = geocodeData.results[0];
+    const addressComponents = result.address_components;
+
+    const address = {
+        formatted: result.formatted_address,
+        street: null,
+        city: null,
+        state: null,
+        stateCode: null,
+        country: null,
+        countryCode: null,
+        postalCode: null
+    };
+
+    // Extract components
+    addressComponents.forEach(component => {
+        const types = component.types;
+        if (types.includes('street_number')) {
+            address.street = component.long_name;
+        }
+        if (types.includes('route')) {
+            address.street = address.street
+                ? `${address.street} ${component.long_name}`
+                : component.long_name;
+        }
+        if (types.includes('locality')) {
+            address.city = component.long_name;
+        }
+        if (types.includes('administrative_area_level_1')) {
+            address.state = component.long_name;
+            address.stateCode = component.short_name;
+        }
+        if (types.includes('country')) {
+            address.country = component.long_name;
+            address.countryCode = component.short_name;
+        }
+        if (types.includes('postal_code')) {
+            address.postalCode = component.long_name;
+        }
+    });
+
+    // Call Google Timezone API
+    const timestamp = Math.floor(Date.now() / 1000);
+    const timezoneUrl = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${timestamp}&key=${googleApiKey}`;
+    const timezoneResponse = await fetch(timezoneUrl);
+    const timezoneData = await timezoneResponse.json();
+
+    let timezone = null;
+    if (timezoneData.status === 'OK') {
+        timezone = {
+            id: timezoneData.timeZoneId,
+            name: timezoneData.timeZoneName,
+            offset: timezoneData.rawOffset + timezoneData.dstOffset
+        };
+    }
+
+    context.log('Reverse geocoding successful:', address.city, address.state);
+
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                address: address.formatted,
+                street: address.street,
+                city: address.city,
+                state: address.state,
+                stateCode: address.stateCode,
+                country: address.country,
+                countryCode: address.countryCode,
+                postalCode: address.postalCode,
+                timezone: timezone?.id || null,
+                timezoneName: timezone?.name || null,
+                timezoneOffset: timezone?.offset || null,
+                lat: parseFloat(lat),
+                lng: parseFloat(lng)
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
@@ -232,53 +226,47 @@ async function geoGeocodeHandler(request, context) {
         };
     }
 
-    try {
-        const googleApiKey = process.env.GOOGLE_API_KEY;
-        if (!googleApiKey) {
-            throw new Error('GOOGLE_API_KEY not configured');
-        }
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    if (!googleApiKey) {
+        throw new Error('GOOGLE_API_KEY not configured');
+    }
 
-        // Call Google Geocoding API (forward)
-        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleApiKey}`;
-        const geocodeResponse = await fetch(geocodeUrl);
-        const geocodeData = await geocodeResponse.json();
+    // Call Google Geocoding API (forward)
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleApiKey}`;
+    const geocodeResponse = await fetch(geocodeUrl);
+    const geocodeData = await geocodeResponse.json();
 
-        if (geocodeData.status !== 'OK' || !geocodeData.results || geocodeData.results.length === 0) {
-            context.log('Geocoding API error:', geocodeData.status);
-            return {
-                status: 404,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Address not found',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        const result = geocodeData.results[0];
-        const location = result.geometry.location;
-
-        context.log('Geocoding successful:', location);
-
+    if (geocodeData.status !== 'OK' || !geocodeData.results || geocodeData.results.length === 0) {
+        context.log('Geocoding API error:', geocodeData.status);
         return {
-            status: 200,
+            status: 404,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                data: {
-                    lat: location.lat,
-                    lng: location.lng,
-                    address: result.formatted_address
-                },
+                success: false,
+                error: 'Address not found',
                 timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     }
+
+    const result = geocodeData.results[0];
+    const location = result.geometry.location;
+
+    context.log('Geocoding successful:', location);
+
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                lat: location.lat,
+                lng: location.lng,
+                address: result.formatted_address
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
@@ -338,59 +326,53 @@ async function geoTimezoneHandler(request, context) {
         };
     }
 
-    try {
-        const googleApiKey = process.env.GOOGLE_API_KEY;
-        if (!googleApiKey) {
-            throw new Error('GOOGLE_API_KEY not configured');
-        }
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    if (!googleApiKey) {
+        throw new Error('GOOGLE_API_KEY not configured');
+    }
 
-        // Call Google Timezone API
-        const timestamp = Math.floor(Date.now() / 1000);
-        const timezoneUrl = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${timestamp}&key=${googleApiKey}`;
-        const timezoneResponse = await fetch(timezoneUrl);
-        const timezoneData = await timezoneResponse.json();
+    // Call Google Timezone API
+    const timestamp = Math.floor(Date.now() / 1000);
+    const timezoneUrl = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${timestamp}&key=${googleApiKey}`;
+    const timezoneResponse = await fetch(timezoneUrl);
+    const timezoneData = await timezoneResponse.json();
 
-        if (timezoneData.status !== 'OK') {
-            context.log('Timezone API error:', timezoneData.status);
-            return {
-                status: 404,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Timezone not found for coordinates',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        const timezone = {
-            id: timezoneData.timeZoneId,
-            name: timezoneData.timeZoneName,
-            offset: timezoneData.rawOffset + timezoneData.dstOffset
-        };
-
-        context.log('Timezone lookup successful:', timezone.id);
-
+    if (timezoneData.status !== 'OK') {
+        context.log('Timezone API error:', timezoneData.status);
         return {
-            status: 200,
+            status: 404,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                data: {
-                    timezone: timezone.id,
-                    timezoneName: timezone.name,
-                    offset: timezone.offset,
-                    lat: parseFloat(lat),
-                    lng: parseFloat(lng)
-                },
+                success: false,
+                error: 'Timezone not found for coordinates',
                 timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     }
+
+    const timezone = {
+        id: timezoneData.timeZoneId,
+        name: timezoneData.timeZoneName,
+        offset: timezoneData.rawOffset + timezoneData.dstOffset
+    };
+
+    context.log('Timezone lookup successful:', timezone.id);
+
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                timezone: timezone.id,
+                timezoneName: timezone.name,
+                offset: timezone.offset,
+                lat: parseFloat(lat),
+                lng: parseFloat(lng)
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
@@ -582,71 +564,65 @@ app.http('Geo_IpapiCo_Get', {
 async function geoBigDataCloudHandler(request, context) {
     context.log('Geo_BigDataCloud_Get: Request received');
 
-    try {
-        const apiKey = process.env.BIGDATACLOUD_API_KEY;
-        if (!apiKey) {
-            throw new Error('BIGDATACLOUD_API_KEY not configured');
-        }
-
-        // Get IP from Cloudflare headers or fallback to request IP
-        const rawIp = request.headers.get('cf-connecting-ip') ||
-                      request.headers.get('x-forwarded-for')?.split(',')[0] ||
-                      'unknown';
-
-        // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
-        const ip = rawIp.split(':')[0].trim();
-
-        context.log('Geo_BigDataCloud_Get: Detected IP', { ip });
-
-        // Call BigDataCloud API
-        const url = `https://api.bigdatacloud.net/data/ip-geolocation?key=${apiKey}&ip=${ip}`;
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'TangoTiempo/1.0' },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
-
-        if (!response.ok) {
-            throw new Error(`BigDataCloud API returned status ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        context.log('Geo_BigDataCloud_Get: Geolocation retrieved', {
-            ip: data.ip,
-            city: data.location?.city,
-            country: data.country?.isoAlpha2
-        });
-
-        return {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
-            },
-            body: JSON.stringify({
-                success: true,
-                data: {
-                    source: 'BigDataCloud',
-                    ip: data.ip || ip,
-                    latitude: data.location?.latitude || null,
-                    longitude: data.location?.longitude || null,
-                    city: data.location?.city || null,
-                    region: data.location?.principalSubdivision || null,
-                    region_code: data.location?.principalSubdivisionCode || null,
-                    country: data.country?.isoAlpha2 || null,
-                    country_name: data.country?.name || null,
-                    postal: data.location?.postcode || null,
-                    timezone: data.location?.timeZone?.ianaTimeId || null,
-                    raw: data
-                },
-                timestamp: new Date().toISOString()
-            })
-        };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
+    const apiKey = process.env.BIGDATACLOUD_API_KEY;
+    if (!apiKey) {
+        throw new Error('BIGDATACLOUD_API_KEY not configured');
     }
+
+    // Get IP from Cloudflare headers or fallback to request IP
+    const rawIp = request.headers.get('cf-connecting-ip') ||
+                  request.headers.get('x-forwarded-for')?.split(',')[0] ||
+                  'unknown';
+
+    // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
+    const ip = rawIp.split(':')[0].trim();
+
+    context.log('Geo_BigDataCloud_Get: Detected IP', { ip });
+
+    // Call BigDataCloud API
+    const url = `https://api.bigdatacloud.net/data/ip-geolocation?key=${apiKey}&ip=${ip}`;
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'TangoTiempo/1.0' },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+    });
+
+    if (!response.ok) {
+        throw new Error(`BigDataCloud API returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    context.log('Geo_BigDataCloud_Get: Geolocation retrieved', {
+        ip: data.ip,
+        city: data.location?.city,
+        country: data.country?.isoAlpha2
+    });
+
+    return {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+        },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                source: 'BigDataCloud',
+                ip: data.ip || ip,
+                latitude: data.location?.latitude || null,
+                longitude: data.location?.longitude || null,
+                city: data.location?.city || null,
+                region: data.location?.principalSubdivision || null,
+                region_code: data.location?.principalSubdivisionCode || null,
+                country: data.country?.isoAlpha2 || null,
+                country_name: data.country?.name || null,
+                postal: data.location?.postcode || null,
+                timezone: data.location?.timeZone?.ianaTimeId || null,
+                raw: data
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
@@ -712,71 +688,65 @@ app.http('Geo_BigDataCloud_Get', {
 async function geoAbstractHandler(request, context) {
     context.log('Geo_Abstract_Get: Request received');
 
-    try {
-        const apiKey = process.env.ABSTRACT_API_KEY;
-        if (!apiKey) {
-            throw new Error('ABSTRACT_API_KEY not configured');
-        }
-
-        // Get IP from Cloudflare headers or fallback to request IP
-        const rawIp = request.headers.get('cf-connecting-ip') ||
-                      request.headers.get('x-forwarded-for')?.split(',')[0] ||
-                      'unknown';
-
-        // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
-        const ip = rawIp.split(':')[0].trim();
-
-        context.log('Geo_Abstract_Get: Detected IP', { ip });
-
-        // Call Abstract API
-        const url = `https://ipgeolocation.abstractapi.com/v1/?api_key=${apiKey}&ip_address=${ip}`;
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'TangoTiempo/1.0' },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
-
-        if (!response.ok) {
-            throw new Error(`Abstract API returned status ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        context.log('Geo_Abstract_Get: Geolocation retrieved', {
-            ip: data.ip_address,
-            city: data.city,
-            country: data.country_code
-        });
-
-        return {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
-            },
-            body: JSON.stringify({
-                success: true,
-                data: {
-                    source: 'AbstractAPI',
-                    ip: data.ip_address || ip,
-                    latitude: data.latitude || null,
-                    longitude: data.longitude || null,
-                    city: data.city || null,
-                    region: data.region || null,
-                    region_code: data.region_iso_code || null,
-                    country: data.country_code || null,
-                    country_name: data.country || null,
-                    postal: data.postal_code || null,
-                    timezone: data.timezone?.name || null,
-                    raw: data
-                },
-                timestamp: new Date().toISOString()
-            })
-        };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
+    const apiKey = process.env.ABSTRACT_API_KEY;
+    if (!apiKey) {
+        throw new Error('ABSTRACT_API_KEY not configured');
     }
+
+    // Get IP from Cloudflare headers or fallback to request IP
+    const rawIp = request.headers.get('cf-connecting-ip') ||
+                  request.headers.get('x-forwarded-for')?.split(',')[0] ||
+                  'unknown';
+
+    // Strip port number (e.g., "71.232.30.16:52525" → "71.232.30.16")
+    const ip = rawIp.split(':')[0].trim();
+
+    context.log('Geo_Abstract_Get: Detected IP', { ip });
+
+    // Call Abstract API
+    const url = `https://ipgeolocation.abstractapi.com/v1/?api_key=${apiKey}&ip_address=${ip}`;
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'TangoTiempo/1.0' },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+    });
+
+    if (!response.ok) {
+        throw new Error(`Abstract API returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    context.log('Geo_Abstract_Get: Geolocation retrieved', {
+        ip: data.ip_address,
+        city: data.city,
+        country: data.country_code
+    });
+
+    return {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+        },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                source: 'AbstractAPI',
+                ip: data.ip_address || ip,
+                latitude: data.latitude || null,
+                longitude: data.longitude || null,
+                city: data.city || null,
+                region: data.region || null,
+                region_code: data.region_iso_code || null,
+                country: data.country_code || null,
+                country_name: data.country || null,
+                postal: data.postal_code || null,
+                timezone: data.timezone?.name || null,
+                raw: data
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware
@@ -849,121 +819,115 @@ app.http('Geo_Abstract_Get', {
 async function geoMapboxReverseHandler(request, context) {
     context.log('Geo_Mapbox_Reverse: Request received');
 
+    const accessToken = process.env.MAPBOX_ACCESS_TOKEN;
+    if (!accessToken) {
+        throw new Error('MAPBOX_ACCESS_TOKEN not configured');
+    }
+
+    // Parse request body
+    let body;
     try {
-        const accessToken = process.env.MAPBOX_ACCESS_TOKEN;
-        if (!accessToken) {
-            throw new Error('MAPBOX_ACCESS_TOKEN not configured');
-        }
-
-        // Parse request body
-        let body;
-        try {
-            body = await request.json();
-        } catch (error) {
-            context.log('Geo_Mapbox_Reverse: Invalid JSON in request body');
-            return {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Invalid JSON in request body',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        const { latitude, longitude } = body || {};
-
-        // Validate required parameters
-        if (!latitude || !longitude) {
-            context.log('Geo_Mapbox_Reverse: Missing latitude or longitude');
-            return {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'Missing latitude or longitude in request body',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        context.log('Geo_Mapbox_Reverse: Coordinates', { latitude, longitude });
-
-        // Call Mapbox Reverse Geocoding API
-        // Note: Mapbox format is {longitude},{latitude}.json (reversed!)
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}`;
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'TangoTiempo/1.0' },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
-
-        if (!response.ok) {
-            throw new Error(`Mapbox API returned status ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // Extract most relevant address from features
-        const feature = data.features?.[0];
-
-        if (!feature) {
-            context.log('Geo_Mapbox_Reverse: No address found for coordinates');
-            return {
-                status: 404,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'No address found for coordinates',
-                    timestamp: new Date().toISOString()
-                })
-            };
-        }
-
-        // Helper to extract context items by type
-        const getContext = (type) => {
-            const item = feature.context?.find(c => c.id.startsWith(type));
-            return item ? item.text : null;
-        };
-
-        context.log('Geo_Mapbox_Reverse: Address found', {
-            formatted_address: feature.place_name,
-            city: getContext('place')
-        });
-
+        body = await request.json();
+    } catch (error) {
+        context.log('Geo_Mapbox_Reverse: Invalid JSON in request body');
         return {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
-            },
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                data: {
-                    source: 'Mapbox',
-                    latitude: latitude,
-                    longitude: longitude,
-                    formatted_address: feature.place_name || null,
-                    street_address: feature.address
-                        ? `${feature.address} ${feature.text}`
-                        : feature.text,
-                    city: getContext('place'),
-                    region: getContext('region'),
-                    postal_code: getContext('postcode'),
-                    country: getContext('country'),
-                    country_code: feature.properties?.short_code || null,
-                    accuracy: feature.properties?.accuracy || null,
-                    place_type: feature.place_type || [],
-                    raw: data
-                },
+                success: false,
+                error: 'Invalid JSON in request body',
                 timestamp: new Date().toISOString()
             })
         };
-
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     }
+
+    const { latitude, longitude } = body || {};
+
+    // Validate required parameters
+    if (!latitude || !longitude) {
+        context.log('Geo_Mapbox_Reverse: Missing latitude or longitude');
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: false,
+                error: 'Missing latitude or longitude in request body',
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
+
+    context.log('Geo_Mapbox_Reverse: Coordinates', { latitude, longitude });
+
+    // Call Mapbox Reverse Geocoding API
+    // Note: Mapbox format is {longitude},{latitude}.json (reversed!)
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}`;
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'TangoTiempo/1.0' },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+    });
+
+    if (!response.ok) {
+        throw new Error(`Mapbox API returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Extract most relevant address from features
+    const feature = data.features?.[0];
+
+    if (!feature) {
+        context.log('Geo_Mapbox_Reverse: No address found for coordinates');
+        return {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: false,
+                error: 'No address found for coordinates',
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
+
+    // Helper to extract context items by type
+    const getContext = (type) => {
+        const item = feature.context?.find(c => c.id.startsWith(type));
+        return item ? item.text : null;
+    };
+
+    context.log('Geo_Mapbox_Reverse: Address found', {
+        formatted_address: feature.place_name,
+        city: getContext('place')
+    });
+
+    return {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+        },
+        body: JSON.stringify({
+            success: true,
+            data: {
+                source: 'Mapbox',
+                latitude: latitude,
+                longitude: longitude,
+                formatted_address: feature.place_name || null,
+                street_address: feature.address
+                    ? `${feature.address} ${feature.text}`
+                    : feature.text,
+                city: getContext('place'),
+                region: getContext('region'),
+                postal_code: getContext('postcode'),
+                country: getContext('country'),
+                country_code: feature.properties?.short_code || null,
+                accuracy: feature.properties?.accuracy || null,
+                place_type: feature.place_type || [],
+                raw: data
+            },
+            timestamp: new Date().toISOString()
+        })
+    };
 }
 
 // Register function with standard middleware

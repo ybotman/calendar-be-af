@@ -181,9 +181,6 @@ async function venuesGeocodeHandler(request, context) {
             body: JSON.stringify(responseData)
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();
@@ -320,9 +317,6 @@ async function venuesCheckProximityHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

@@ -393,9 +393,6 @@ async function visitorTrackHandler(request, context) {
             })
         };
 
-    } catch (error) {
-        // Let errorHandler middleware handle the error
-        throw error;
     } finally {
         if (mongoClient) {
             await mongoClient.close();

@@ -1,0 +1,71 @@
+const js = require("@eslint/js");
+
+module.exports = [
+  js.configs.recommended,
+  {
+    files: ["src/**/*.js"],
+    ignores: ["src/**/__tests__/**"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+        module: "readonly",
+        require: "readonly",
+        exports: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        AbortController: "readonly",
+        AbortSignal: "readonly",
+        fetch: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-undef": "error",
+      "no-constant-condition": "warn",
+      "no-empty": ["warn", { allowEmptyCatch: true }],
+    },
+  },
+  {
+    files: ["src/**/__tests__/**/*.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        module: "readonly",
+        require: "readonly",
+        exports: "readonly",
+        jest: "readonly",
+        describe: "readonly",
+        it: "readonly",
+        test: "readonly",
+        expect: "readonly",
+        beforeEach: "readonly",
+        afterEach: "readonly",
+        beforeAll: "readonly",
+        afterAll: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-undef": "error",
+    },
+  },
+  {
+    ignores: ["node_modules/**", "dist/**", "coverage/**", "scripts/**", "public/**", ".ybotbot/**"],
+  },
+];
