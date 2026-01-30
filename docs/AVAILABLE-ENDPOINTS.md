@@ -22,22 +22,24 @@
 | GET | `/api/health/mongodb/prod` | Health_MongoDB_Prod | anonymous | Health_MongoDB_Prod.js |
 | GET | `/api/health/mongodb/test` | Health_MongoDB_Test | anonymous | Health_MongoDB_Test.js |
 
-### Events (10 endpoints)
+### Events (12 endpoints)
 
 | Method | Route | Function | Auth | File |
 |--------|-------|----------|------|------|
 | GET | `/api/events` | Events_Get | anonymous | Events.js |
 | GET | `/api/events/id/{eventId}` | Events_GetById | anonymous | Events.js |
-| POST | `/api/events` | Events_Create | **function** | Events.js |
-| PUT | `/api/events/{eventId}` | Events_Update | **function** | Events.js |
-| DELETE | `/api/events/{eventId}` | Events_Delete | **function** | Events.js |
+| GET | `/api/events/count` | Events_Count | anonymous | Events.js |
+| POST | `/api/events` | Events_Create | **firebase** | Events.js |
+| POST | `/api/events/post` | Events_Create_Legacy | **firebase** | Events.js |
+| PUT | `/api/events/{eventId}` | Events_Update | **firebase** | Events.js |
+| DELETE | `/api/events/{eventId}` | Events_Delete | **firebase** | Events.js |
 | GET | `/api/events/summary` | EventsSummary_Get | anonymous | EventsSummary.js |
 | POST,OPTIONS | `/api/events/upload-image` | Events_UploadImage | anonymous | EventsImageUpload.js |
 | POST | `/api/events/ra/create` | EventsRA_Create | anonymous | EventsRA.js |
 | PUT | `/api/events/ra/{eventId}` | EventsRA_Update | anonymous | EventsRA.js |
 | DELETE | `/api/events/ra/{eventId}` | EventsRA_Delete | anonymous | EventsRA.js |
 
-**Note**: Event creation route is `POST /api/events` (NOT `/api/events/post` as in old BE).
+**Note**: Legacy route `POST /api/events/post` is an alias for event creation (Express parity).
 RegionalOrganizer (RO) uses standard CRUD. RegionalAdmin (RA) uses `/events/ra/*`.
 
 ### Venues (8 endpoints + 1 timer)
@@ -50,7 +52,7 @@ RegionalOrganizer (RO) uses standard CRUD. RegionalAdmin (RA) uses `/events/ra/*
 | PUT | `/api/venues/{id}` | Venues_Update | anonymous | Venues.js |
 | DELETE | `/api/venues/{id}` | Venues_Delete | anonymous | Venues.js |
 | GET | `/api/venues/geocode` | Venues_Geocode | anonymous | VenuesGeocode.js |
-| GET | `/api/venues/check-proximity` | Venues_CheckProximity | anonymous | VenuesGeocode.js |
+| GET,POST | `/api/venues/check-proximity` | Venues_CheckProximity | anonymous | VenuesGeocode.js |
 | POST | `/api/venues/admin` | Venue_AdminAdd | anonymous | Venue_AdminAdd.js |
 | Timer | Sunday 3AM UTC | Venue_AgeOut_Timer_App1 | - | Venue_AgeOut_Timer.js |
 
@@ -221,13 +223,11 @@ RegionalOrganizer (RO) uses standard CRUD. RegionalAdmin (RA) uses `/events/ra/*
 
 | BE Route | AF Route | Notes |
 |----------|----------|-------|
-| `POST /api/events/post` | `POST /api/events` | FE must update call path |
-| `GET /api/events/count` | Not implemented | FE uses in useMigratedOrganizers.js |
-| `POST /api/venues/check-proximity` | Not registered (GET only) | FE uses POST variant |
+| `POST /api/events/post` | `POST /api/events/post` (legacy alias) | **RESOLVED** v1.20.0 — both paths work |
 
 ---
 
-## TT Migration Gap Status (2026-01-30)
+## TT Migration Gap Status (2026-01-30, updated v1.20.0)
 
 Based on Sarah's corrected audit (msg_002, Jan 29):
 
@@ -237,10 +237,12 @@ Based on Sarah's corrected audit (msg_002, Jan 29):
 **Tier 2 (Verify sub-routes)**: ALL 13 EXIST in AF
 - EventsSummary, VenuesGeocode, Organizers CRUD, UserLogins CRUD
 
-**Remaining Gaps**:
-1. `GET /api/events/count` - Not implemented
-2. `POST /api/venues/check-proximity` (POST variant) - GET exists, POST does not
-3. Route mapping: FE calls `/api/events/post`, AF expects `POST /api/events`
+**v1.20.0 Fixes (Sarah's 4 TEST blockers)**:
+1. `GET /api/events/count` — **IMPLEMENTED** (Events_Count in Events.js)
+2. `POST /api/venues/check-proximity` — **IMPLEMENTED** (added POST method + body parsing)
+3. check-proximity response shape — **FIXED** (mapped distanceInYards→distance, address1→address to match Express)
+4. Organizer default projection — **NOT AN AF BUG** (Express BE has same restrictive projection)
+5. isApproved filter — **NOT AN AF BUG** (Express BE also ignores; field doesn't exist on Organizer model)
 
 **Open Tickets**:
 - CALBEAF-70: RO granted/alternate events visibility

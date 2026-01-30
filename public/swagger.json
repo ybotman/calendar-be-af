@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.19.1",
+    "version": "1.20.0",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -644,6 +644,47 @@
           "204": {
             "description": "Event deleted successfully"
           }
+        }
+      }
+    },
+    "/api/events/count": {
+      "get": {
+        "summary": "Count events by owner",
+        "description": "Return the count of active events matching appId and ownerId. Used by useMigratedOrganizers.js to show event counts per organizer. Matches ownerOrganizerID, grantedOrganizerID, or alternateOrganizerID.",
+        "tags": ["Events"],
+        "operationId": "countEvents",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "description": "Application ID (e.g., '1' for TangoTiempo, '2' for HarmonyJunction)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "required": true,
+            "description": "Organizer ObjectId — checked against ownerOrganizerID, grantedOrganizerID, alternateOrganizerID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event count returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer", "description": "Number of active events matching the filter" }
+                  }
+                },
+                "example": { "count": 12 }
+              }
+            }
+          },
+          "400": { "description": "Missing appId or ownerId, or invalid ownerId format" }
         }
       }
     },
@@ -1777,6 +1818,108 @@
         "responses": {
           "200": { "description": "User disconnected successfully" },
           "404": { "description": "Organizer not found" }
+        }
+      }
+    },
+    "/api/venues/check-proximity": {
+      "get": {
+        "summary": "Check nearby venues (GET)",
+        "description": "Check if existing venues are near a given coordinate. Returns venues within the specified radius in yards. Response fields match Express BE: distance (rounded integer in yards) and address (mapped from address1).",
+        "tags": ["Venues"],
+        "operationId": "checkProximityGet",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "description": "Latitude coordinate",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "description": "Longitude coordinate",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "description": "Search radius in yards",
+            "schema": { "type": "number", "default": 100 }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID",
+            "schema": { "type": "string", "default": "1" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proximity check completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hasNearbyVenues": { "type": "boolean" },
+                    "count": { "type": "integer" },
+                    "nearbyVenues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "distance": { "type": "integer", "description": "Distance in yards (rounded)" },
+                          "address": { "type": "string", "description": "Street address" },
+                          "city": { "type": "string" },
+                          "latitude": { "type": "number" },
+                          "longitude": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "hasNearbyVenues": true,
+                  "count": 1,
+                  "nearbyVenues": [{ "_id": "abc123", "name": "Dance Studio", "distance": 45, "address": "123 Main St", "city": "Boston", "latitude": 42.36, "longitude": -71.06 }]
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing lat or lng parameter" }
+        }
+      },
+      "post": {
+        "summary": "Check nearby venues (POST)",
+        "description": "POST variant of check-proximity. Used by VenueModalAddWithSearch.js. Accepts lat/lng/radius/appId in request body instead of query params.",
+        "tags": ["Venues"],
+        "operationId": "checkProximityPost",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["lat", "lng"],
+                "properties": {
+                  "lat": { "type": "number", "description": "Latitude coordinate" },
+                  "lng": { "type": "number", "description": "Longitude coordinate" },
+                  "radius": { "type": "number", "default": 100, "description": "Search radius in yards" },
+                  "appId": { "type": "string", "default": "1", "description": "Application ID" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proximity check completed (same response as GET variant)"
+          },
+          "400": { "description": "Missing lat or lng in body" }
         }
       }
     },

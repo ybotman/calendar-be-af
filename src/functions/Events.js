@@ -271,6 +271,104 @@ app.http('Events_Get', {
 });
 
 // ============================================
+// FUNCTION 1b: GET /api/events/count
+// ============================================
+
+/**
+ * GET /api/events/count
+ * Return count of events matching appId and ownerId - used by useMigratedOrganizers.js
+ *
+ * Query Parameters:
+ * - appId: Application ID (required)
+ * - ownerId: Organizer ObjectId (required) — matches ownerOrganizerID, grantedOrganizerID, or alternateOrganizerID
+ *
+ * Response: { count: <number> }
+ */
+async function eventsCountHandler(request, context) {
+    const appId = request.query.get('appId');
+    const ownerId = request.query.get('ownerId');
+
+    context.log('Events_Count: Request received', { appId, ownerId });
+
+    if (!appId) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'appId is required' })
+        };
+    }
+
+    if (!ownerId) {
+        return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'ownerId is required' })
+        };
+    }
+
+    let mongoClient;
+
+    try {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('events');
+
+        // Match Express owner lookup: check all 3 organizer ID fields
+        // See calendar-be serverEvents.js lines 1240-1242
+        let ownerObjectId;
+        try {
+            ownerObjectId = new ObjectId(ownerId);
+        } catch {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Invalid ownerId format' })
+            };
+        }
+
+        const filter = {
+            appId,
+            isActive: true,
+            $or: [
+                { ownerOrganizerID: ownerObjectId },
+                { grantedOrganizerID: ownerObjectId },
+                { alternateOrganizerID: ownerObjectId }
+            ]
+        };
+
+        const count = await collection.countDocuments(filter);
+
+        context.log(`Events_Count: Found ${count} events for ownerId ${ownerId}`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count })
+        };
+    } catch (error) {
+        throw error;
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Events_Count', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'events/count',
+    handler: standardMiddleware(eventsCountHandler)
+});
+
+// ============================================
 // FUNCTION 2: GET /api/events/{eventId}
 // ============================================
 

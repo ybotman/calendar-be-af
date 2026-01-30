@@ -217,10 +217,22 @@ app.http('Venues_Geocode', {
 async function venuesCheckProximityHandler(request, context) {
     context.log('Venues_CheckProximity: Request received');
 
-    const lat = request.query.get('lat');
-    const lng = request.query.get('lng');
-    const radius = request.query.get('radius') || '100';
-    const appId = request.query.get('appId') || '1';
+    // Support both GET (query params) and POST (body) — Express only had GET,
+    // but FE VenueModalAddWithSearch.js sends POST with body { lat, lng, radius, appId }
+    let lat, lng, radius, appId;
+
+    if (request.method === 'POST') {
+        const body = await request.json();
+        lat = body.lat != null ? String(body.lat) : null;
+        lng = body.lng != null ? String(body.lng) : null;
+        radius = body.radius != null ? String(body.radius) : '100';
+        appId = body.appId != null ? String(body.appId) : '1';
+    } else {
+        lat = request.query.get('lat');
+        lng = request.query.get('lng');
+        radius = request.query.get('radius') || '100';
+        appId = request.query.get('appId') || '1';
+    }
 
     if (!lat || !lng) {
         return {
@@ -283,13 +295,25 @@ async function venuesCheckProximityHandler(request, context) {
 
         context.log(`Venues_CheckProximity: Found ${nearbyVenues.length} nearby venues`);
 
+        // Map response fields to match Express BE (serverVenues.js lines 1103-1111):
+        // Express returns { distance (rounded int), address } not { distanceInYards (float), address1 }
+        const mappedVenues = nearbyVenues.map(v => ({
+            _id: v._id,
+            name: v.name,
+            distance: Math.round(v.distanceInYards),
+            address: v.address1,
+            city: v.city,
+            latitude: v.latitude,
+            longitude: v.longitude
+        }));
+
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                hasNearbyVenues: nearbyVenues.length > 0,
-                count: nearbyVenues.length,
-                nearbyVenues
+                hasNearbyVenues: mappedVenues.length > 0,
+                count: mappedVenues.length,
+                nearbyVenues: mappedVenues
             })
         };
 
@@ -304,7 +328,7 @@ async function venuesCheckProximityHandler(request, context) {
 }
 
 app.http('Venues_CheckProximity', {
-    methods: ['GET'],
+    methods: ['GET', 'POST'],
     authLevel: 'anonymous',
     route: 'venues/check-proximity',
     handler: standardMiddleware(venuesCheckProximityHandler)
