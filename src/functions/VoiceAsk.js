@@ -5,6 +5,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { RRule } = require('rrule');
 const OpenAI = require('openai');
 const { standardMiddleware } = require('../middleware');
+const { expandRecurringEvent } = require('../utils/expandRecurringEvent');
 
 /**
  * GET/POST /api/voice/ask
@@ -599,7 +600,10 @@ async function voiceAskHandler(request, context) {
         const startDate = new Date(dates.start + 'T00:00:00Z');
         const endDate = new Date(dates.end + 'T00:00:00Z');
         endDate.setUTCDate(endDate.getUTCDate() + 1);
-        endDate.setUTCHours(5, 0, 0, 0);
+        // Calculate midnight in venue timezone (default Eastern)
+        // For Pacific: midnight = 8AM UTC, Central: 6AM UTC, Eastern: 5AM UTC
+        const padHours = 8; // Use Pacific as safe upper bound to include all US timezones
+        endDate.setUTCHours(padHours, 0, 0, 0);
 
         const baseFilter = {
             appId,
@@ -703,52 +707,14 @@ async function voiceAskHandler(request, context) {
             venueMap[v._id.toString()] = v;
         });
 
-        // Expand recurring events
-        const expandRecurringEvent = (event, queryStart, queryEnd, venueTimezone) => {
-            if (!event.recurrenceRule) return [event];
-
-            try {
-                const eventStart = new Date(event.startDate);
-                const tz = venueTimezone || 'America/New_York';
-
-                const localParts = eventStart.toLocaleString('en-CA', {
-                    timeZone: tz,
-                    year: 'numeric', month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit', second: '2-digit',
-                    hour12: false
-                });
-                const localDateStr = localParts.replace(/[^\d]/g, '').substring(0, 14);
-                const formattedLocal = localDateStr.substring(0, 8) + 'T' + localDateStr.substring(8);
-
-                const rruleStr = `DTSTART;TZID=${tz}:${formattedLocal}\nRRULE:${event.recurrenceRule}`;
-                const rule = RRule.fromString(rruleStr);
-
-                const rangeEnd = new Date(queryEnd);
-                rangeEnd.setDate(rangeEnd.getDate() + 1);
-
-                const occurrences = rule.between(queryStart, rangeEnd, true);
-                if (occurrences.length === 0) return [];
-
-                const originalHours = eventStart.getUTCHours();
-                const originalMinutes = eventStart.getUTCMinutes();
-
-                return occurrences.map(occurrenceDate => {
-                    const newDate = new Date(occurrenceDate);
-                    newDate.setUTCHours(originalHours, originalMinutes, 0, 0);
-                    return { ...event, startDate: newDate, _isExpandedOccurrence: true };
-                });
-            } catch (err) {
-                return [event];
-            }
-        };
-
+        // Expand recurring events (using shared utility)
         const nonRecurringEvents = events.filter(e => !e.recurrenceRule || e.recurrenceRule === '');
         const recurringEvents = events.filter(e => e.recurrenceRule && e.recurrenceRule !== '');
 
         const expandedRecurring = recurringEvents.flatMap(e => {
             const venue = e.venueID ? venueMap[e.venueID.toString()] : null;
             const tz = venue?.timezone || 'America/New_York';
-            return expandRecurringEvent(e, startDate, endDate, tz);
+            return expandRecurringEvent(e, startDate, endDate, tz, context);
         });
 
         const allEvents = [...nonRecurringEvents, ...expandedRecurring]
