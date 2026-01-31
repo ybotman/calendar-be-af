@@ -1,6 +1,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { getTimezoneForVenue } = require('../utils/timezoneMapping');
 
 /**
  * GET /api/venues
@@ -328,7 +329,7 @@ async function venuesCreateHandler(request, context) {
             masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : null,
             masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : null,
             masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : null,
-            timezone: body.timezone || 'America/New_York',
+            timezone: body.timezone || getTimezoneForVenue({ city: body.city, state: body.state, country: body.country || 'US' }),
             country: body.country || 'US',
             isActive: body.isActive !== undefined ? body.isActive : true,
             isApproved: body.isApproved !== undefined ? body.isApproved : false,
@@ -463,11 +464,31 @@ async function venuesUpdateHandler(request, context) {
             updateData.masteredCountryId = new ObjectId(body.masteredCountryId);
         }
 
+        // Auto-detect timezone when location fields change but timezone is not explicitly set
+        if (!body.timezone && (body.city || body.state || body.country)) {
+            const resolvedCity = body.city || existing.city;
+            const resolvedState = body.state || existing.state;
+            const resolvedCountry = body.country || existing.country || 'US';
+            updateData.timezone = getTimezoneForVenue({ city: resolvedCity, state: resolvedState, country: resolvedCountry });
+        }
+
+        const updatedTimezone = updateData.timezone || null;
+
         const result = await collection.findOneAndUpdate(
             { _id: new ObjectId(venueId) },
             { $set: updateData },
             { returnDocument: 'after' }
         );
+
+        // Cascade timezone to future events (Express parity)
+        if (updatedTimezone && updatedTimezone !== existing.timezone) {
+            const eventsCollection = db.collection('events');
+            const cascadeResult = await eventsCollection.updateMany(
+                { venueID: new ObjectId(venueId), startDate: { $gte: new Date() } },
+                { $set: { venueTimezone: updatedTimezone } }
+            );
+            context.log(`[VENUE UPDATE] Timezone cascade: updated ${cascadeResult.modifiedCount} future events to timezone ${updatedTimezone}`);
+        }
 
         context.log(`[VENUE UPDATE] VenueId: ${venueId}, UpdatedFields: ${Object.keys(updateData).join(', ')}`);
 

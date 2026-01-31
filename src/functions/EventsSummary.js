@@ -3,6 +3,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 
 // ============================================
 // FUNCTION: GET /api/events/summary
@@ -340,6 +341,9 @@ async function handleEvents(collection, matchStage, page, limit, context) {
     ]);
 
     const totalPages = Math.ceil(totalCount / limit);
+
+    // Enrich events with timezone display fields (Express parity)
+    enrichEventsWithTimezone(events);
 
     context.log(`EventsSummary events: ${events.length} of ${totalCount} (page ${page}/${totalPages})`);
 

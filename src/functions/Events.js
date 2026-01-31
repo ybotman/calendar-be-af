@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
+const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 
 // ============================================
 // FUNCTION 1: GET /api/events
@@ -242,7 +243,7 @@ async function eventsGetHandler(request, context) {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                events: events || [],
+                events: enrichEventsWithTimezone(events || []),
                 pagination: {
                     total,
                     page: pageNum,
@@ -410,11 +411,14 @@ async function eventsGetByIdHandler(request, context) {
 
         context.log(`Event found: ${eventId}`);
 
+        // Enrich single event with timezone display fields
+        const [enriched] = enrichEventsWithTimezone([event]);
+
         // Return event at root level to match calendar-be response format
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(event)
+            body: JSON.stringify(enriched)
         };
     } finally {
         if (mongoClient) {
@@ -532,6 +536,22 @@ async function eventsCreateHandler(request, context) {
             createdAt: new Date(),
             updatedAt: new Date()
         };
+
+        // Populate venueTimezone from venue document (Express parity)
+        const venueIdForTz = requestBody.venueID || requestBody.venueId;
+        if (venueIdForTz && !newEvent.venueTimezone) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venue = await venuesCollection.findOne({ _id: new ObjectId(venueIdForTz) });
+                if (venue && venue.timezone) {
+                    newEvent.venueTimezone = venue.timezone;
+                } else {
+                    newEvent.venueTimezone = 'America/New_York';
+                }
+            } catch (_err) {
+                newEvent.venueTimezone = 'America/New_York';
+            }
+        }
 
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
@@ -660,6 +680,22 @@ async function eventsUpdateHandler(request, context) {
 
         // Remove _id from update body (immutable in MongoDB)
         delete updateDoc.$set._id;
+
+        // If venueID changed, look up venue timezone and include in update
+        const updatedVenueId = requestBody.venueID || requestBody.venueId;
+        if (updatedVenueId) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venue = await venuesCollection.findOne({ _id: new ObjectId(updatedVenueId) });
+                if (venue && venue.timezone) {
+                    updateDoc.$set.venueTimezone = venue.timezone;
+                } else {
+                    updateDoc.$set.venueTimezone = 'America/New_York';
+                }
+            } catch (_err) {
+                updateDoc.$set.venueTimezone = 'America/New_York';
+            }
+        }
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(
