@@ -14,6 +14,13 @@ const { getTimezoneForVenue } = require('../utils/timezoneMapping');
  * - isActive: Filter by active status (optional)
  * - name: Search by name (case-insensitive, optional)
  * - cityId or masteredCityId: Filter by city (optional)
+ * - masteredDivisionId: Filter by division (optional)
+ * - masteredRegionId: Filter by region (optional)
+ * - lat: Latitude for geo search (-90 to 90)
+ * - lng: Longitude for geo search (-180 to 180)
+ * - radius: Search radius with unit (default: "50km", supports km/m/mi)
+ * - sortByDistance: Sort results by distance from lat/lng ("true"/"false")
+ * - all: "true" to return all matching venues, bypassing pagination
  * - select: Comma-separated fields to return (optional)
  * - populate: "true" to populate location references (optional)
  *
@@ -34,6 +41,13 @@ async function venuesGetHandler(request, context) {
         const isActiveParam = request.query.get('isActive');
         const name = request.query.get('name');
         const cityId = request.query.get('cityId') || request.query.get('masteredCityId');
+        const masteredDivisionId = request.query.get('masteredDivisionId');
+        const masteredRegionId = request.query.get('masteredRegionId');
+        const lat = request.query.get('lat');
+        const lng = request.query.get('lng');
+        const radius = request.query.get('radius');
+        const sortByDistance = request.query.get('sortByDistance');
+        const all = request.query.get('all');
         const select = request.query.get('select');
         // CALBEAF-64: Population is now DEFAULT to match Express parity
         // Use ?populate=false to disable
@@ -71,6 +85,58 @@ async function venuesGetHandler(request, context) {
             query.masteredCityId = new ObjectId(cityId);
         }
 
+        // CALBEAF-74b: Filter by division and region (Express parity)
+        if (masteredDivisionId) {
+            query.masteredDivisionId = new ObjectId(masteredDivisionId);
+        }
+        if (masteredRegionId) {
+            query.masteredRegionId = new ObjectId(masteredRegionId);
+        }
+
+        // CALBEAF-74b: Geo search — $geoWithin/$centerSphere on geolocation field
+        let geoLat = null;
+        let geoLng = null;
+        if (lat && lng) {
+            geoLat = parseFloat(lat);
+            geoLng = parseFloat(lng);
+
+            if (isNaN(geoLat) || isNaN(geoLng) ||
+                geoLat < -90 || geoLat > 90 ||
+                geoLng < -180 || geoLng > 180) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid lat/lng values. lat: -90 to 90, lng: -180 to 180' })
+                };
+            }
+
+            // Parse radius: number + optional unit (km, m, mi). Default 50km
+            let radiusMeters = 50000;
+            if (radius) {
+                const radiusMatch = radius.match(/^([\d.]+)\s*(km|m|mi)?$/i);
+                if (radiusMatch) {
+                    const radiusValue = parseFloat(radiusMatch[1]);
+                    const radiusUnit = (radiusMatch[2] || 'km').toLowerCase();
+                    if (radiusUnit === 'km') {
+                        radiusMeters = radiusValue * 1000;
+                    } else if (radiusUnit === 'mi') {
+                        radiusMeters = radiusValue * 1609.344;
+                    } else {
+                        radiusMeters = radiusValue;
+                    }
+                }
+            }
+
+            const radiusRadians = radiusMeters / 6378137;
+            query.geolocation = {
+                $geoWithin: {
+                    $centerSphere: [[geoLng, geoLat], radiusRadians]
+                }
+            };
+
+            context.log(`Venues_Get: Geo filter — radius ${radiusMeters}m from [${geoLat},${geoLng}]`);
+        }
+
         // Calculate pagination
         const skip = (page - 1) * limit;
 
@@ -82,18 +148,65 @@ async function venuesGetHandler(request, context) {
             });
         }
 
-        // Execute query with pagination
-        const venuesQuery = venuesCollection
-            .find(query, { projection: Object.keys(projection).length > 0 ? projection : undefined })
-            .sort({ name: 1 })
-            .skip(skip)
-            .limit(limit);
+        // CALBEAF-74b: "all" param — return everything, bypass pagination (Express parity)
+        const projectionOpt = Object.keys(projection).length > 0 ? projection : undefined;
+        let venues, total, totalPages;
 
-        let venues = await venuesQuery.toArray();
+        if (all === 'true') {
+            venues = await venuesCollection
+                .find(query, { projection: projectionOpt })
+                .sort({ name: 1 })
+                .toArray();
+            total = venues.length;
+            totalPages = 1;
+        } else {
+            const venuesQuery = venuesCollection
+                .find(query, { projection: projectionOpt })
+                .sort({ name: 1 })
+                .skip(skip)
+                .limit(limit);
 
-        // Get total count for pagination
-        const total = await venuesCollection.countDocuments(query);
-        const totalPages = Math.ceil(total / limit);
+            [venues, total] = await Promise.all([
+                venuesQuery.toArray(),
+                venuesCollection.countDocuments(query)
+            ]);
+            totalPages = Math.ceil(total / limit);
+        }
+
+        // CALBEAF-74b: Distance calculation and sort (Express parity)
+        if (geoLat !== null && geoLng !== null) {
+            const toRad = (deg) => deg * Math.PI / 180;
+            const haversine = (lat1, lon1, lat2, lon2) => {
+                const R = 6371;
+                const dLat = toRad(lat2 - lat1);
+                const dLon = toRad(lon2 - lon1);
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                return R * c;
+            };
+
+            for (const venue of venues) {
+                const geo = venue.geolocation;
+                if (geo && geo.coordinates && geo.coordinates.length === 2) {
+                    venue.distance = Math.round(haversine(geoLat, geoLng, geo.coordinates[1], geo.coordinates[0]) * 100) / 100;
+                    venue.distanceUnit = 'km';
+                } else {
+                    venue.distance = null;
+                    venue.distanceUnit = 'km';
+                }
+            }
+
+            if (sortByDistance === 'true') {
+                venues.sort((a, b) => {
+                    if (a.distance === null && b.distance === null) return 0;
+                    if (a.distance === null) return 1;
+                    if (b.distance === null) return -1;
+                    return a.distance - b.distance;
+                });
+            }
+        }
 
         // CALBEAF-64: Populate masteredCityId by default to match Express parity
         // Returns only {_id, cityName} - not full city object
