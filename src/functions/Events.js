@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
+const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 
 // ============================================
 // FUNCTION 1: GET /api/events
@@ -11,7 +12,7 @@ const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAu
 
 /**
  * GET /api/events
- * List all events with optional filtering - CALBEAF-65: Express parity
+ * List all events with optional filtering - CALBEAF-65/74: Express parity
  *
  * Query Parameters:
  * - appId: Application ID (1=TangoTiempo, 2=HarmonyJunction) (required)
@@ -23,6 +24,21 @@ const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAu
  * - venueId: Filter by venue
  * - limit: Results per page (default: 100, max: 500)
  * - page: Page number (default: 1)
+ * - active: Filter by isActive (default: "true")
+ * - featured: Filter by isFeatured ("true"/"false")
+ * - canceled: Filter by isCanceled ("true"/"false")
+ * - discovered: Filter by isDiscovered ("true"/"false")
+ * - includeAiGenerated: Include AI-generated events ("true"/"false", default excludes them)
+ * - masteredRegionName: Filter by region name (string equality)
+ * - masteredDivisionName: Filter by division name (string equality)
+ * - masteredCityName: Filter by city name (string equality)
+ * - cityIds: Filter by city ObjectIds (comma-separated or single)
+ * - useGeoSearch: Enable geo search ("true") — requires lat, lng
+ * - lat: Latitude for geo search (-90 to 90)
+ * - lng: Longitude for geo search (-180 to 180)
+ * - radius: Search radius with unit (default: "50km", supports km/m/mi)
+ * - useCity: Use masteredCityGeolocation instead of venueGeolocation ("true"/"false")
+ * - sortByDistance: Sort results by distance from lat/lng ("true"/"false")
  *
  * Default Date Behavior (if no dates provided):
  * - start: First day of current month
@@ -42,6 +58,29 @@ async function eventsGetHandler(request, context) {
     const page = request.query.get('page') || '1';
     const limit = request.query.get('limit') || '100';
 
+    // CALBEAF-74: Additional query params — Express parity (items 1-6)
+    // Boolean flags
+    const featured = request.query.get('featured');
+    const canceled = request.query.get('canceled');
+    const discovered = request.query.get('discovered');
+    const includeAiGenerated = request.query.get('includeAiGenerated');
+
+    // Location name filters
+    const masteredRegionName = request.query.get('masteredRegionName');
+    const masteredDivisionName = request.query.get('masteredDivisionName');
+    const masteredCityName = request.query.get('masteredCityName');
+
+    // Multi-city filter
+    const cityIds = request.query.get('cityIds');
+
+    // Geo search params
+    const useGeoSearch = request.query.get('useGeoSearch');
+    const lat = request.query.get('lat');
+    const lng = request.query.get('lng');
+    const radius = request.query.get('radius');
+    const useCity = request.query.get('useCity');
+    const sortByDistance = request.query.get('sortByDistance');
+
     // Log request details
     context.log('Events_Get: Request received', {
         appId,
@@ -50,7 +89,19 @@ async function eventsGetHandler(request, context) {
         categoryId,
         venueId,
         page,
-        limit
+        limit,
+        featured,
+        canceled,
+        discovered,
+        includeAiGenerated,
+        masteredRegionName,
+        masteredDivisionName,
+        masteredCityName,
+        cityIds,
+        useGeoSearch,
+        lat,
+        lng,
+        sortByDistance
     });
 
     // Validate required parameters
@@ -136,6 +187,24 @@ async function eventsGetHandler(request, context) {
             baseFilter.isActive = true;
         }
 
+        // CALBEAF-74: Boolean flag filters (Express parity — items 5, 6)
+        // Note: request.query.get() returns null (not undefined) for missing params
+        if (featured) {
+            baseFilter.isFeatured = featured === 'true';
+        }
+        if (canceled) {
+            baseFilter.isCanceled = canceled === 'true';
+        }
+        if (discovered) {
+            baseFilter.isDiscovered = discovered === 'true';
+        }
+        // CALBEAF-74 item 6: includeAiGenerated — Express never implemented this filter
+        // but both frontends send it. We implement it properly: exclude AI-generated events
+        // by default unless explicitly included.
+        if (includeAiGenerated !== 'true') {
+            baseFilter.isAiGenerated = { $ne: true };
+        }
+
         // Collection for $and conditions (like calendar-be's andConditions array)
         const andConditions = [];
 
@@ -172,6 +241,109 @@ async function eventsGetHandler(request, context) {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: 'Invalid venueId format' })
+                };
+            }
+        }
+
+        // CALBEAF-74 item 1: Mastered location name filters (Express parity)
+        // String equality match on event document fields
+        if (masteredRegionName) {
+            baseFilter.masteredRegionName = masteredRegionName;
+        }
+        if (masteredDivisionName) {
+            baseFilter.masteredDivisionName = masteredDivisionName;
+        }
+        if (masteredCityName) {
+            baseFilter.masteredCityName = masteredCityName;
+        }
+
+        // CALBEAF-74 item 2: Multi-city filtering (Express parity)
+        // cityIds can be a single ID or comma-separated list
+        if (cityIds) {
+            try {
+                const idArray = Array.isArray(cityIds) ? cityIds : cityIds.split(',');
+                const cityObjectIds = idArray
+                    .map(id => id.trim())
+                    .filter(id => id.length > 0)
+                    .map(id => new ObjectId(id));
+                if (cityObjectIds.length > 0) {
+                    baseFilter.masteredCityId = { $in: cityObjectIds };
+                }
+            } catch (_err) {
+                context.log(`Invalid cityIds format: ${cityIds}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid cityIds format — expected ObjectId strings' })
+                };
+            }
+        }
+
+        // CALBEAF-74 item 3: Geospatial search (Express parity)
+        // Uses $geoWithin / $centerSphere for location-based filtering
+        let geoLat = null;
+        let geoLng = null;
+        if (useGeoSearch === 'true' && lat && lng) {
+            geoLat = parseFloat(lat);
+            geoLng = parseFloat(lng);
+
+            if (isNaN(geoLat) || isNaN(geoLng) ||
+                geoLat < -90 || geoLat > 90 ||
+                geoLng < -180 || geoLng > 180) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid lat/lng values. lat: -90 to 90, lng: -180 to 180' })
+                };
+            }
+
+            // Parse radius: number + optional unit (km, m, mi). Default 50km
+            let radiusMeters = 50000; // 50km default
+            if (radius) {
+                const radiusMatch = radius.match(/^([\d.]+)\s*(km|m|mi)?$/i);
+                if (radiusMatch) {
+                    const radiusValue = parseFloat(radiusMatch[1]);
+                    const radiusUnit = (radiusMatch[2] || 'km').toLowerCase();
+                    if (radiusUnit === 'km') {
+                        radiusMeters = radiusValue * 1000;
+                    } else if (radiusUnit === 'mi') {
+                        radiusMeters = radiusValue * 1609.344;
+                    } else {
+                        radiusMeters = radiusValue;
+                    }
+                }
+            }
+
+            // Convert meters to radians (Earth radius = 6378137m)
+            const radiusRadians = radiusMeters / 6378137;
+
+            // Choose geo field based on useCity param (Express parity)
+            const geoField = useCity === 'true'
+                ? 'masteredCityGeolocation'
+                : 'venueGeolocation';
+
+            baseFilter[geoField] = {
+                $geoWithin: {
+                    $centerSphere: [[geoLng, geoLat], radiusRadians]
+                }
+            };
+
+            context.log(`Events_Get: Geo search enabled — ${geoField}, radius ${radiusMeters}m (${radiusRadians.toFixed(6)} rad)`);
+        } else if (lat && lng) {
+            // Basic geo filter without explicit useGeoSearch (Express fallback — lines 646-669)
+            geoLat = parseFloat(lat);
+            geoLng = parseFloat(lng);
+            if (!isNaN(geoLat) && !isNaN(geoLng) &&
+                geoLat >= -90 && geoLat <= 90 &&
+                geoLng >= -180 && geoLng <= 180) {
+                const defaultRadiusRadians = 50000 / 6378137; // 50km default
+                const geoField = useCity === 'true'
+                    ? 'masteredCityGeolocation'
+                    : 'venueGeolocation';
+                baseFilter[geoField] = {
+                    $geoWithin: {
+                        $centerSphere: [[geoLng, geoLat], defaultRadiusRadians]
+                    }
                 };
             }
         }
@@ -222,18 +394,93 @@ async function eventsGetHandler(request, context) {
             };
         }
 
-        // Build MongoDB query
-        const eventQuery = collection
-            .find(filter)
-            .sort({ startDate: 1 }) // Sort by startDate ascending (Express uses startDate)
-            .skip(skip)
-            .limit(limitNum);
+        // CALBEAF-74 item 4: sortByDistance — when enabled with lat/lng, sort results
+        // by distance from the provided coordinates using Haversine formula.
+        // For distance sorting we need ALL matching docs first, then sort, then paginate.
+        const wantDistanceSort = sortByDistance === 'true' && geoLat !== null && geoLng !== null;
 
-        // Execute queries in parallel for better performance
-        const [events, total] = await Promise.all([
-            eventQuery.toArray(),
-            collection.countDocuments(filter)
-        ]);
+        let events, total;
+
+        if (wantDistanceSort) {
+            // Fetch all matching events (no skip/limit yet — we sort then paginate)
+            const [allEvents, count] = await Promise.all([
+                collection.find(filter).sort({ startDate: 1 }).toArray(),
+                collection.countDocuments(filter)
+            ]);
+            total = count;
+
+            // Haversine distance calculation (Express parity — serverEvents.js lines 767-786)
+            const toRad = (deg) => deg * Math.PI / 180;
+            const haversine = (lat1, lon1, lat2, lon2) => {
+                const R = 6371; // Earth radius in km
+                const dLat = toRad(lat2 - lat1);
+                const dLon = toRad(lon2 - lon1);
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                return R * c;
+            };
+
+            // Calculate distance for each event and attach it
+            const geoField = useCity === 'true' ? 'masteredCityGeolocation' : 'venueGeolocation';
+            for (const event of allEvents) {
+                const geo = event[geoField];
+                if (geo && geo.coordinates && geo.coordinates.length === 2) {
+                    // GeoJSON coordinates are [lng, lat]
+                    event.distance = Math.round(haversine(geoLat, geoLng, geo.coordinates[1], geo.coordinates[0]) * 100) / 100;
+                    event.distanceUnit = 'km';
+                } else {
+                    event.distance = null;
+                    event.distanceUnit = 'km';
+                }
+            }
+
+            // Sort by distance (nulls at end), then paginate
+            allEvents.sort((a, b) => {
+                if (a.distance === null && b.distance === null) return 0;
+                if (a.distance === null) return 1;
+                if (b.distance === null) return -1;
+                return a.distance - b.distance;
+            });
+
+            events = allEvents.slice(skip, skip + limitNum);
+        } else {
+            // Standard query path — sort by startDate, paginate in MongoDB
+            const eventQuery = collection
+                .find(filter)
+                .sort({ startDate: 1 })
+                .skip(skip)
+                .limit(limitNum);
+
+            [events, total] = await Promise.all([
+                eventQuery.toArray(),
+                collection.countDocuments(filter)
+            ]);
+
+            // If lat/lng provided but no sortByDistance, still compute distance for display
+            if (geoLat !== null && geoLng !== null) {
+                const toRad = (deg) => deg * Math.PI / 180;
+                const haversine = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371;
+                    const dLat = toRad(lat2 - lat1);
+                    const dLon = toRad(lon2 - lon1);
+                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    return R * c;
+                };
+                const geoField = useCity === 'true' ? 'masteredCityGeolocation' : 'venueGeolocation';
+                for (const event of events) {
+                    const geo = event[geoField];
+                    if (geo && geo.coordinates && geo.coordinates.length === 2) {
+                        event.distance = Math.round(haversine(geoLat, geoLng, geo.coordinates[1], geo.coordinates[0]) * 100) / 100;
+                        event.distanceUnit = 'km';
+                    }
+                }
+            }
+        }
 
         context.log(`Found ${events.length} events for appId: ${appId} (page ${pageNum}/${Math.ceil(total/limitNum)})`);
 
@@ -242,7 +489,7 @@ async function eventsGetHandler(request, context) {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                events: events || [],
+                events: enrichEventsWithTimezone(events || []),
                 pagination: {
                     total,
                     page: pageNum,
@@ -410,11 +657,14 @@ async function eventsGetByIdHandler(request, context) {
 
         context.log(`Event found: ${eventId}`);
 
+        // Enrich single event with timezone display fields
+        const [enriched] = enrichEventsWithTimezone([event]);
+
         // Return event at root level to match calendar-be response format
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(event)
+            body: JSON.stringify(enriched)
         };
     } finally {
         if (mongoClient) {
@@ -532,6 +782,22 @@ async function eventsCreateHandler(request, context) {
             createdAt: new Date(),
             updatedAt: new Date()
         };
+
+        // Populate venueTimezone from venue document (Express parity)
+        const venueIdForTz = requestBody.venueID || requestBody.venueId;
+        if (venueIdForTz && !newEvent.venueTimezone) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venue = await venuesCollection.findOne({ _id: new ObjectId(venueIdForTz) });
+                if (venue && venue.timezone) {
+                    newEvent.venueTimezone = venue.timezone;
+                } else {
+                    newEvent.venueTimezone = 'America/New_York';
+                }
+            } catch (_err) {
+                newEvent.venueTimezone = 'America/New_York';
+            }
+        }
 
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
@@ -660,6 +926,22 @@ async function eventsUpdateHandler(request, context) {
 
         // Remove _id from update body (immutable in MongoDB)
         delete updateDoc.$set._id;
+
+        // If venueID changed, look up venue timezone and include in update
+        const updatedVenueId = requestBody.venueID || requestBody.venueId;
+        if (updatedVenueId) {
+            try {
+                const venuesCollection = db.collection('Venues');
+                const venue = await venuesCollection.findOne({ _id: new ObjectId(updatedVenueId) });
+                if (venue && venue.timezone) {
+                    updateDoc.$set.venueTimezone = venue.timezone;
+                } else {
+                    updateDoc.$set.venueTimezone = 'America/New_York';
+                }
+            } catch (_err) {
+                updateDoc.$set.venueTimezone = 'America/New_York';
+            }
+        }
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(

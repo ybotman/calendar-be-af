@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { RRule } = require('rrule');
 const { standardMiddleware } = require('../middleware');
+const { expandRecurringEvent } = require('../utils/expandRecurringEvent');
 
 /**
  * GET /api/voice/events
@@ -98,7 +99,10 @@ async function voiceEventsHandler(request, context) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             const d = new Date(dateStr + 'T00:00:00Z');
             d.setUTCDate(d.getUTCDate() + 1); // Start of next day
-            d.setUTCHours(5, 0, 0, 0); // 5 AM UTC = midnight Eastern
+            // Calculate midnight in venue timezone (default Eastern)
+            // For Pacific: midnight = 8AM UTC, Central: 6AM UTC, Eastern: 5AM UTC
+            const padHours = 8; // Use Pacific as safe upper bound to include all US timezones
+            d.setUTCHours(padHours, 0, 0, 0);
             return d;
         }
         return new Date(dateStr);
@@ -295,67 +299,6 @@ async function voiceEventsHandler(request, context) {
             return { description, until };
         };
 
-        // Helper: Expand recurring event into occurrences within date range
-        const expandRecurringEvent = (event, queryStart, queryEnd, venueTimezone) => {
-            if (!event.recurrenceRule) return [event];
-
-            try {
-                const eventStart = new Date(event.startDate);
-                const tz = venueTimezone || 'America/New_York';
-
-                // Convert UTC startDate to venue local time for DTSTART
-                // This ensures BYDAY=TU means Tuesday in LOCAL time, not UTC
-                const localParts = eventStart.toLocaleString('en-CA', {
-                    timeZone: tz,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false
-                });
-                // Format: "2026-01-06, 19:30:00" -> "20260106T193000"
-                const localDateStr = localParts.replace(/[^\d]/g, '').substring(0, 14);
-                const formattedLocal = localDateStr.substring(0, 8) + 'T' + localDateStr.substring(8);
-
-                // Build RRULE string with timezone-aware DTSTART
-                const rruleStr = `DTSTART;TZID=${tz}:${formattedLocal}\nRRULE:${event.recurrenceRule}`;
-
-                const rule = RRule.fromString(rruleStr);
-
-                // Query range in venue local context - extend end by 1 day
-                const rangeEnd = new Date(queryEnd);
-                rangeEnd.setDate(rangeEnd.getDate() + 1);
-
-                const occurrences = rule.between(queryStart, rangeEnd, true);
-
-                if (occurrences.length === 0) return [];
-
-                // Create expanded event for each occurrence
-                // Preserve original time-of-day from event.startDate
-                const originalHours = eventStart.getUTCHours();
-                const originalMinutes = eventStart.getUTCMinutes();
-
-                return occurrences.map(occurrenceDate => {
-                    // rrule returns dates - set the original time
-                    const newDate = new Date(occurrenceDate);
-                    newDate.setUTCHours(originalHours, originalMinutes, 0, 0);
-
-                    return {
-                        ...event,
-                        _originalStartDate: event.startDate,
-                        startDate: newDate,
-                        _isExpandedOccurrence: true
-                    };
-                });
-            } catch (err) {
-                // If RRULE parsing fails, return original event
-                context.log(`RRULE parse error for event ${event._id}: ${err.message}`);
-                return [event];
-            }
-        };
-
         // Separate recurring and non-recurring events, then expand recurring ones
         const nonRecurringEvents = events.filter(e => !e.recurrenceRule || e.recurrenceRule === '');
         const recurringEvents = events.filter(e => e.recurrenceRule && e.recurrenceRule !== '');
@@ -364,7 +307,7 @@ async function voiceEventsHandler(request, context) {
         const expandedRecurring = recurringEvents.flatMap(e => {
             const venue = e.venueID ? venueMap[e.venueID.toString()] : null;
             const tz = venue?.timezone || 'America/New_York';
-            return expandRecurringEvent(e, startDate, endDate, tz);
+            return expandRecurringEvent(e, startDate, endDate, tz, context);
         });
 
         // Combine and sort by date
