@@ -297,6 +297,10 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
     }
 
     // Build response clusters
+    // CALBEAF-76: Determine childLevel and nextZoomThreshold based on current zoom
+    const childLevel = zoom <= 5 ? 'division' : zoom <= 10 ? 'city' : zoom <= 14 ? 'venue' : 'event';
+    const nextZoomThreshold = zoom <= 5 ? 6 : zoom <= 10 ? 11 : zoom <= 14 ? 15 : 20;
+
     const clusters = clusterResults.map(c => ({
         id: c._id ? c._id.toString() : null,
         name: nameMap[c._id ? c._id.toString() : ''] || 'Unknown',
@@ -308,6 +312,9 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
         // CALBEAF-76: isDiscovered breakdown for FE dual-color cluster icons
         discoveredCount: c.discoveredCount || 0,
         regularCount: c.eventCount - (c.discoveredCount || 0),
+        // CALBEAF-76: Drill-down fields for FE cluster click-to-zoom (Express parity)
+        canDrillDown: c.eventCount > 1,
+        childLevel,
         categories: (c.categories || []).filter(cat => cat != null).map(cat => cat.toString())
     }));
 
@@ -324,7 +331,8 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
             metadata: {
                 totalEvents,
                 totalClusters: clusters.length,
-                aggregationLevel
+                aggregationLevel,
+                nextZoomThreshold
             }
         })
     };
