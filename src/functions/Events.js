@@ -188,13 +188,14 @@ async function eventsGetHandler(request, context) {
         }
 
         // CALBEAF-74: Boolean flag filters (Express parity — items 5, 6)
-        if (featured !== undefined) {
+        // Note: request.query.get() returns null (not undefined) for missing params
+        if (featured) {
             baseFilter.isFeatured = featured === 'true';
         }
-        if (canceled !== undefined) {
+        if (canceled) {
             baseFilter.isCanceled = canceled === 'true';
         }
-        if (discovered !== undefined) {
+        if (discovered) {
             baseFilter.isDiscovered = discovered === 'true';
         }
         // CALBEAF-74 item 6: includeAiGenerated — Express never implemented this filter
