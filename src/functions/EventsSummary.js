@@ -166,16 +166,17 @@ async function eventsSummaryHandler(request, context) {
         const andConditions = [baseQuery, dateQuery];
 
         // Bounds filter: check venueGeolocation or masteredCityGeolocation
+        // CALBEAF-76: GeoJSON coordinates are [lng, lat] — index 0=lng, 1=lat
         if (bounds) {
             andConditions.push({
                 $or: [
                     {
-                        'venueGeolocation.lat': { $gte: bounds.south, $lte: bounds.north },
-                        'venueGeolocation.lng': { $gte: bounds.west, $lte: bounds.east }
+                        'venueGeolocation.coordinates.1': { $gte: bounds.south, $lte: bounds.north },
+                        'venueGeolocation.coordinates.0': { $gte: bounds.west, $lte: bounds.east }
                     },
                     {
-                        'masteredCityGeolocation.lat': { $gte: bounds.south, $lte: bounds.north },
-                        'masteredCityGeolocation.lng': { $gte: bounds.west, $lte: bounds.east }
+                        'masteredCityGeolocation.coordinates.1': { $gte: bounds.south, $lte: bounds.north },
+                        'masteredCityGeolocation.coordinates.0': { $gte: bounds.west, $lte: bounds.east }
                     }
                 ]
             });
@@ -249,9 +250,11 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
             $group: {
                 _id: groupField,
                 eventCount: { $sum: 1 },
-                // Grab first available coordinate for cluster center
-                lat: { $first: { $ifNull: ['$venueGeolocation.lat', '$masteredCityGeolocation.lat'] } },
-                lng: { $first: { $ifNull: ['$venueGeolocation.lng', '$masteredCityGeolocation.lng'] } },
+                // CALBEAF-76: GeoJSON coordinates [lng, lat] — index 1=lat, 0=lng
+                lat: { $first: { $ifNull: ['$venueGeolocation.coordinates.1', '$masteredCityGeolocation.coordinates.1'] } },
+                lng: { $first: { $ifNull: ['$venueGeolocation.coordinates.0', '$masteredCityGeolocation.coordinates.0'] } },
+                // CALBEAF-76: isDiscovered breakdown for dual-color cluster icons
+                discoveredCount: { $sum: { $cond: [{ $eq: ['$isDiscovered', true] }, 1, 0] } },
                 // Collect distinct category IDs for breakdown
                 categories: { $addToSet: '$categoryFirstId' }
             }
@@ -302,6 +305,9 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
             lng: c.lng || 0
         },
         eventCount: c.eventCount,
+        // CALBEAF-76: isDiscovered breakdown for FE dual-color cluster icons
+        discoveredCount: c.discoveredCount || 0,
+        regularCount: c.eventCount - (c.discoveredCount || 0),
         categories: (c.categories || []).filter(cat => cat != null).map(cat => cat.toString())
     }));
 
@@ -372,8 +378,10 @@ async function handleCities(collection, db, matchStage, context) {
             $group: {
                 _id: '$masteredCityId',
                 eventCount: { $sum: 1 },
-                lat: { $first: '$masteredCityGeolocation.lat' },
-                lng: { $first: '$masteredCityGeolocation.lng' }
+                // CALBEAF-76: GeoJSON coordinates [lng, lat]
+                lat: { $first: '$masteredCityGeolocation.coordinates.1' },
+                lng: { $first: '$masteredCityGeolocation.coordinates.0' },
+                discoveredCount: { $sum: { $cond: [{ $eq: ['$isDiscovered', true] }, 1, 0] } }
             }
         },
         { $match: { _id: { $ne: null } } },
@@ -419,7 +427,9 @@ async function handleCities(collection, db, matchStage, context) {
             lat: c.lat || 0,
             lng: c.lng || 0
         },
-        eventCount: c.eventCount
+        eventCount: c.eventCount,
+        discoveredCount: c.discoveredCount || 0,
+        regularCount: c.eventCount - (c.discoveredCount || 0)
     }));
 
     const totalEvents = cities.reduce((sum, c) => sum + c.eventCount, 0);
