@@ -241,6 +241,15 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
         aggregationLevel = 'venue';
     }
 
+    // CALBEAF-76: Map collection to its name field (they differ per collection)
+    const nameFieldMap = {
+        'masteredregions': 'regionName',
+        'mastereddivisions': 'divisionName',
+        'masteredcities': 'cityName',
+        'venues': 'name'
+    };
+    const nameField = nameFieldMap[lookupCollection] || 'name';
+
     context.log(`EventsSummary clusters: zoom=${zoom}, aggregationLevel=${aggregationLevel}`);
 
     // Build aggregation pipeline
@@ -250,9 +259,15 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
             $group: {
                 _id: groupField,
                 eventCount: { $sum: 1 },
-                // CALBEAF-76: GeoJSON coordinates [lng, lat] — index 1=lat, 0=lng
-                lat: { $first: { $ifNull: ['$venueGeolocation.coordinates.1', '$masteredCityGeolocation.coordinates.1'] } },
-                lng: { $first: { $ifNull: ['$venueGeolocation.coordinates.0', '$masteredCityGeolocation.coordinates.0'] } },
+                // CALBEAF-76: GeoJSON coordinates [lng, lat] — use $arrayElemAt for aggregation
+                lat: { $first: { $ifNull: [
+                    { $arrayElemAt: ['$venueGeolocation.coordinates', 1] },
+                    { $arrayElemAt: ['$masteredCityGeolocation.coordinates', 1] }
+                ] } },
+                lng: { $first: { $ifNull: [
+                    { $arrayElemAt: ['$venueGeolocation.coordinates', 0] },
+                    { $arrayElemAt: ['$masteredCityGeolocation.coordinates', 0] }
+                ] } },
                 // CALBEAF-76: isDiscovered breakdown for dual-color cluster icons
                 discoveredCount: { $sum: { $cond: [{ $eq: ['$isDiscovered', true] }, 1, 0] } },
                 // Collect distinct category IDs for breakdown
@@ -283,13 +298,14 @@ async function handleClusters(collection, db, matchStage, zoom, context) {
                 }
             });
 
+            // CALBEAF-76: Project the correct name field per collection
             const lookupDocs = await db.collection(lookupCollection)
                 .find({ _id: { $in: objectIds } })
-                .project({ _id: 1, name: 1 })
+                .project({ _id: 1, [nameField]: 1 })
                 .toArray();
 
             lookupDocs.forEach(doc => {
-                nameMap[doc._id.toString()] = doc.name;
+                nameMap[doc._id.toString()] = doc[nameField] || doc.name;
             });
         } catch (lookupErr) {
             context.log(`EventsSummary: Lookup warning for ${lookupCollection}: ${lookupErr.message}`);
@@ -386,9 +402,9 @@ async function handleCities(collection, db, matchStage, context) {
             $group: {
                 _id: '$masteredCityId',
                 eventCount: { $sum: 1 },
-                // CALBEAF-76: GeoJSON coordinates [lng, lat]
-                lat: { $first: '$masteredCityGeolocation.coordinates.1' },
-                lng: { $first: '$masteredCityGeolocation.coordinates.0' },
+                // CALBEAF-76: GeoJSON coordinates [lng, lat] — use $arrayElemAt
+                lat: { $first: { $arrayElemAt: ['$masteredCityGeolocation.coordinates', 1] } },
+                lng: { $first: { $arrayElemAt: ['$masteredCityGeolocation.coordinates', 0] } },
                 discoveredCount: { $sum: { $cond: [{ $eq: ['$isDiscovered', true] }, 1, 0] } }
             }
         },
@@ -414,13 +430,14 @@ async function handleCities(collection, db, matchStage, context) {
                 }
             });
 
+            // CALBEAF-76: Cities use 'cityName' not 'name'
             const cityDocs = await db.collection('masteredcities')
                 .find({ _id: { $in: objectIds } })
-                .project({ _id: 1, name: 1 })
+                .project({ _id: 1, cityName: 1 })
                 .toArray();
 
             cityDocs.forEach(doc => {
-                cityNameMap[doc._id.toString()] = doc.name;
+                cityNameMap[doc._id.toString()] = doc.cityName;
             });
         } catch (lookupErr) {
             context.log(`EventsSummary: City name lookup warning: ${lookupErr.message}`);
