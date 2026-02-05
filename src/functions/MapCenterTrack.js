@@ -88,7 +88,7 @@ async function mapCenterTrackHandler(request, context) {
                 requestBody = JSON.parse(text);
             }
         } catch (parseError) {
-            context.log.error('Error parsing request body:', parseError.message);
+            context.error('Error parsing request body:', parseError.message);
             return {
                 status: 400,
                 headers: {
@@ -195,7 +195,7 @@ async function mapCenterTrackHandler(request, context) {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }
             } catch (geoError) {
-                context.log.error('Error fetching ipinfo.io:', geoError.message);
+                context.error('Error fetching ipinfo.io:', geoError.message);
                 // Continue without ipinfo data
             }
         }
