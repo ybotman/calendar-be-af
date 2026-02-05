@@ -23,6 +23,7 @@ require('./functions/Health_Version');
 require('./functions/Health_MongoDB');
 require('./functions/Health_MongoDB_Test');
 require('./functions/Health_MongoDB_Prod');
+require('./functions/Health_EventCheck');
 require('./functions/Metrics_Get');
 require('./functions/Categories');
 
