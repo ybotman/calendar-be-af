@@ -111,7 +111,7 @@ app.http('SwaggerJSON', {
         body: JSON.stringify(swagger, null, 2)
       };
     } catch (error) {
-      context.log.error('Error reading swagger.json:', error);
+      context.error('Error reading swagger.json:', error);
 
       return {
         status: 500,

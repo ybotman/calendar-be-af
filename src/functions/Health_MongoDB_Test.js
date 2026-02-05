@@ -76,7 +76,7 @@ async function mongoTestHealthHandler(request, context) {
   } catch (error) {
     const duration = Date.now() - startTime;
 
-    context.log.error('MongoDB TEST health check failed:', error.message);
+    context.error('MongoDB TEST health check failed:', error.message);
 
     return {
       status: 503,
@@ -96,7 +96,7 @@ async function mongoTestHealthHandler(request, context) {
       try {
         await client.close();
       } catch (closeError) {
-        context.log.error('Error closing MongoDB TEST connection:', closeError.message);
+        context.error('Error closing MongoDB TEST connection:', closeError.message);
       }
     }
   }
