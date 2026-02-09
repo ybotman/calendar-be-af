@@ -33,6 +33,7 @@ const { enrichEventsWithTimezone } = require('../utils/timezoneService');
  * - masteredDivisionName: Filter by division name (string equality)
  * - masteredCityName: Filter by city name (string equality)
  * - cityIds: Filter by city ObjectIds (comma-separated or single)
+ * - organizerId: Filter by organizer ownership (matches owner, granted, or alternate)
  * - useGeoSearch: Enable geo search ("true") — requires lat, lng
  * - lat: Latitude for geo search (-90 to 90)
  * - lng: Longitude for geo search (-180 to 180)
@@ -73,6 +74,9 @@ async function eventsGetHandler(request, context) {
     // Multi-city filter
     const cityIds = request.query.get('cityIds');
 
+    // Organizer ownership filter (for RO filtering their own events)
+    const organizerId = request.query.get('organizerId');
+
     // Geo search params
     const useGeoSearch = request.query.get('useGeoSearch');
     const lat = request.query.get('lat');
@@ -98,6 +102,7 @@ async function eventsGetHandler(request, context) {
         masteredDivisionName,
         masteredCityName,
         cityIds,
+        organizerId,
         useGeoSearch,
         lat,
         lng,
@@ -226,6 +231,29 @@ async function eventsGetHandler(request, context) {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: 'Invalid categoryId format' })
+                };
+            }
+        }
+
+        // Add organizer ownership filter if provided
+        // Matches events where organizerId is owner, granted, or alternate organizer
+        // Same logic as /api/events/count endpoint
+        if (organizerId) {
+            try {
+                const organizerObjId = new ObjectId(organizerId);
+                andConditions.push({
+                    $or: [
+                        { ownerOrganizerID: organizerObjId },
+                        { grantedOrganizerID: organizerObjId },
+                        { alternateOrganizerID: organizerObjId }
+                    ]
+                });
+            } catch (err) {
+                context.log(`Invalid organizerId format: ${organizerId}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid organizerId format' })
                 };
             }
         }
