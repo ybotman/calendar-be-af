@@ -272,6 +272,6 @@ async function dataHealthHandler(request, context) {
 app.http('Admin_DataHealth', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/data-health',
+    route: 'admin/ops/data-health',
     handler: dataHealthHandler
 });

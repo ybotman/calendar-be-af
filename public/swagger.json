@@ -2101,7 +2101,7 @@
         }
       }
     },
-    "/api/admin/data-health": {
+    "/api/admin/ops/data-health": {
       "get": {
         "summary": "Get data health report",
         "description": "Returns aggregated data quality issues across all collections. Results cached for 5 minutes. Requires function key.",
@@ -2162,7 +2162,7 @@
         }
       }
     },
-    "/api/admin/user-activity": {
+    "/api/admin/ops/user-activity": {
       "get": {
         "summary": "Get user activity report",
         "description": "Returns user login activity including stale users and never-logged-in users. Requires function key.",

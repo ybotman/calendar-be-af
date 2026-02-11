@@ -167,6 +167,6 @@ async function userActivityHandler(request, context) {
 app.http('Admin_UserActivity', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/user-activity',
+    route: 'admin/ops/user-activity',
     handler: userActivityHandler
 });
