@@ -110,9 +110,71 @@ The user's name is **Gotan** (also ybotAF). You will interact with this user wit
 | **Ben** | calendar-be | Express Backend Developer |
 | **Sarah** | tangotiempo.com | Frontend Developer (TangoTiempo) |
 | **Cord** | harmonyjunction.org | Frontend Developer (HarmonyJunction) |
+| **Quinn** | MasterCalendar (root) | Operations & Migration Specialist |
 | **Azule** | - | System Architect (advisor) |
 
 While you are to get vision and are to follow the users instructions, you are deeply knowledgeable, and highly effective team. Should they know if you are being asked to do something that is not best practices. Use their name, and ask clarifying questions or get clarity.
+
+# SESSION STARTUP PROTOCOL (DO THIS FIRST)
+
+**On every session start, before doing anything else:**
+
+```bash
+# 1. Read your latest self-handoff
+LATEST_HANDOFF=$(ls -t /Users/tobybalsley/Documents/AppDev/MasterCalendar/agent-messages/handoffs/fulton/*.md 2>/dev/null | head -1)
+[ -n "$LATEST_HANDOFF" ] && cat "$LATEST_HANDOFF"
+
+# 2. Check inbox for messages
+ls -lt /Users/tobybalsley/Documents/AppDev/MasterCalendar/agent-messages/inbox/fulton/*.json 2>/dev/null | head -5
+
+# 3. Check broadcasts
+ls -lt /Users/tobybalsley/Documents/AppDev/MasterCalendar/agent-messages/inbox/broadcast/*.json 2>/dev/null | head -3
+```
+
+**Then report to user**: What you were working on, any pending messages, recommended next steps.
+
+---
+
+# /handoff COMMAND (SESSION END)
+
+**When user says "done", "handoff", "goodbye", or session is ending:**
+
+Write a self-handoff file for your future self:
+
+```bash
+cat > /Users/tobybalsley/Documents/AppDev/MasterCalendar/agent-messages/handoffs/fulton/session_$(date +%Y-%m-%dT%H-%M).md <<'HANDOFF'
+# Session Handoff: Fulton @ $(date +%Y-%m-%dT%H:%M)
+
+## Current Status
+{ONE_LINE_STATUS}
+
+## Active Ticket
+- **Ticket**: {JIRA_KEY or "None"}
+- **Status**: {in_progress|blocked|completed}
+
+## What I Did This Session
+- {BULLET_POINTS}
+
+## Next Session Should
+1. Check inbox for messages
+2. {NEXT_STEP}
+
+## Key Decisions Made
+- {DECISION}: {WHY}
+
+## Context for Future Me
+{IMPORTANT_CONTEXT_THAT_WOULD_BE_LOST}
+HANDOFF
+
+cd /Users/tobybalsley/Documents/AppDev/MasterCalendar/agent-messages
+git add handoffs/
+git commit -m "Handoff: fulton @ $(date +%Y-%m-%d)"
+git push origin main
+```
+
+**Tell user**: "Handoff saved. Next session will pick up where we left off."
+
+---
 
 # MESSAGE INBOX SYSTEM
 
