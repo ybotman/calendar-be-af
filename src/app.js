@@ -81,4 +81,8 @@ require('./functions/FrontendLogs');
 require('./functions/VoiceEvents');
 require('./functions/VoiceAsk');
 
+// Admin API - CALOPS Dashboard endpoints (CALOPS-41/42)
+require('./functions/Admin_UserActivity');
+require('./functions/Admin_DataHealth');
+
 module.exports = { app };
