@@ -10,7 +10,7 @@ let healthCacheTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * GET /api/admin/data-health
+ * GET /api/ops/data-health
  * Returns all data quality issues in one call
  *
  * Requires function key for authentication.
@@ -272,6 +272,6 @@ async function dataHealthHandler(request, context) {
 app.http('Admin_DataHealth', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/ops/data-health',
+    route: 'ops/data-health',
     handler: dataHealthHandler
 });

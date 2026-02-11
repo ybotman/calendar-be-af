@@ -85,4 +85,8 @@ require('./functions/VoiceAsk');
 require('./functions/Admin_UserActivity');
 require('./functions/Admin_DataHealth');
 
+// Backup API - Daily backups (CALBEAF-75, CALBEAF-77)
+require('./functions/Backup_MongoDB');
+require('./functions/Backup_Firebase');
+
 module.exports = { app };
