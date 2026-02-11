@@ -7,6 +7,42 @@ const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAu
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 
 // ============================================
+// HELPER: Convert string IDs to ObjectId
+// ============================================
+/**
+ * Convert string ID fields to MongoDB ObjectId
+ * Handles the common case where frontend sends IDs as strings in JSON
+ * @param {object} data - Event data object
+ * @returns {object} - Data with ID fields converted to ObjectId
+ */
+function convertIdFields(data) {
+    const idFields = [
+        'ownerOrganizerID',
+        'grantedOrganizerID',
+        'alternateOrganizerID',
+        'venueID',
+        'categoryFirstId',
+        'categorySecondId',
+        'categoryThirdId',
+        'masteredCityId',
+        'masteredDivisionId',
+        'masteredRegionId'
+    ];
+
+    for (const field of idFields) {
+        if (data[field] && typeof data[field] === 'string') {
+            try {
+                data[field] = new ObjectId(data[field]);
+            } catch (err) {
+                // Invalid ObjectId string - leave as-is, will fail validation later
+            }
+        }
+    }
+
+    return data;
+}
+
+// ============================================
 // FUNCTION 1: GET /api/events
 // ============================================
 
@@ -811,6 +847,9 @@ async function eventsCreateHandler(request, context) {
             updatedAt: new Date()
         };
 
+        // Convert string IDs to ObjectId (frontend sends IDs as strings in JSON)
+        convertIdFields(newEvent);
+
         // Populate venueTimezone from venue document (Express parity)
         const venueIdForTz = requestBody.venueID || requestBody.venueId;
         if (venueIdForTz && !newEvent.venueTimezone) {
@@ -946,6 +985,9 @@ async function eventsUpdateHandler(request, context) {
                 updatedAt: new Date()
             }
         };
+
+        // Convert string IDs to ObjectId (frontend sends IDs as strings in JSON)
+        convertIdFields(updateDoc.$set);
 
         // Remove undefined fields
         Object.keys(updateDoc.$set).forEach(key =>
