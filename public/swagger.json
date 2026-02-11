@@ -728,7 +728,26 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "type": "object" } },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": { "type": "string", "description": "Event ObjectId" },
+                          "title": { "type": "string" },
+                          "startDate": { "type": "string", "format": "date-time" },
+                          "endDate": { "type": "string", "format": "date-time" },
+                          "ownerOrganizerID": { "type": "string", "description": "Current owner (can be changed by RA)" },
+                          "authorOrganizerID": { "type": "string", "description": "Original creator (immutable)" },
+                          "grantedOrganizerID": { "type": "string", "description": "Granted editing rights" },
+                          "alternateOrganizerID": { "type": "string", "description": "Alternate organizer" },
+                          "venueID": { "type": "string" },
+                          "venueTimezone": { "type": "string", "description": "Timezone from venue" },
+                          "isActive": { "type": "boolean" },
+                          "isAllDay": { "type": "boolean" }
+                        }
+                      }
+                    },
                     "pagination": { "type": "object" }
                   }
                 }
