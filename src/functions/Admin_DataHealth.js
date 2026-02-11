@@ -157,7 +157,7 @@ async function dataHealthHandler(request, context) {
         context.log('Checking: Users with invalid organizerId...');
         const usersWithOrganizerId = await db.collection('users').find({
             appId,
-            organizerId: { $exists: true, $ne: null, $ne: '' }
+            organizerId: { $exists: true, $nin: [null, ''] }
         }).project({
             _id: 1,
             firebaseUserId: 1,
