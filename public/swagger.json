@@ -67,6 +67,10 @@
     {
       "name": "Venues",
       "description": "Venue management"
+    },
+    {
+      "name": "Admin",
+      "description": "Admin endpoints for data health and monitoring (requires function key)"
     }
   ],
   "paths": {
@@ -2096,6 +2100,130 @@
           "404": { "description": "Venue not found" }
         }
       }
+    },
+    "/api/admin/data-health": {
+      "get": {
+        "summary": "Get data health report",
+        "description": "Returns aggregated data quality issues across all collections. Results cached for 5 minutes. Requires function key.",
+        "tags": ["Admin"],
+        "operationId": "getDataHealth",
+        "security": [{ "functionKey": [] }],
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID (default: 1)",
+            "schema": { "type": "string", "default": "1" }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "description": "Bypass cache and force refresh",
+            "schema": { "type": "string", "enum": ["true", "false"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max items per category (default: 100)",
+            "schema": { "type": "integer", "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Data health report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "eventsWithoutVenue": { "type": "array", "items": { "type": "object" } },
+                    "venuesMissingGeocoding": { "type": "array", "items": { "type": "object" } },
+                    "venuesMissingMasteredCity": { "type": "array", "items": { "type": "object" } },
+                    "organizersNotLinkedToUser": { "type": "array", "items": { "type": "object" } },
+                    "usersWithInvalidOrganizerId": { "type": "array", "items": { "type": "object" } },
+                    "expiredRecurringEventsStillActive": { "type": "array", "items": { "type": "object" } },
+                    "eventsInPastStillActive": { "type": "array", "items": { "type": "object" } },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "totalIssues": { "type": "integer" },
+                        "criticalCount": { "type": "integer" },
+                        "warningCount": { "type": "integer" }
+                      }
+                    },
+                    "cached": { "type": "boolean" },
+                    "generatedAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/admin/user-activity": {
+      "get": {
+        "summary": "Get user activity report",
+        "description": "Returns user login activity including stale users and never-logged-in users. Requires function key.",
+        "tags": ["Admin"],
+        "operationId": "getUserActivity",
+        "security": [{ "functionKey": [] }],
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID (default: 1)",
+            "schema": { "type": "string", "default": "1" }
+          },
+          {
+            "name": "staleDays",
+            "in": "query",
+            "description": "Days threshold for stale users (default: 30)",
+            "schema": { "type": "integer", "default": 30 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max users to return (default: 100)",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort by lastLogin or created",
+            "schema": { "type": "string", "enum": ["lastLogin", "created"], "default": "lastLogin" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User activity report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "users": { "type": "array", "items": { "type": "object" } },
+                    "staleUsers": { "type": "array", "items": { "type": "object" } },
+                    "neverLoggedIn": { "type": "array", "items": { "type": "object" } },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "active": { "type": "integer" },
+                        "stale": { "type": "integer" },
+                        "neverLoggedIn": { "type": "integer" }
+                      }
+                    },
+                    "generatedAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "description": "Server error" }
+        }
+      }
     }
   },
   "components": {
@@ -3288,6 +3416,12 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "Firebase Authentication JWT token. Include in Authorization header as: Bearer <token>"
+      },
+      "functionKey": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "code",
+        "description": "Azure Functions key. Pass as ?code=<key> query parameter or x-functions-key header"
       }
     }
   }
