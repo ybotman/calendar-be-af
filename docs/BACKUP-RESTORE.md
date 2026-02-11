@@ -1,5 +1,47 @@
 # Backup & Restore Procedures
 
+---
+
+## CRITICAL: Restore Protection Notice
+
+**There are NO restore API endpoints.** Restore is manual-only by design.
+
+| Operation | API Exists | How It Works |
+|-----------|------------|--------------|
+| Backup | Yes | Automated daily Azure Functions |
+| Restore | **NO** | Manual scripts, local execution only |
+
+### Restore Requirements (Manual Process)
+
+To perform any restore, you must have:
+
+1. **Azure Storage access** — to download backup files
+2. **MongoDB connection string** — database credentials
+3. **Local execution environment** — Node.js on your machine
+4. **Firebase service account** — for Firebase restores only
+
+### Why No Restore API?
+
+Restore operations are destructive and irreversible. Protections:
+
+- No accidental API calls can trigger restore
+- Requires deliberate local script execution
+- Requires production credentials (not in code)
+- Human must download, verify, and run manually
+
+### If Restore Endpoints Are Ever Built
+
+They MUST include:
+
+- Admin-level authentication (not just function key)
+- Required confirmation code parameter
+- Required password/admin token
+- Dry-run mode by default
+- Full audit logging
+- Two-step confirmation flow
+
+---
+
 ## Overview
 
 The calendar-be-af system includes automated daily backups for:
