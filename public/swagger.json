@@ -69,8 +69,8 @@
       "description": "Venue management"
     },
     {
-      "name": "Admin",
-      "description": "Admin endpoints for data health and monitoring (requires function key)"
+      "name": "Ops",
+      "description": "Operations endpoints for data health and monitoring (requires function key)"
     }
   ],
   "paths": {
@@ -2101,11 +2101,11 @@
         }
       }
     },
-    "/api/admin/ops/data-health": {
+    "/api/ops/data-health": {
       "get": {
         "summary": "Get data health report",
         "description": "Returns aggregated data quality issues across all collections. Results cached for 5 minutes. Requires function key.",
-        "tags": ["Admin"],
+        "tags": ["Ops"],
         "operationId": "getDataHealth",
         "security": [{ "functionKey": [] }],
         "parameters": [
@@ -2162,11 +2162,11 @@
         }
       }
     },
-    "/api/admin/ops/user-activity": {
+    "/api/ops/user-activity": {
       "get": {
         "summary": "Get user activity report",
         "description": "Returns user login activity including stale users and never-logged-in users. Requires function key.",
-        "tags": ["Admin"],
+        "tags": ["Ops"],
         "operationId": "getUserActivity",
         "security": [{ "functionKey": [] }],
         "parameters": [

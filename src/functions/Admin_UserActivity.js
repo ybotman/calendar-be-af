@@ -5,7 +5,7 @@ const { app } = require('@azure/functions');
 const { MongoClient } = require('mongodb');
 
 /**
- * GET /api/admin/user-activity
+ * GET /api/ops/user-activity
  * Returns user login activity for admin visibility
  *
  * Requires function key for authentication.
@@ -167,6 +167,6 @@ async function userActivityHandler(request, context) {
 app.http('Admin_UserActivity', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/ops/user-activity',
+    route: 'ops/user-activity',
     handler: userActivityHandler
 });
