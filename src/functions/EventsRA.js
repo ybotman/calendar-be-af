@@ -293,7 +293,8 @@ async function eventsRAUpdateHandler(request, context) {
         }
 
         // Step 4: If venue is being updated, validate new venue permissions
-        if (updateData.venueID && updateData.venueID !== event.venueID?.toString()) {
+        // Compare as strings since updateData.venueID is ObjectId after convertIdFields
+        if (updateData.venueID && updateData.venueID.toString() !== event.venueID?.toString()) {
             const newVenue = await venuesCollection.findOne({ _id: new ObjectId(updateData.venueID) });
             if (!newVenue) {
                 return {
