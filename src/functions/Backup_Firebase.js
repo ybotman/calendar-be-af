@@ -110,7 +110,7 @@ async function exportFirebaseUsers(context) {
  *
  * Exports all Firebase Auth users to Azure Blob Storage with tiered retention.
  *
- * Schedule: Daily at 3:15 AM UTC (15 min after MongoDB backup)
+ * Schedule: Daily at 3:15 AM EST (8:15 AM UTC, 15 min after MongoDB backup)
  *
  * Environment variables:
  * - FIREBASE_SERVICE_ACCOUNT_JSON: Firebase service account JSON (stringified)
@@ -182,10 +182,10 @@ async function firebaseBackupHandler(myTimer, context) {
     return results;
 }
 
-// Timer trigger: runs daily at 3:15 AM UTC
+// Timer trigger: runs daily at 3:15 AM EST (8:15 AM UTC)
 // CRON format: second minute hour day month weekday
 app.timer('Backup_Firebase', {
-    schedule: '0 15 3 * * *',
+    schedule: '0 15 8 * * *',
     handler: firebaseBackupHandler
 });
 

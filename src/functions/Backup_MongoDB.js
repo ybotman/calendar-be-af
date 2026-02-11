@@ -94,7 +94,7 @@ async function exportDatabase(uri, dbName, context) {
  * Backs up both TangoTiempo (dev/test) and TangoTiempoProd databases
  * to Azure Blob Storage with tiered retention.
  *
- * Schedule: Daily at 3:00 AM UTC
+ * Schedule: Daily at 3:00 AM EST (8:00 AM UTC)
  *
  * Environment variables:
  * - MONGODB_URI: Dev/test database connection string
@@ -204,10 +204,10 @@ async function mongoBackupHandler(myTimer, context) {
     return results;
 }
 
-// Timer trigger: runs daily at 3:00 AM UTC
+// Timer trigger: runs daily at 3:00 AM EST (8:00 AM UTC)
 // CRON format: second minute hour day month weekday
 app.timer('Backup_MongoDB', {
-    schedule: '0 0 3 * * *',
+    schedule: '0 0 8 * * *',
     handler: mongoBackupHandler
 });
 
