@@ -18,8 +18,8 @@ Backups are stored in Azure Blob Storage with tiered retention:
 
 | Backup | Schedule | Container |
 |--------|----------|-----------|
-| MongoDB | Daily 3:00 AM UTC | `mongodb-backups` |
-| Firebase Auth | Daily 3:15 AM UTC | `firebase-backups` |
+| MongoDB | Daily 3:00 AM EST (8:00 UTC) | `mongodb-backups` |
+| Firebase Auth | Daily 3:15 AM EST (8:15 UTC) | `firebase-backups` |
 
 ---
 
@@ -27,14 +27,14 @@ Backups are stored in Azure Blob Storage with tiered retention:
 
 ```
 mongodb-backups/
-  ├── 2026-02-09T03-00-00_TangoTiempo.json.gz
-  ├── 2026-02-09T03-00-00_TangoTiempoProd.json.gz
-  ├── 2026-02-08T03-00-00_TangoTiempo.json.gz
+  ├── 2026-02-09T08-00-00_TangoTiempo.json.gz
+  ├── 2026-02-09T08-00-00_TangoTiempoProd.json.gz
+  ├── 2026-02-08T08-00-00_TangoTiempo.json.gz
   └── ...
 
 firebase-backups/
-  ├── 2026-02-09T03-15-00_FirebaseAuth.json.gz
-  ├── 2026-02-08T03-15-00_FirebaseAuth.json.gz
+  ├── 2026-02-09T08-15-00_FirebaseAuth.json.gz
+  ├── 2026-02-08T08-15-00_FirebaseAuth.json.gz
   └── ...
 ```
 
@@ -81,7 +81,7 @@ curl -X GET "https://calendarbeaf-prod.azurewebsites.net/api/admin/backup/fireba
 # Download specific backup
 az storage blob download \
   --container-name mongodb-backups \
-  --name "2026-02-09T03-00-00_TangoTiempoProd.json.gz" \
+  --name "2026-02-09T08-00-00_TangoTiempoProd.json.gz" \
   --file ./backup.json.gz \
   --account-name <storage-account>
 
@@ -261,7 +261,7 @@ node restore-mongodb-document.js ./backup.json events 6751f57e2e74d97609e7dca0
 ```bash
 az storage blob download \
   --container-name firebase-backups \
-  --name "2026-02-09T03-15-00_FirebaseAuth.json.gz" \
+  --name "2026-02-09T08-15-00_FirebaseAuth.json.gz" \
   --file ./firebase-backup.json.gz \
   --account-name <storage-account>
 
