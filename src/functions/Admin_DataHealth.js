@@ -268,10 +268,10 @@ async function dataHealthHandler(request, context) {
     }
 }
 
-// Register endpoint with function-level auth
+// Register endpoint - anonymous for local dev, protected by Azure AD in production
 app.http('Admin_DataHealth', {
     methods: ['GET'],
-    authLevel: 'function',
-    route: 'admin/data-health',
+    authLevel: 'anonymous',
+    route: 'admin/ops/data-health',
     handler: dataHealthHandler
 });

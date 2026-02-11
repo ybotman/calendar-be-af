@@ -163,10 +163,10 @@ async function userActivityHandler(request, context) {
     }
 }
 
-// Register endpoint with function-level auth
+// Register endpoint - anonymous for local dev, protected by Azure AD in production
 app.http('Admin_UserActivity', {
     methods: ['GET'],
-    authLevel: 'function',
-    route: 'admin/user-activity',
+    authLevel: 'anonymous',
+    route: 'admin/ops/user-activity',
     handler: userActivityHandler
 });
