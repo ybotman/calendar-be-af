@@ -139,6 +139,7 @@ async function eventsRACreateHandler(request, context) {
         }
 
         // Step 6: Build event document with RA audit trail
+        const ownerObjId = new ObjectId(ownerOrganizerID);
         const eventData = {
             appId,
             title,
@@ -146,13 +147,15 @@ async function eventsRACreateHandler(request, context) {
             endDate: endDate ? new Date(endDate) : undefined,
             description: description || '',
             cost: cost || '',
-            // Organizer info (OLD structure for compatibility)
-            ownerOrganizerID: new ObjectId(ownerOrganizerID),
+            // Organizer info
+            ownerOrganizerID: ownerObjId,
+            authorOrganizerID: ownerObjId, // Immutable original creator
             ownerOrganizerName: organizer.fullName || organizer.name || 'Event Organizer',
             ownerOrganizerShortName: organizer.shortName || 'ORG',
             // Venue info
             venueID: new ObjectId(venueID),
             locationName: venue.name,
+            venueTimezone: venue.timezone, // From venue document
             // Location data from venue
             masteredRegionId: venue.masteredRegionId,
             masteredDivisionId: venue.masteredDivisionId,
@@ -166,6 +169,7 @@ async function eventsRACreateHandler(request, context) {
             },
             // Default values
             isActive: true,
+            isAllDay: false,
             isDiscovered: false,
             isOwnerManaged: true,
             expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
@@ -313,6 +317,7 @@ async function eventsRAUpdateHandler(request, context) {
             // Update location data from new venue
             updateData.venueID = new ObjectId(updateData.venueID);
             updateData.locationName = newVenue.name;
+            updateData.venueTimezone = newVenue.timezone;
             updateData.masteredRegionId = newVenue.masteredRegionId;
             updateData.masteredDivisionId = newVenue.masteredDivisionId;
             updateData.masteredCityId = newVenue.masteredCityId;

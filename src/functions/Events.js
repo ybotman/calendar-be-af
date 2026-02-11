@@ -878,16 +878,12 @@ async function eventsCreateHandler(request, context) {
         // Populate venueTimezone from venue document (Express parity)
         const venueIdForTz = requestBody.venueID || requestBody.venueId;
         if (venueIdForTz && !newEvent.venueTimezone) {
-            try {
-                const venuesCollection = db.collection('venues');
-                const venue = await venuesCollection.findOne({ _id: new ObjectId(venueIdForTz) });
-                if (venue && venue.timezone) {
-                    newEvent.venueTimezone = venue.timezone;
-                } else {
-                    newEvent.venueTimezone = 'America/New_York';
-                }
-            } catch (_err) {
-                newEvent.venueTimezone = 'America/New_York';
+            const venuesCollection = db.collection('venues');
+            const venue = await venuesCollection.findOne({ _id: new ObjectId(venueIdForTz) });
+            if (venue && venue.timezone) {
+                newEvent.venueTimezone = venue.timezone;
+            } else {
+                context.warn(`Venue ${venueIdForTz} not found or missing timezone - venueTimezone not set`);
             }
         }
 
@@ -1025,16 +1021,12 @@ async function eventsUpdateHandler(request, context) {
         // If venueID changed, look up venue timezone and include in update
         const updatedVenueId = requestBody.venueID || requestBody.venueId;
         if (updatedVenueId) {
-            try {
-                const venuesCollection = db.collection('venues');
-                const venue = await venuesCollection.findOne({ _id: new ObjectId(updatedVenueId) });
-                if (venue && venue.timezone) {
-                    updateDoc.$set.venueTimezone = venue.timezone;
-                } else {
-                    updateDoc.$set.venueTimezone = 'America/New_York';
-                }
-            } catch (_err) {
-                updateDoc.$set.venueTimezone = 'America/New_York';
+            const venuesCollection = db.collection('venues');
+            const venue = await venuesCollection.findOne({ _id: new ObjectId(updatedVenueId) });
+            if (venue && venue.timezone) {
+                updateDoc.$set.venueTimezone = venue.timezone;
+            } else {
+                context.warn(`Venue ${updatedVenueId} not found or missing timezone - venueTimezone not updated`);
             }
         }
 
