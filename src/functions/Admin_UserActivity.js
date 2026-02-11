@@ -48,7 +48,7 @@ async function userActivityHandler(request, context) {
         const staleThreshold = new Date(now.getTime() - (staleDays * 24 * 60 * 60 * 1000));
 
         // Get users with their login data (uses $lookup to join userlogintrack)
-        const usersCollection = db.collection('users');
+        const usersCollection = db.collection('Users');
 
         // Aggregate users with their last login
         const pipeline = [
