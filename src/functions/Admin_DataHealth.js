@@ -105,7 +105,7 @@ async function dataHealthHandler(request, context) {
 
         // 2. Venues missing geocoding
         context.log('Checking: Venues missing geocoding...');
-        results.venuesMissingGeocoding = await db.collection('Venues').find({
+        results.venuesMissingGeocoding = await db.collection('venues').find({
             appId,
             isActive: true,
             $or: [
@@ -123,7 +123,7 @@ async function dataHealthHandler(request, context) {
 
         // 3. Venues missing masteredCityId
         context.log('Checking: Venues missing masteredCityId...');
-        results.venuesMissingMasteredCity = await db.collection('Venues').find({
+        results.venuesMissingMasteredCity = await db.collection('venues').find({
             appId,
             isActive: true,
             $or: [

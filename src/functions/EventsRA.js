@@ -7,6 +7,39 @@ const { requireRegionalAdmin, checkRAPermission, forbiddenResponse } = require('
 const { unauthorizedResponse } = require('../middleware/firebaseAuth');
 
 // ============================================
+// HELPER: Convert string IDs to ObjectId
+// ============================================
+/**
+ * Convert string ID fields to MongoDB ObjectId
+ * @param {object} data - Event data object
+ */
+function convertIdFields(data) {
+    const idFields = [
+        'ownerOrganizerID',
+        'authorOrganizerID',
+        'grantedOrganizerID',
+        'alternateOrganizerID',
+        'venueID',
+        'categoryFirstId',
+        'categorySecondId',
+        'categoryThirdId',
+        'masteredCityId',
+        'masteredDivisionId',
+        'masteredRegionId'
+    ];
+
+    for (const field of idFields) {
+        if (data[field] && typeof data[field] === 'string') {
+            try {
+                data[field] = new ObjectId(data[field]);
+            } catch (err) {
+                // Invalid ObjectId string - leave as-is
+            }
+        }
+    }
+}
+
+// ============================================
 // FUNCTION 1: POST /api/events/ra/create
 // ============================================
 
@@ -66,7 +99,7 @@ async function eventsRACreateHandler(request, context) {
 
         const db = mongoClient.db();
         const eventsCollection = db.collection('events');
-        const venuesCollection = db.collection('Venues');
+        const venuesCollection = db.collection('venues');
         const organizersCollection = db.collection('organizers');
 
         // Step 4: Validate venue exists and check permissions
@@ -210,10 +243,15 @@ async function eventsRAUpdateHandler(request, context) {
         const updateData = { ...requestBody };
 
         // Remove fields that RAs cannot update
-        delete updateData.ownerOrganizerID;
+        // Note: ownerOrganizerID CAN be changed by RA (to reassign event ownership)
+        // authorOrganizerID is immutable (original creator audit trail)
+        delete updateData.authorOrganizerID;
         delete updateData.appId;
         delete updateData.createdByRA;
         delete updateData._id;
+
+        // Convert string IDs to ObjectId
+        convertIdFields(updateData);
 
         // Step 2: Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -226,7 +264,7 @@ async function eventsRAUpdateHandler(request, context) {
 
         const db = mongoClient.db();
         const eventsCollection = db.collection('events');
-        const venuesCollection = db.collection('Venues');
+        const venuesCollection = db.collection('venues');
 
         // Step 3: Find event and check permissions
         const event = await eventsCollection.findOne({ _id: new ObjectId(eventId) });

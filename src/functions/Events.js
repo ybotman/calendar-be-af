@@ -18,6 +18,7 @@ const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 function convertIdFields(data) {
     const idFields = [
         'ownerOrganizerID',
+        'authorOrganizerID',
         'grantedOrganizerID',
         'alternateOrganizerID',
         'venueID',
@@ -70,6 +71,7 @@ function convertIdFields(data) {
  * - masteredCityName: Filter by city name (string equality)
  * - cityIds: Filter by city ObjectIds (comma-separated or single)
  * - organizerId: Filter by organizer ownership (matches owner, granted, or alternate)
+ * - authorOrganizerId: Filter by original event creator (immutable field)
  * - useGeoSearch: Enable geo search ("true") — requires lat, lng
  * - lat: Latitude for geo search (-90 to 90)
  * - lng: Longitude for geo search (-180 to 180)
@@ -112,6 +114,8 @@ async function eventsGetHandler(request, context) {
 
     // Organizer ownership filter (for RO filtering their own events)
     const organizerId = request.query.get('organizerId');
+    // Author organizer filter (original creator - immutable)
+    const authorOrganizerId = request.query.get('authorOrganizerId');
 
     // Geo search params
     const useGeoSearch = request.query.get('useGeoSearch');
@@ -139,6 +143,7 @@ async function eventsGetHandler(request, context) {
         masteredCityName,
         cityIds,
         organizerId,
+        authorOrganizerId,
         useGeoSearch,
         lat,
         lng,
@@ -290,6 +295,20 @@ async function eventsGetHandler(request, context) {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: 'Invalid organizerId format' })
+                };
+            }
+        }
+
+        // Add author organizer filter if provided (immutable original creator)
+        if (authorOrganizerId) {
+            try {
+                baseFilter.authorOrganizerID = new ObjectId(authorOrganizerId);
+            } catch (err) {
+                context.log(`Invalid authorOrganizerId format: ${authorOrganizerId}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Invalid authorOrganizerId format' })
                 };
             }
         }
@@ -850,11 +869,17 @@ async function eventsCreateHandler(request, context) {
         // Convert string IDs to ObjectId (frontend sends IDs as strings in JSON)
         convertIdFields(newEvent);
 
+        // Set authorOrganizerID to ownerOrganizerID at creation (immutable original creator)
+        // This field should never change, even if ownerOrganizerID is reassigned later
+        if (newEvent.ownerOrganizerID && !newEvent.authorOrganizerID) {
+            newEvent.authorOrganizerID = newEvent.ownerOrganizerID;
+        }
+
         // Populate venueTimezone from venue document (Express parity)
         const venueIdForTz = requestBody.venueID || requestBody.venueId;
         if (venueIdForTz && !newEvent.venueTimezone) {
             try {
-                const venuesCollection = db.collection('Venues');
+                const venuesCollection = db.collection('venues');
                 const venue = await venuesCollection.findOne({ _id: new ObjectId(venueIdForTz) });
                 if (venue && venue.timezone) {
                     newEvent.venueTimezone = venue.timezone;
@@ -877,7 +902,7 @@ async function eventsCreateHandler(request, context) {
         const venueId = newEvent.venueID || newEvent.venueId;
         if (venueId) {
             try {
-                const venuesCollection = db.collection('Venues');
+                const venuesCollection = db.collection('venues');
                 const venueObjectId = typeof venueId === 'string'
                     ? new ObjectId(venueId)
                     : venueId;
@@ -1001,7 +1026,7 @@ async function eventsUpdateHandler(request, context) {
         const updatedVenueId = requestBody.venueID || requestBody.venueId;
         if (updatedVenueId) {
             try {
-                const venuesCollection = db.collection('Venues');
+                const venuesCollection = db.collection('venues');
                 const venue = await venuesCollection.findOne({ _id: new ObjectId(updatedVenueId) });
                 if (venue && venue.timezone) {
                     updateDoc.$set.venueTimezone = venue.timezone;
