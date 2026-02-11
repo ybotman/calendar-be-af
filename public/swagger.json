@@ -651,6 +651,94 @@
         }
       }
     },
+    "/api/events": {
+      "get": {
+        "summary": "List events with filtering",
+        "description": "List all events with optional filtering by date, location, organizer, category, and geo search.",
+        "tags": ["Events"],
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "description": "Filter events from date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "description": "Filter events to date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "organizerId",
+            "in": "query",
+            "description": "Filter by organizer (matches owner, granted, or alternate)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "authorOrganizerId",
+            "in": "query",
+            "description": "Filter by original event creator (immutable field)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Filter by venue ObjectId",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "description": "Filter by category ObjectId",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cityIds",
+            "in": "query",
+            "description": "Filter by city ObjectIds (comma-separated)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Results per page (default: 100, max: 500)",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default: 1)",
+            "schema": { "type": "integer", "default": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "type": "object" } },
+                    "pagination": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing or invalid parameters" }
+        }
+      }
+    },
     "/api/events/count": {
       "get": {
         "summary": "Count events by owner",
