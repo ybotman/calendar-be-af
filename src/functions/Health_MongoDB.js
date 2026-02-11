@@ -77,7 +77,7 @@ async function mongoHealthHandler(request, context) {
   } catch (error) {
     const duration = Date.now() - startTime;
 
-    context.log.error('MongoDB health check failed:', error.message);
+    context.error('MongoDB health check failed:', error.message);
 
     return {
       status: 503,
@@ -97,7 +97,7 @@ async function mongoHealthHandler(request, context) {
       try {
         await client.close();
       } catch (closeError) {
-        context.log.error('Error closing MongoDB connection:', closeError.message);
+        context.error('Error closing MongoDB connection:', closeError.message);
       }
     }
   }

@@ -236,7 +236,7 @@ async function visitorTrackHandler(request, context) {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }
             } catch (geoError) {
-                context.log.error('Error fetching ipinfo.io:', geoError.message);
+                context.error('Error fetching ipinfo.io:', geoError.message);
                 // Continue without ipinfo data
             }
         } else {
