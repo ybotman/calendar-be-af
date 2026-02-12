@@ -155,7 +155,7 @@ async function dataHealthHandler(request, context) {
 
         // 5. Users with invalid organizerId (organizerId that doesn't exist)
         context.log('Checking: Users with invalid organizerId...');
-        const usersWithOrganizerId = await db.collection('Users').find({
+        const usersWithOrganizerId = await db.collection('userlogins').find({
             appId,
             organizerId: { $exists: true, $nin: [null, ''] }
         }).project({
