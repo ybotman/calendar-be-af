@@ -64,7 +64,12 @@ async function userActivityHandler(request, context) {
             {
                 $addFields: {
                     lastLogin: { $max: '$loginRecords.createdAt' },
-                    loginCount: { $size: '$loginRecords' }
+                    loginCount: { $size: '$loginRecords' },
+                    // Flatten nested firebaseUserInfo fields
+                    email: '$firebaseUserInfo.email',
+                    displayName: '$firebaseUserInfo.displayName',
+                    // Get organizerId from regionalOrganizerInfo
+                    organizerId: '$regionalOrganizerInfo.organizerId'
                 }
             },
             {
@@ -73,7 +78,7 @@ async function userActivityHandler(request, context) {
                     email: 1,
                     displayName: 1,
                     organizerId: 1,
-                    roleNames: 1,
+                    roleIds: 1,
                     lastLogin: 1,
                     loginCount: 1,
                     createdAt: 1
