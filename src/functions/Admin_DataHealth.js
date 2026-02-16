@@ -3,6 +3,24 @@
 
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
+const admin = require('firebase-admin');
+
+// Initialize Firebase Admin if not already initialized
+function getFirebaseAdmin() {
+    if (admin.apps.length === 0) {
+        const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+        if (serviceAccount) {
+            admin.initializeApp({
+                credential: admin.credential.cert(JSON.parse(serviceAccount))
+            });
+        } else {
+            admin.initializeApp({
+                credential: admin.credential.applicationDefault()
+            });
+        }
+    }
+    return admin;
+}
 
 // Cache for data health results (5 minute TTL)
 let healthCache = null;
@@ -27,6 +45,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  *   venuesMissingMasteredCity: [...],
  *   organizersNotLinkedToUser: [...],
  *   usersWithInvalidOrganizerId: [...],
+ *   firebaseUsersWithoutUserlogin: [...],
  *   expiredRecurringEventsStillActive: [...],
  *   eventsInPastStillActive: [...],
  *   summary: { totalIssues, criticalCount, warningCount },
@@ -75,6 +94,7 @@ async function dataHealthHandler(request, context) {
             venuesMissingMasteredCity: [],
             organizersNotLinkedToUser: [],
             usersWithInvalidOrganizerId: [],
+            firebaseUsersWithoutUserlogin: [],
             expiredRecurringEventsStillActive: [],
             eventsInPastStillActive: [],
             summary: {
@@ -189,7 +209,68 @@ async function dataHealthHandler(request, context) {
             if (results.usersWithInvalidOrganizerId.length >= limit) break;
         }
 
-        // 6. Expired recurring events still active
+        // 6. Firebase users without a userlogins record
+        context.log('Checking: Firebase users without userlogins...');
+        try {
+            const firebaseAdmin = getFirebaseAdmin();
+            const auth = firebaseAdmin.auth();
+
+            // Get all Firebase user UIDs
+            const firebaseUids = new Set();
+            let nextPageToken;
+            do {
+                const listUsersResult = await auth.listUsers(1000, nextPageToken);
+                for (const userRecord of listUsersResult.users) {
+                    // Only include non-disabled users
+                    if (!userRecord.disabled) {
+                        firebaseUids.add(userRecord.uid);
+                    }
+                }
+                nextPageToken = listUsersResult.pageToken;
+            } while (nextPageToken);
+
+            context.log(`  Found ${firebaseUids.size} active Firebase users`);
+
+            // Get all userlogins firebaseUserIds for this appId
+            const userlogins = await db.collection('userlogins').find({
+                appId,
+                firebaseUserId: { $exists: true, $nin: [null, ''] }
+            }).project({ firebaseUserId: 1 }).toArray();
+
+            const userloginUids = new Set(userlogins.map(u => u.firebaseUserId));
+            context.log(`  Found ${userloginUids.size} userlogins records`);
+
+            // Find Firebase users without a userlogins record
+            for (const uid of firebaseUids) {
+                if (!userloginUids.has(uid)) {
+                    // Get user details from Firebase
+                    try {
+                        const userRecord = await auth.getUser(uid);
+                        results.firebaseUsersWithoutUserlogin.push({
+                            firebaseUid: uid,
+                            email: userRecord.email || null,
+                            displayName: userRecord.displayName || null,
+                            createdAt: userRecord.metadata.creationTime,
+                            lastSignIn: userRecord.metadata.lastSignInTime
+                        });
+                    } catch (e) {
+                        results.firebaseUsersWithoutUserlogin.push({
+                            firebaseUid: uid,
+                            email: null,
+                            displayName: null,
+                            error: 'Could not fetch user details'
+                        });
+                    }
+                    if (results.firebaseUsersWithoutUserlogin.length >= limit) break;
+                }
+            }
+            context.log(`  Found ${results.firebaseUsersWithoutUserlogin.length} Firebase users without userlogins`);
+        } catch (firebaseError) {
+            context.warn(`Firebase check failed: ${firebaseError.message}`);
+            // Don't fail the whole health check if Firebase is unavailable
+        }
+
+        // 7. Expired recurring events still active
         context.log('Checking: Expired recurring events still active...');
         results.expiredRecurringEventsStillActive = await db.collection('events').find({
             appId,
@@ -203,7 +284,7 @@ async function dataHealthHandler(request, context) {
             ownerOrganizerID: 1
         }).limit(limit).toArray();
 
-        // 7. Past events still active (non-recurring)
+        // 8. Past events still active (non-recurring)
         context.log('Checking: Past events still active...');
         results.eventsInPastStillActive = await db.collection('events').find({
             appId,
@@ -224,12 +305,14 @@ async function dataHealthHandler(request, context) {
             results.venuesMissingMasteredCity.length +
             results.organizersNotLinkedToUser.length +
             results.usersWithInvalidOrganizerId.length +
+            results.firebaseUsersWithoutUserlogin.length +
             results.expiredRecurringEventsStillActive.length +
             results.eventsInPastStillActive.length;
 
         // Critical: data integrity issues
         results.summary.criticalCount =
             results.usersWithInvalidOrganizerId.length +
+            results.firebaseUsersWithoutUserlogin.length +
             results.eventsWithoutVenue.length;
 
         // Warning: data quality issues
