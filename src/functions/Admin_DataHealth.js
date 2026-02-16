@@ -43,11 +43,14 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  *   eventsWithoutVenue: [...],
  *   venuesMissingGeocoding: [...],
  *   venuesMissingMasteredCity: [...],
+ *   eventsUsingInactiveVenue: [...],
+ *   eventsWithBadVenueDenorm: [...],
  *   organizersNotLinkedToUser: [...],
  *   usersWithInvalidOrganizerId: [...],
  *   firebaseUsersWithoutUserlogin: [...],
  *   expiredRecurringEventsStillActive: [...],
  *   eventsInPastStillActive: [...],
+ *   venueQualityMetrics: { totalVenues, withMasteredCity, withGeocoding, pctMasteredCity, pctGeocoding },
  *   summary: { totalIssues, criticalCount, warningCount },
  *   cached: boolean,
  *   cachedAt: ISO string
@@ -92,11 +95,20 @@ async function dataHealthHandler(request, context) {
             eventsWithoutVenue: [],
             venuesMissingGeocoding: [],
             venuesMissingMasteredCity: [],
+            eventsUsingInactiveVenue: [],
+            eventsWithBadVenueDenorm: [],
             organizersNotLinkedToUser: [],
             usersWithInvalidOrganizerId: [],
             firebaseUsersWithoutUserlogin: [],
             expiredRecurringEventsStillActive: [],
             eventsInPastStillActive: [],
+            venueQualityMetrics: {
+                totalVenues: 0,
+                withMasteredCity: 0,
+                withGeocoding: 0,
+                pctMasteredCity: 0,
+                pctGeocoding: 0
+            },
             summary: {
                 totalIssues: 0,
                 criticalCount: 0,
@@ -156,6 +168,145 @@ async function dataHealthHandler(request, context) {
             city: 1,
             state: 1
         }).limit(limit).toArray();
+
+        // 3b. Venue quality metrics (% with masteredCity and geocoding)
+        context.log('Calculating: Venue quality metrics...');
+        const totalVenues = await db.collection('venues').countDocuments({ appId, isActive: true });
+        const venuesWithMasteredCity = await db.collection('venues').countDocuments({
+            appId,
+            isActive: true,
+            masteredCityId: { $exists: true, $nin: [null, ''] }
+        });
+        const venuesWithGeocoding = await db.collection('venues').countDocuments({
+            appId,
+            isActive: true,
+            'geolocation.coordinates.0': { $ne: 0 },
+            'geolocation.coordinates.1': { $ne: 0 }
+        });
+        results.venueQualityMetrics = {
+            totalVenues,
+            withMasteredCity: venuesWithMasteredCity,
+            withGeocoding: venuesWithGeocoding,
+            pctMasteredCity: totalVenues > 0 ? Math.round((venuesWithMasteredCity / totalVenues) * 100) : 0,
+            pctGeocoding: totalVenues > 0 ? Math.round((venuesWithGeocoding / totalVenues) * 100) : 0
+        };
+        context.log(`  Venue quality: ${results.venueQualityMetrics.pctMasteredCity}% mastered, ${results.venueQualityMetrics.pctGeocoding}% geocoded`);
+
+        // 3c. Events using inactive or unapproved venues
+        context.log('Checking: Events using inactive/unapproved venues...');
+        const eventsWithVenue = await db.collection('events').find({
+            appId,
+            isActive: true,
+            venueId: { $exists: true, $nin: [null, ''] }
+        }).project({
+            _id: 1,
+            title: 1,
+            venueId: 1,
+            startDateTime: 1
+        }).limit(limit * 3).toArray();
+
+        // Build set of valid venue IDs (active AND approved)
+        const validVenueIds = new Set();
+        const allVenues = await db.collection('venues').find({
+            appId
+        }).project({ _id: 1, isActive: 1, isApproved: 1, name: 1 }).toArray();
+
+        const venueMap = new Map();
+        for (const v of allVenues) {
+            venueMap.set(v._id.toString(), v);
+            if (v.isActive && v.isApproved !== false) {
+                validVenueIds.add(v._id.toString());
+            }
+        }
+
+        for (const event of eventsWithVenue) {
+            const venueIdStr = event.venueId?.toString();
+            if (venueIdStr && !validVenueIds.has(venueIdStr)) {
+                const venue = venueMap.get(venueIdStr);
+                results.eventsUsingInactiveVenue.push({
+                    _id: event._id,
+                    title: event.title,
+                    startDateTime: event.startDateTime,
+                    venueId: event.venueId,
+                    venueName: venue?.name || 'Unknown',
+                    venueIsActive: venue?.isActive ?? 'N/A',
+                    venueIsApproved: venue?.isApproved ?? 'N/A'
+                });
+            }
+            if (results.eventsUsingInactiveVenue.length >= limit) break;
+        }
+
+        // 3d. Events with bad venue denormalization (city/state/coords don't match venue)
+        context.log('Checking: Events with bad venue denormalization...');
+        const venuesForDenorm = await db.collection('venues').find({
+            appId,
+            isActive: true
+        }).project({
+            _id: 1,
+            name: 1,
+            city: 1,
+            state: 1,
+            'geolocation.coordinates': 1
+        }).toArray();
+
+        const venueDenormMap = new Map();
+        for (const v of venuesForDenorm) {
+            venueDenormMap.set(v._id.toString(), v);
+        }
+
+        const eventsToCheckDenorm = await db.collection('events').find({
+            appId,
+            isActive: true,
+            venueId: { $exists: true, $nin: [null, ''] }
+        }).project({
+            _id: 1,
+            title: 1,
+            venueId: 1,
+            startDateTime: 1,
+            'denormalizedEventInfo.city': 1,
+            'denormalizedEventInfo.state': 1,
+            'denormalizedEventInfo.lat': 1,
+            'denormalizedEventInfo.lng': 1
+        }).limit(limit * 3).toArray();
+
+        for (const event of eventsToCheckDenorm) {
+            const venueIdStr = event.venueId?.toString();
+            const venue = venueDenormMap.get(venueIdStr);
+            if (!venue) continue;
+
+            const denorm = event.denormalizedEventInfo || {};
+            const issues = [];
+
+            // Check city mismatch
+            if (venue.city && denorm.city !== venue.city) {
+                issues.push(`city: "${denorm.city || 'missing'}" vs "${venue.city}"`);
+            }
+            // Check state mismatch
+            if (venue.state && denorm.state !== venue.state) {
+                issues.push(`state: "${denorm.state || 'missing'}" vs "${venue.state}"`);
+            }
+            // Check coordinates mismatch (if venue has coords)
+            const venueCoords = venue.geolocation?.coordinates;
+            if (venueCoords && venueCoords[0] !== 0 && venueCoords[1] !== 0) {
+                if (!denorm.lat || !denorm.lng ||
+                    Math.abs(denorm.lng - venueCoords[0]) > 0.0001 ||
+                    Math.abs(denorm.lat - venueCoords[1]) > 0.0001) {
+                    issues.push(`coords mismatch`);
+                }
+            }
+
+            if (issues.length > 0) {
+                results.eventsWithBadVenueDenorm.push({
+                    _id: event._id,
+                    title: event.title,
+                    startDateTime: event.startDateTime,
+                    venueId: event.venueId,
+                    venueName: venue.name,
+                    issues: issues.join(', ')
+                });
+            }
+            if (results.eventsWithBadVenueDenorm.length >= limit) break;
+        }
 
         // 4. Organizers not linked to a user
         context.log('Checking: Organizers not linked to user...');
@@ -303,6 +454,8 @@ async function dataHealthHandler(request, context) {
             results.eventsWithoutVenue.length +
             results.venuesMissingGeocoding.length +
             results.venuesMissingMasteredCity.length +
+            results.eventsUsingInactiveVenue.length +
+            results.eventsWithBadVenueDenorm.length +
             results.organizersNotLinkedToUser.length +
             results.usersWithInvalidOrganizerId.length +
             results.firebaseUsersWithoutUserlogin.length +
@@ -313,6 +466,7 @@ async function dataHealthHandler(request, context) {
         results.summary.criticalCount =
             results.usersWithInvalidOrganizerId.length +
             results.firebaseUsersWithoutUserlogin.length +
+            results.eventsUsingInactiveVenue.length +
             results.eventsWithoutVenue.length;
 
         // Warning: data quality issues
