@@ -1,95 +1,64 @@
 # PROD Outage Investigation - 2026-02-17
 
-## Timeline of Events
-
-### What Was Attempted
-Tried to update PROD with THREE changes at once:
-1. **URI change** - MONGODB_URI pointing to TangoTiempoProd database
-2. **Variable change** - related configuration
-3. **Function change** - code changes (Users → userlogins, Firebase integration)
-
-### What Happened
-- PROD went down after the combined changes
-- Frontend showed "Event Not Found" for existing events
-- Azure Functions returning 503 errors
+## Timeline
+- Attempted to update PROD with URI change + variable change + function change (all at once)
+- PROD went down, returning 503 errors
 - "Sync Web Apps Function Triggers" failing with BadRequest/Forbidden
 
-### Investigation Results
+## Key Finding: AZURE IS WORKING
 
-**Hypothesis 1: Code corruption** - RULED OUT
-- Created brand new function app CalendarAF-TEST
-- Deployed v1.21.0 (same version working on CalendarBEAF-TEST)
-- CalendarAF-TEST ALSO FAILS with 503
+### Minimal Function Test
+Created minimal "hello world" function using `func init` and `func new`:
+- Deployed to CalendarAF-Test2
+- **Trigger sync SUCCEEDED**
+- **Function runs correctly**: `curl .../api/hello` → "Hello, world!"
 
-**Hypothesis 2: Storage account issue** - CONFIRMED
-| App | Storage Account | Status |
-|-----|-----------------|--------|
-| CalendarBEAF-TEST | calendarbeaf8fd0 | ✅ WORKS |
-| CalendarBEAF-PROD | calendarbeaf9a27 | ❌ FAILS |
-| CalendarAF-PROD | calendarbeaf9a27 | ❌ FAILS |
-| CalendarAF-TEST (new) | calendarbeaf9a27 | ❌ FAILS |
+### Conclusion
+**Azure Functions infrastructure is working.** The problem is something in our codebase that causes trigger sync to fail.
 
-**Root Cause**: Storage account `calendarbeaf9a27` is broken/corrupted.
-- All function apps using this storage account fail
-- Same code works on apps using `calendarbeaf8fd0`
+## Theories
 
-### Storage Account Details
-- **Working**: `calendarbeaf8fd0` (used by CalendarBEAF-TEST)
-- **Broken**: `calendarbeaf9a27` (used by PROD apps)
+### 1. Large Package Size (Most Likely)
+- Our app: 182MB
+- Minimal app: 215KB
+- Could be hitting limits/timeout during sync
 
-Checked on calendarbeaf9a27:
-- Keys match what's in function app config ✓
-- Networking: "Enabled from all networks" ✓
-- Allow storage account key access: Enabled ✓
-- Containers exist: azure-webjobs-hosts, azure-webjobs-secrets ✓
+### 2. Specific Function Causing Failure
+- One of our ~30+ functions has error
+- Trigger sync fails trying to register that function
 
-Despite all settings looking correct, Azure Functions cannot sync triggers.
+### 3. Firebase Admin SDK (Recent Change)
+- Recent commits added Firebase Admin SDK to Admin_DataHealth.js
+- May fail during function discovery/registration
+- If FIREBASE_SERVICE_ACCOUNT_JSON not set, could cause issues
 
-## Recovery Options
+### 4. Dependencies Conflict
+- npm package incompatible with Azure Functions v4
 
-### Option A: Quick Recovery (Recommended)
-Create new PROD function app using the WORKING storage account:
+## Recent Changes (Prime Suspects)
+- `src/functions/Admin_DataHealth.js` - Added Firebase Admin SDK
+- `src/functions/Admin_UserActivity.js` - Changed Users → userlogins
 
-1. Create new function app `CalendarBEAF-PROD2`
-2. Use storage account `calendarbeaf8fd0`
-3. Deploy v1.21.0 code
-4. Copy environment variables from backup
-5. Point to correct database (TangoTiempo for now)
-6. Test
-7. Update DNS/frontend to use new app
+## Apps Status
+| App | Status | Notes |
+|-----|--------|-------|
+| CalendarBEAF-TEST | ✅ WORKS | Deployed Feb 12, not touched |
+| CalendarBEAF-PROD | ❌ 503 | New deployment fails |
+| CalendarAF-Test2 | ✅ WORKS | With minimal hello function |
+| CalendarAF-Test2 | ❌ FAILS | When deploying full codebase |
 
-### Option B: Fix Storage Account
-Investigate and fix `calendarbeaf9a27`:
-- Check Azure activity logs for recent changes
-- Look for soft-deleted content
-- Consider recreating storage account
-- Risk: Unknown time to diagnose
+## Error Pattern
+```
+Upload completed successfully.
+Deployment completed successfully.
+Syncing triggers... (retries 6x)
+Error calling sync triggers (BadRequest). Request ID = '0a5a90a1-8d38-4c05-ad8a-63b183d499af'
+```
 
-### Option C: Use Different Storage Account
-Update CalendarBEAF-PROD to use `calendarbeaf8fd0`:
-- Risk: May have file share conflicts
+## Next Steps
+1. **Revert recent commits** - Deploy version before Firebase changes
+2. **Binary search** - Deploy half functions to find failing one
+3. **Check function logs** - Look for startup errors in Azure Portal
 
-## Current State
-
-### Working
-- CalendarBEAF-TEST: https://calendarbeaf-test.azurewebsites.net ✅
-
-### Down
-- CalendarBEAF-PROD: https://calendarbeaf-prod.azurewebsites.net ❌
-- CalendarAF-PROD: https://calendaraf-prod.azurewebsites.net ❌
-- CalendarAF-TEST: https://calendaraf-test.azurewebsites.net ❌
-
-### Backups Available
-- `prod-settings-backup.json` - CalendarBEAF-PROD env vars
-- `test-settings-backup.json` - CalendarBEAF-TEST env vars
-
-### Git State
-- PROD branch has latest commits
-- v1.21.0 is known good (matches working TEST)
-- Recent commits added Firebase/userlogins changes (not yet validated)
-
-## Lessons Learned
-1. Never change URI + variables + code all at once
-2. Test database URI changes on TEST first
-3. Storage account issues can look like code issues
-4. Keep backups of function app settings
+## DO NOT
+- **DO NOT redeploy CalendarBEAF-TEST** - It's our only working app
