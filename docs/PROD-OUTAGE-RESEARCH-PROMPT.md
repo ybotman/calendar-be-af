@@ -350,26 +350,193 @@ az --version: Azure CLI 2.x
 
 ## Hypothesis Ranking
 
-1. **Firebase Admin SDK** (80% confidence)
-   - Code added `firebase-admin` require
-   - `applicationDefault()` may throw without GCP credentials
-   - Azure may execute this during function discovery
+1. **Firebase Admin SDK** (80% confidence) - **DISPROVEN**
+   - Tested firebase-admin in isolation - deploys fine
+   - NOT the root cause
 
-2. **Module-level code execution** (70% confidence)  
+2. **Module-level code execution** (70% confidence) - **CONFIRMED**
    - Azure scans/imports modules to discover functions
    - Some module throws during import
    - Blocks entire registration
 
-3. **Package size** (40% confidence)
-   - 182MB is large
-   - But it uploads fine, deployment succeeds
-   - Only trigger sync fails
+3. **Package size** (40% confidence) - **DISPROVEN**
+   - 1.7GB node_modules deploys successfully
+   - NOT the root cause
 
 4. **npm dependency drift** (30% confidence)
    - Working app has Feb 12 node_modules
    - New deploy gets latest packages
    - Breaking change in dependency
 
-5. **Azure regional issue** (10% confidence)
+5. **Azure regional issue** (10% confidence) - **DISPROVEN**
    - Minimal function works
-   - So infrastructure is functional
+   - Infrastructure is functional
+
+---
+
+## SESSION 2026-02-18: BREAKTHROUGH FINDINGS
+
+### Key Discovery
+**ONE or more function files cause ALL functions to fail registration.**
+
+When deploying all 40 function files → 0 functions register
+When deploying individual files → Most work fine
+
+### Binary Search Results
+
+#### ✅ FILES THAT WORK (Deployed Successfully)
+| File | Status | Notes |
+|------|--------|-------|
+| Admin_DataHealth.js | ✅ Works | No middleware |
+| Admin_UserActivity.js | ✅ Works | No middleware |
+| API_Docs.js | ✅ Works | 2 endpoints |
+| Health_Basic.js | ✅ Works | |
+| Health_Version.js | ✅ Works | |
+| Venues.js | ✅ Works | +5 endpoints |
+| EventsRA.js | ✅ Works | +7 endpoints |
+
+#### ❌ FILES THAT BREAK DEPLOYMENT
+| File | Status | Notes |
+|------|--------|-------|
+| Events.js | ❌ BREAKS | Core events - needs investigation |
+| EventsSummary.js | ❌ BREAKS | |
+| Categories.js | ❌ BREAKS | Uses middleware |
+| Analytics_VisitorHeatmap.js | ❌ BREAKS | Uses middleware |
+| Backup_Firebase.js | ❌ BREAKS | |
+
+### What We Learned
+
+1. **Firebase Admin SDK is NOT the culprit**
+   - Deployed with firebase-admin package (1.5GB node_modules) - works fine
+   - Admin_DataHealth.js (which uses Firebase) works when deployed alone
+
+2. **Middleware dependency chain is complex**
+   - middleware/index.js → requires lib/firebase-admin
+   - Files using `require('../middleware')` may fail if lib not present
+   - But even with lib+middleware copied, some files still break
+
+3. **The breaking files have something in common**
+   - Need to investigate what Events.js, EventsSummary.js have that breaks registration
+   - Possibly a syntax error, missing dependency, or runtime initialization error
+
+### Test Environment Used
+- CalendarAF-Test2 (clean Azure Function app)
+- /tmp/build-test (minimal package.json with key deps)
+- Deploy command: `func azure functionapp publish CalendarAF-Test2 --javascript`
+
+### Current Working Deployment (7 endpoints)
+```
+Admin_DataHealth - /api/ops/data-health
+Admin_UserActivity - /api/ops/user-activity
+API_Docs - /api/swagger.json, /api/docs
+Health_Basic - /api/health
+Health_Version - /api/version
+Venues - /api/venues (multiple endpoints)
+EventsRA - /api/events-ra (multiple endpoints)
+```
+
+### Next Steps
+1. Try SCM_DO_BUILD_DURING_DEPLOYMENT=true (native binary fix)
+2. Run func start --verbose in actual calendar-be-af to see exact error
+3. Check for undici version conflicts
+
+---
+
+## SESSION 2026-02-18 CONTINUED: ROOT CAUSE ANALYSIS
+
+### What We Confirmed
+1. **Events.js loads fine locally** with `node -e "require('./src/functions/Events')"` - no errors
+2. **Routes are valid** - duplicate `route: 'events'` entries are different HTTP methods (GET vs POST vs PUT vs DELETE)
+3. **No duplicate function names** - all `app.http('Name'...)` are unique
+
+### Entry Point Poisoning Theory (from Research)
+Azure Functions v4 has **all-or-nothing entry point loading**:
+- Worker calls `require()` on every function file during cold start
+- If ANY file throws, ALL functions fail to register
+- No per-file error isolation
+
+## 🎉 ROOT CAUSES FOUND AND FIXED
+
+### Root Cause #1: .gitignore blocking node_modules
+
+`.gitignore` line 46 has `node_modules/` which caused `func azure functionapp publish` to exclude ALL npm packages from the deployment archive!
+
+- Deployments were only 251KB (just source files)
+- No `@azure/functions` package = no function registration
+- **FIX**: Use `az functionapp deployment source config-zip` with manually created zip that includes node_modules
+
+### Root Cause #2: Reserved Route Conflict
+
+### **ROOT CAUSE CONFIRMED: Reserved Route Conflict**
+
+`func start --verbose` revealed the actual error:
+```
+The 'Backup_Firebase_List' function is in error: The specified route conflicts with one or more built in routes.
+```
+
+**Azure Functions reserves `/admin/*` for internal management endpoints.**
+
+These functions use conflicting routes:
+| File | Route | Status |
+|------|-------|--------|
+| Backup_Firebase.js | `admin/backup/firebase` | ❌ CONFLICTS |
+| Backup_Firebase.js | `admin/backup/firebase/list` | ❌ CONFLICTS |
+| Backup_MongoDB.js | `admin/backup/mongodb` | ❌ CONFLICTS |
+| Backup_MongoDB.js | `admin/backup/mongodb/list` | ❌ CONFLICTS |
+
+**FIX**: Change `admin/backup/*` routes to `ops/backup/*` or `backups/*`
+
+---
+
+### Top Theory: Native Binary Mismatch
+**Building on Mac (ARM64) → Deploying to Azure Windows (x64)**
+
+Native modules like `bson` (MongoDB driver) have platform-specific binaries.
+- Mac build produces ARM64 macOS binaries
+- Azure Windows expects x64 Windows binaries
+- Result: `require()` fails silently during function discovery
+
+**Fix**: Set these app settings BEFORE deploying:
+```bash
+az functionapp config appsettings set --name CalendarAF-Test2 --resource-group CalendarBEAF --settings \
+  SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+  WEBSITE_ENABLE_SYNC_UPDATE_SITE=true
+```
+This enables Oryx to run `npm install` server-side on Windows.
+
+### Why Working TEST Still Works
+CalendarBEAF-TEST was deployed Feb 12 with:
+- `SCM_DO_BUILD_DURING_DEPLOYMENT=true`
+- `WEBSITE_ENABLE_SYNC_UPDATE_SITE=true`
+- Server-side npm install produced correct Windows binaries
+
+### Files Status
+
+#### ✅ CONFIRMED WORKING (deployed together)
+| File | Status |
+|------|--------|
+| Admin_DataHealth.js | ✅ |
+| Admin_UserActivity.js | ✅ |
+| API_Docs.js | ✅ |
+| Health_Basic.js | ✅ |
+| Health_Version.js | ✅ |
+| Venues.js | ✅ |
+| EventsRA.js | ✅ |
+
+#### ❌ BREAKS DEPLOYMENT (need SCM_DO_BUILD fix)
+| File | Status | Notes |
+|------|--------|-------|
+| Events.js | ❌ | Loads locally, fails on Azure |
+| EventsSummary.js | ❌ | |
+| Categories.js | ❌ | Uses middleware |
+| Analytics_VisitorHeatmap.js | ❌ | Uses middleware |
+| Backup_Firebase.js | ❌ | |
+
+#### ⏳ NOT YET TESTED
+| File |
+|------|
+| Organizers.js |
+| UserLogins.js |
+| Roles.js |
+| MasteredLocations.js |
+| (and ~20 more)

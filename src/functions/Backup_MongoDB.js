@@ -215,7 +215,7 @@ app.timer('Backup_MongoDB', {
 app.http('Backup_MongoDB_Manual', {
     methods: ['POST'],
     authLevel: 'function',
-    route: 'admin/backup/mongodb',
+    route: 'ops/backup/mongodb',
     handler: async (request, context) => {
         context.log('Backup_MongoDB_Manual: Manual backup triggered');
 
@@ -233,7 +233,7 @@ app.http('Backup_MongoDB_Manual', {
 app.http('Backup_MongoDB_List', {
     methods: ['GET'],
     authLevel: 'function',
-    route: 'admin/backup/mongodb/list',
+    route: 'ops/backup/mongodb/list',
     handler: async (request, context) => {
         try {
             const backups = await listBackups(CONTAINER_NAME);
