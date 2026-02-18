@@ -193,7 +193,7 @@ app.timer('Backup_Firebase', {
 app.http('Backup_Firebase_Manual', {
     methods: ['POST'],
     authLevel: 'function',
-    route: 'admin/backup/firebase',
+    route: 'ops/backup/firebase',
     handler: async (request, context) => {
         context.log('Backup_Firebase_Manual: Manual backup triggered');
 
@@ -211,7 +211,7 @@ app.http('Backup_Firebase_Manual', {
 app.http('Backup_Firebase_List', {
     methods: ['GET'],
     authLevel: 'function',
-    route: 'admin/backup/firebase/list',
+    route: 'ops/backup/firebase/list',
     handler: async (request, context) => {
         try {
             const backups = await listBackups(CONTAINER_NAME);
