@@ -47,6 +47,55 @@ No manual export needed! The jira-config.sh script automatically:
 ./.ybotbot/jira-tools/jira-comment.sh CALBEAF-123 "Status update"
 ```
 
+## MongoDB Databases
+
+| Database | Environment | Usage |
+|----------|-------------|-------|
+| `TangoTiempo` | **TEST** | Testing/staging |
+| `TangoTiempoProd` | **PROD** | Production |
+| `TangoTiempoTest` | Legacy | Do not use |
+| `TangoTiempoIntg` | Integration | Rarely used |
+
+**Connection**: Same cluster, different database name in URI.
+
+## Database Sync Script (PROD → TEST)
+
+**Script**: `scripts/syncProdToTest.js`
+
+Copies data from `TangoTiempoProd` → `TangoTiempo` (TEST).
+- **Backs up** existing TEST collections (renames with timestamp)
+- Does NOT delete existing data
+
+### Usage:
+```bash
+# Dry run (preview only - ALWAYS DO THIS FIRST)
+node scripts/syncProdToTest.js --dry-run
+
+# Dimensional data only (default: categories, cities, venues, organizers, roles)
+node scripts/syncProdToTest.js
+
+# Include all events and users
+node scripts/syncProdToTest.js --include-transactional
+
+# Future events only
+node scripts/syncProdToTest.js --include-events --events-future
+
+# Date range
+node scripts/syncProdToTest.js --include-events --events-from 2026-01-01 --events-to 2026-12-31
+```
+
+### Collections synced by default:
+- `categories`, `masteredcities`, `masteredcountries`, `mastereddivisions`, `masteredregions`
+- `organizers`, `roles`, `venues`
+
+### Optional (with flags):
+- `events` (use `--include-events`)
+- `userlogins` (use `--include-users`)
+
+### Environment Variables (in local.settings.json):
+- `MONGODB_URI_PROD` - TangoTiempoProd connection
+- `MONGODB_URI_TEST` - TangoTiempo connection
+
 ## Autonomous Operation Mode
 
 **CRITICAL BEHAVIOR**: When user has "Accepts Edits" enabled:
@@ -291,160 +340,30 @@ END OF FILE: YBOTBOT-TEAM-DYNAMICS.md
 START OF FILE: YBOTBOT-BRANCH-AUTONOMY.md
 ================================================================================
 
-# Branch-Based Autonomy Configuration
+# Git Branching Strategy
 
-## Overview
+**See central documentation:**
+```
+/Users/tobybalsley/MyDocs/AppDev/MasterCalendar/docs/GIT-BRANCHING-STRATEGY.md
+```
 
-Your autonomy level changes based on the current git branch. This allows full autonomous development on DEVL while maintaining control on TEST and PROD.
+## Quick Reference (calendar-be-af)
 
-## Autonomy Levels by Branch
+| Branch | Mode | Agent Permissions |
+|--------|------|-------------------|
+| `DEVL` | Autonomous | Commit, push, create feature branches |
+| `TEST` | Semi-controlled | Push with announcement; CR for risky |
+| `PROD` | Locked | ALWAYS require explicit approval |
 
-### DEVL Branch - Full Autonomous Mode
-
-**Workflow**: Auto-flow through roles without approval
-- MIRROR → KANBAN → SCOUT → ARCHITECT → CRK → BUILDER → PACKAGE
-- Automatically progress through workflow unless user says "STOP" or "WAIT"
-
-**SNR Protocol**:
-- Provide SNR at end of each interaction (informational)
-- Auto-proceed to next role immediately
-- User can interrupt with "STOP" or "WAIT" at any time
-- "Approved" command is optional (automatic progression)
-
-**CRK Assessment**:
-- Perform CRK before coding (required)
-- Auto-proceed if confidence ≥ 70%
-- If confidence < 70%: Present assessment and wait for user decision
-- Document all CRK assessments in JIRA
-
-**Architectural Decisions**:
-- Make design decisions autonomously
-- Document decisions in JIRA ticket comments
-- Inform user in SNR summary
-- User can review and redirect if needed
-
-**Code Changes**:
-- Auto-commit with descriptive messages
-- Always include JIRA ticket reference
-- Auto-push to origin/DEVL after commits
-- Follow git commit guidelines from CLAUDE.md
-
-**Role Handoffs**:
-- Auto-proceed through role workflow
-- No approval needed for role switches
-- Announce role changes clearly
-
-**Constraints**:
-- NEVER merge DEVL to TEST without explicit approval
-- NEVER push to TEST or PROD branches
-- ALWAYS stay within current ticket scope
-- **ALWAYS work in a feature branch** (not directly on DEVL)
-- Feature branch naming: `feature/CALBEAF-XXX-brief-description`
-- Auto-create feature branch if not already in one
-- Only merge feature branch to DEVL with explicit approval
-
-### TEST Branch - Approval Required Mode
-
-**Workflow**: Request approval at each major step
-- Present plan and wait for "Approved" before proceeding
-
-**SNR Protocol**:
-- Provide SNR at end of each interaction
-- WAIT for "Approved" command before proceeding
-- "Denied" returns to KANBAN for reassessment
-
-**CRK Assessment**:
-- Perform CRK before coding (required)
-- Present full assessment regardless of confidence %
-- WAIT for explicit approval before entering BUILDER mode
-
-**Architectural Decisions**:
-- Present options with pros/cons
-- WAIT for user decision
-- Document approved decision in JIRA
-
-**Code Changes**:
-- Request approval before committing
-- Show git diff summary before commit
-- WAIT for approval before pushing to origin/TEST
-
-**Role Handoffs**:
-- Request approval for role switches
-- Present next role recommendation in SNR
-- WAIT for "Approved" or alternative instruction
-
-**Merging**:
-- DEVL → TEST: Requires explicit user approval
-- Show summary of changes before merge
-- NEVER merge without approval
-
-### PROD Branch - Maximum Control Mode
-
-**Workflow**: Explicit approval required for every operation
-
-**All Operations**:
-- Request approval before ANY action
-- Show detailed plan before execution
-- No autonomous decisions
-
-**Code Changes**:
-- Full review required before any commit
-- User must verify all changes
-- Manual merge only
-
-**Merging**:
-- TEST → PROD: Requires explicit user approval
-- Full change summary required
-- Tag releases appropriately
-- NEVER merge without approval
-
-## Branch Detection and Auto-Creation
-
-Check current branch at session start:
+## Session Start
 ```bash
 CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-Announce autonomy mode:
-- DEVL: "🚀 Full Autonomous Mode (DEVL branch)"
-- TEST: "✋ Approval Required Mode (TEST branch)"
-- PROD: "🔒 Maximum Control Mode (PROD branch)"
-
-**Autonomous Mode Branch Safety**:
-When starting work in autonomous mode (DEVL):
-1. Check if currently on DEVL branch directly
-2. If on DEVL and about to make code changes:
-   - Ask user for JIRA ticket number if not known
-   - Auto-create feature branch: `feature/CALBEAF-XXX-brief-description`
-   - Announce: "Creating feature branch feature/CALBEAF-XXX-description"
-   - Checkout new branch automatically
-3. If already on a feature branch, continue working
-4. All commits go to feature branch
-5. When work complete, inform user and ask about merging to DEVL
-
-**Feature Branch Workflow** (Autonomous Mode):
-```
-On DEVL → Detect ticket → Create feature/CALBEAF-XXX → Work → Commit → Push
-                                                                       ↓
-                                                           SNR: "Ready to merge to DEVL?"
-                                                           Wait for approval to merge
-```
-
-## Mode Switching
-
-When switching branches during session:
-1. Detect branch change
-2. Announce new autonomy mode
-3. Adjust behavior immediately
-4. Update SNR protocol accordingly
-
 ## Emergency Override
-
-User can always:
-- Say "STOP" to halt autonomous progression
-- Say "WAIT" to pause and discuss
-- Say "MANUAL MODE" to disable autonomy on DEVL
-- Say "AUTO MODE" to re-enable autonomy on DEVL
+- "STOP" - halt autonomous progression
+- "WAIT" - pause and discuss
+- "MANUAL MODE" - disable autonomy
 
 ================================================================================
 END OF FILE: YBOTBOT-BRANCH-AUTONOMY.md
@@ -911,7 +830,8 @@ END OF FILE: YBOTBOT-CONFIGURATONS-AVAILIBLE.md
 START OF FILE: GIT-Strategy.md
 ================================================================================
 
-[FILE NOT FOUND: ./playbooks/external/github/GIT-Strategy.md]
+**See central documentation:**
+`/Users/tobybalsley/MyDocs/AppDev/MasterCalendar/docs/GIT-BRANCHING-STRATEGY.md`
 
 ================================================================================
 END OF FILE: GIT-Strategy.md
@@ -922,45 +842,32 @@ END OF FILE: GIT-Strategy.md
 START OF FILE: JIRA-CLI-STRATEGY.md
 ================================================================================
 
-# JIRA CLI Strategy - Direct API via Bash Scripts
+# JIRA Workflow Strategy
 
-## Purpose
-This document defines the ONLY supported method for JIRA integration: direct REST API via CLI bash scripts.
-
-## CRITICAL: DO NOT USE MCP FOR JIRA
-MCP JIRA functions (`mcp__atlassian__*`) are broken and must NEVER be used. All JIRA operations go through the `.ybotbot/jira-tools/` bash scripts which use direct REST API calls.
-
-## Authentication
-```bash
-export JIRA_EMAIL="toby.balsley@gmail.com"
-export JIRA_API_TOKEN=$(security find-generic-password -a "toby.balsley@gmail.com" -s "jira-api-token" -w 2>/dev/null)
-export JIRA_BASE_URL="https://hdtsllc.atlassian.net"
+**See central documentation:**
+```
+/Users/tobybalsley/MyDocs/AppDev/MasterCalendar/docs/JIRA-WORKFLOW-STRATEGY.md
 ```
 
-## Available Scripts (`.ybotbot/jira-tools/`)
+## Quick Reference (calendar-be-af)
 
-| Script | Purpose | Example |
-|--------|---------|---------|
-| `jira-get.sh` | Get issue details | `./.ybotbot/jira-tools/jira-get.sh CALBEAF-67` |
-| `jira-search.sh` | Search issues (JQL) | `./.ybotbot/jira-tools/jira-search.sh "project = CALBEAF" 10` |
-| `jira-comment.sh` | Add comment | `./.ybotbot/jira-tools/jira-comment.sh CALBEAF-67 "Status update"` |
-| `jira-create.sh` | Create issue | `./.ybotbot/jira-tools/jira-create.sh "Summary" Task "Description" High` |
-| `jira-create-subtask.sh` | Create subtask | `./.ybotbot/jira-tools/jira-create-subtask.sh CALBEAF-67 "Subtask" "Desc"` |
-| `jira-transition.sh` | Change status | `./.ybotbot/jira-tools/jira-transition.sh CALBEAF-67 "In Progress"` |
-| `jira-update.sh` | Update fields | `./.ybotbot/jira-tools/jira-update.sh CALBEAF-67 summary "New title"` |
-| `jira-add-to-epic.sh` | Add to epic | `./.ybotbot/jira-tools/jira-add-to-epic.sh CALBEAF-68 CALBEAF-5` |
-| `jira-get-epic-issues.sh` | List epic issues | `./.ybotbot/jira-tools/jira-get-epic-issues.sh CALBEAF-5` |
-| `jira-link-issues.sh` | Link issues | `./.ybotbot/jira-tools/jira-link-issues.sh CALBEAF-67 CALBEAF-68 "blocks"` |
+- **Project Key**: CALBEAF
+- **Auth**: macOS keychain (toby.balsley@gmail.com)
+- **Do NOT use MCP** - use curl or `.ybotbot/jira-tools/` scripts
 
-## Configuration
-- Project Key: `CALBEAF`
-- Base URL: `https://hdtsllc.atlassian.net`
-- Auth: macOS keychain (account: toby.balsley@gmail.com)
-- Prefer REST API v2 over v3
+```bash
+JIRA_EMAIL="toby.balsley@gmail.com"
+JIRA_TOKEN=$(security find-generic-password -a "toby.balsley@gmail.com" -s "jira-api-token" -w 2>/dev/null)
+```
 
-## See Also
-- `.ybotbot/jira-tools/README.md` for full usage docs
-- `.ybotbot/retrospectivePlaybook.md` for auth troubleshooting history
+## Local Scripts (`.ybotbot/jira-tools/`)
+
+| Script | Purpose |
+|--------|---------|
+| `jira-get.sh TICKET` | Get issue details |
+| `jira-search.sh "JQL" N` | Search issues |
+| `jira-comment.sh TICKET "msg"` | Add comment |
+| `jira-transition.sh TICKET "Status"` | Change status |
 
 ================================================================================
 END OF FILE: JIRA-CLI-STRATEGY.md
