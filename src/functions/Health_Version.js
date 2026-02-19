@@ -2,6 +2,15 @@
 const { app } = require('@azure/functions');
 const packageJson = require('../../package.json');
 
+// Helper: Extract database name from MongoDB URI
+function getMongoDbName() {
+  const uri = process.env.MONGODB_URI || '';
+  // URI format: mongodb+srv://user:pass@host/DatabaseName?params
+  // or: mongodb://user:pass@host/DatabaseName?params
+  const match = uri.match(/\/([A-Za-z0-9_-]+)(\?|$)/);
+  return match ? match[1] : 'unknown';
+}
+
 app.http('Health_Version', {
   methods: ['GET'],
   authLevel: 'anonymous',
@@ -22,6 +31,7 @@ app.http('Health_Version', {
         timestamp: new Date().toISOString(),
         environment: {
           NODE_ENV: process.env.NODE_ENV || 'development',
+          database: getMongoDbName(),
           region: process.env.AZURE_REGION || 'unknown',
           functionApp: process.env.WEBSITE_SITE_NAME || 'local'
         }
