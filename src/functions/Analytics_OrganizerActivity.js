@@ -14,19 +14,11 @@ const { standardMiddleware } = require('../middleware');
  * Query Parameters:
  * - appId: Application ID (default: "1")
  * - timeType: "local" | "zulu" (default: "local")
- * - days: How many days back to analyze (default: 90)
+ * - range: Flexible time range (default: "3M")
+ *     Format: {number}{unit} where unit is H|D|W|M|Yr, or "All"
+ *     Examples: 1H, 3H, 24H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
  *
  * @returns {Object} Heatmaps for DOW and DOM with hourly breakdown
- *
- * Response: {
- *   byDayOfWeek: { Sunday: [h0..h23], Monday: [...], ... },
- *   byDayOfMonth: { 1: count, 2: count, ..., 31: count },
- *   byHour: [h0..h23],
- *   totals: { byDow: {...}, byDom: {...}, byHour: [...], overall: N },
- *   peak: { dow: {...}, dom: {...}, hour: {...} },
- *   topOrganizers: [...],
- *   metadata: {...}
- * }
  */
 async function eventCreationAnalyticsHandler(request, context) {
     const startTime = Date.now();
@@ -36,7 +28,10 @@ async function eventCreationAnalyticsHandler(request, context) {
     const url = new URL(request.url);
     const appId = url.searchParams.get('appId') || '1';
     const timeType = url.searchParams.get('timeType') || 'local';
-    const days = Math.min(365, Math.max(1, parseInt(url.searchParams.get('days') || '90', 10)));
+
+    // Support both 'range' (new) and 'days' (legacy) params
+    const rangeParam = (url.searchParams.get('range') || '').toUpperCase();
+    const daysParam = url.searchParams.get('days');
 
     let mongoClient;
 
@@ -50,25 +45,112 @@ async function eventCreationAnalyticsHandler(request, context) {
         await mongoClient.connect();
         const db = mongoClient.db();
 
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - days);
+        // Calculate cutoff date based on range or days param
+        let cutoffDate = null;
+        let timeFilterLabel = 'All Time';
 
-        // Get all manual events - we'll extract creation time from _id (ObjectId contains timestamp)
-        // Filter by _id timestamp if cutoff is needed
-        const cutoffObjectId = ObjectId.createFromTime(Math.floor(cutoffDate.getTime() / 1000));
+        if (rangeParam === 'ALL') {
+            cutoffDate = null;
+            timeFilterLabel = 'All Time';
+        } else if (rangeParam) {
+            // Parse format: number + unit (e.g., 3H, 7D, 2W, 6M, 1Yr)
+            const match = rangeParam.match(/^(\d+)(H|D|W|M|YR)$/i);
 
-        const events = await db.collection('events').find({
+            if (match) {
+                const num = parseInt(match[1], 10);
+                const unit = match[2].toUpperCase();
+
+                switch (unit) {
+                    case 'H':
+                        cutoffDate = new Date(Date.now() - num * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Hour${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'D':
+                        cutoffDate = new Date(Date.now() - num * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Day${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'W':
+                        cutoffDate = new Date(Date.now() - num * 7 * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Week${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'M':
+                        cutoffDate = new Date();
+                        cutoffDate.setMonth(cutoffDate.getMonth() - num);
+                        timeFilterLabel = `Last ${num} Month${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'YR':
+                        cutoffDate = new Date();
+                        cutoffDate.setFullYear(cutoffDate.getFullYear() - num);
+                        timeFilterLabel = `Last ${num} Year${num > 1 ? 's' : ''}`;
+                        break;
+                }
+            } else {
+                // Invalid format - default to 3M
+                cutoffDate = new Date();
+                cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+                timeFilterLabel = 'Last 3 Months (default)';
+            }
+        } else if (daysParam) {
+            // Legacy days param support
+            const days = Math.min(365, Math.max(1, parseInt(daysParam, 10)));
+            cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - days);
+            timeFilterLabel = `Last ${days} Day${days > 1 ? 's' : ''}`;
+        } else {
+            // Default to 3 months
+            cutoffDate = new Date();
+            cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+            timeFilterLabel = 'Last 3 Months (default)';
+        }
+
+        // Build query filter
+        const query = {
             appId,
-            isDiscovered: { $ne: true },
-            _id: { $gte: cutoffObjectId }
-        }).project({
+            isDiscovered: { $ne: true }
+        };
+
+        // Add time filter using ObjectId if cutoffDate is set
+        if (cutoffDate) {
+            const cutoffObjectId = ObjectId.createFromTime(Math.floor(cutoffDate.getTime() / 1000));
+            query._id = { $gte: cutoffObjectId };
+        }
+
+        // Get events with organizer IDs
+        const events = await db.collection('events').find(query).project({
             _id: 1,
             createdAt: 1,
-            ownerOrganizerID: 1,
-            ownerOrganizerShortName: 1
+            ownerOrganizerID: 1
         }).toArray();
 
-        context.log(`Found ${events.length} manual events created in last ${days} days`);
+        context.log(`Found ${events.length} manual events, range: ${timeFilterLabel}`);
+
+        // Get unique organizer IDs and fetch their names
+        const organizerIds = [...new Set(events
+            .map(e => e.ownerOrganizerID)
+            .filter(id => id)
+        )];
+
+        // Fetch organizer names from organizers collection
+        const organizerMap = {};
+        if (organizerIds.length > 0) {
+            const organizers = await db.collection('organizers').find({
+                _id: { $in: organizerIds.map(id => {
+                    try {
+                        return new ObjectId(id);
+                    } catch {
+                        return id;
+                    }
+                })}
+            }).project({
+                _id: 1,
+                shortName: 1,
+                fullName: 1
+            }).toArray();
+
+            organizers.forEach(org => {
+                organizerMap[org._id.toString()] = org.shortName || org.fullName || 'Unknown';
+            });
+        }
 
         // Initialize data structures
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -113,8 +195,9 @@ async function eventCreationAnalyticsHandler(request, context) {
             byDomHour[dayOfMonth][hour]++;
             byHour[hour]++;
 
-            // Track by organizer
-            const orgName = event.ownerOrganizerShortName || 'UNKNOWN';
+            // Track by organizer - use looked-up name
+            const orgId = event.ownerOrganizerID;
+            const orgName = orgId ? (organizerMap[orgId.toString()] || 'Unknown') : 'No Organizer';
             organizerCounts[orgName] = (organizerCounts[orgName] || 0) + 1;
         }
 
@@ -151,7 +234,10 @@ async function eventCreationAnalyticsHandler(request, context) {
 
         return {
             status: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600'
+            },
             body: JSON.stringify({
                 success: true,
                 data: {
@@ -166,8 +252,9 @@ async function eventCreationAnalyticsHandler(request, context) {
                 metadata: {
                     appId,
                     timeType,
-                    daysAnalyzed: days,
-                    cutoffDate: cutoffDate.toISOString(),
+                    range: rangeParam || (daysParam ? `${daysParam}D` : '3M'),
+                    timeFilter: timeFilterLabel,
+                    cutoffDate: cutoffDate?.toISOString() || null,
                     eventsAnalyzed: events.length,
                     generatedAt: new Date().toISOString(),
                     durationMs: duration
