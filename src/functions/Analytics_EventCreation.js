@@ -3,6 +3,7 @@
 
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
+const { standardMiddleware } = require('../middleware');
 
 /**
  * Event Creation Analytics - When are organizers adding events?
@@ -194,9 +195,10 @@ function formatHour(hour) {
     return hour < 12 ? `${hour}:00 AM` : `${hour - 12}:00 PM`;
 }
 
+// Register function with standard middleware
 app.http('Analytics_EventCreation', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'analytics/event-creation',
-    handler: eventCreationAnalyticsHandler
+    handler: standardMiddleware(eventCreationAnalyticsHandler)
 });
