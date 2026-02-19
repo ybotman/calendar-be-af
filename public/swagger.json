@@ -1102,6 +1102,16 @@
         "operationId": "getVisitorHeatmap",
         "parameters": [
           {
+            "name": "range",
+            "in": "query",
+            "description": "Time range filter. Format: {number}{unit} where unit is H(ours), D(ays), W(eeks), M(onths), Yr(ears), or 'All'. Examples: 1H, 3H, 24H, 7D, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "3M"
+            }
+          },
+          {
             "name": "timeType",
             "in": "query",
             "description": "Time type for aggregation",
@@ -1181,6 +1191,9 @@
                     },
                     "metadata": {
                       "timeType": "local",
+                      "range": "3M",
+                      "timeFilter": "Last 3 Months",
+                      "cutoffDate": "2025-07-18T18:57:21.840Z",
                       "includeLogins": true,
                       "includeVisitors": true,
                       "generatedAt": "2025-10-18T18:57:21.840Z",

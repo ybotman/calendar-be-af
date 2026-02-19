@@ -6,7 +6,7 @@ const { standardMiddleware } = require('../middleware');
  * Visitor/Login Traffic Heatmap Analytics
  *
  * @description Generates Time of Day vs Day of Week heatmap showing traffic patterns
- * Aggregates data from VisitorTrackingAnalytics and UserLoginAnalytics collections
+ * Aggregates data from VisitorTrackingHistory and UserLoginHistory collections
  * to create a 7x24 matrix of activity counts
  *
  * @route GET /api/analytics/visitor-heatmap
@@ -16,11 +16,20 @@ const { standardMiddleware } = require('../middleware');
  * - timeType: "local" | "zulu" (default: "local")
  * - includeLogins: boolean (default: true)
  * - includeVisitors: boolean (default: true)
+ * - range: Flexible time range (default: "3M")
+ *     Format: {number}{unit} where unit is H|D|W|M|Yr, or "All"
+ *     Examples: 1H, 3H, 24H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
  *
  * @returns {HeatmapResponse} 7x24 matrix with traffic patterns
  *
  * @example
- * GET /api/analytics/visitor-heatmap?timeType=local&includeLogins=true&includeVisitors=true
+ * GET /api/analytics/visitor-heatmap?range=1H   (last 1 hour)
+ * GET /api/analytics/visitor-heatmap?range=24H  (last 24 hours)
+ * GET /api/analytics/visitor-heatmap?range=7D   (last 7 days)
+ * GET /api/analytics/visitor-heatmap?range=2W   (last 2 weeks)
+ * GET /api/analytics/visitor-heatmap?range=6M   (last 6 months)
+ * GET /api/analytics/visitor-heatmap?range=1Yr  (last 1 year)
+ * GET /api/analytics/visitor-heatmap?range=All  (all time)
  *
  * Response:
  * {
@@ -117,6 +126,29 @@ function aggregateData(docs, timeType) {
     return matrix;
 }
 
+// Helper: Aggregate individual history events into matrix
+function aggregateHistoryData(docs, timeType) {
+    const dayField = timeType === 'local' ? 'dayOfWeekLocal' : 'dayOfWeekZulu';
+    const hourField = timeType === 'local' ? 'hourOfDayLocal' : 'hourOfDayZulu';
+
+    const matrix = initializeMatrix();
+
+    docs.forEach(doc => {
+        const day = doc[dayField];
+        const hour = doc[hourField];
+
+        // Only count if we have valid day/hour data
+        if (day && DAYS_OF_WEEK.includes(day) && hour !== null && hour !== undefined) {
+            const hourInt = parseInt(hour, 10);
+            if (hourInt >= 0 && hourInt < 24) {
+                matrix[day][hourInt]++;
+            }
+        }
+    });
+
+    return matrix;
+}
+
 // Helper: Merge two matrices
 function mergeMatrices(matrix1, matrix2) {
     const merged = initializeMatrix();
@@ -185,6 +217,9 @@ async function visitorHeatmapHandler(request, context) {
         const includeLogins = url.searchParams.get('includeLogins') !== 'false';
         const includeVisitors = url.searchParams.get('includeVisitors') !== 'false';
 
+        // Time range param: 1H, 1D, 1W, 1M, 3M, 1Yr, All
+        const rangeParam = (url.searchParams.get('range') || '3M').toUpperCase();
+
         // Validate timeType
         if (timeType !== 'local' && timeType !== 'zulu') {
             return {
@@ -197,6 +232,58 @@ async function visitorHeatmapHandler(request, context) {
                 })
             };
         }
+
+        // Calculate time filter cutoff based on range
+        // Supports: NH (hours), ND (days), NW (weeks), NM (months), NYr (years), All
+        // Examples: 1H, 3H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
+        let cutoffDate = null;
+        let timeFilterLabel = 'All Time';
+
+        if (rangeParam === 'ALL') {
+            // No filter - all time
+            cutoffDate = null;
+            timeFilterLabel = 'All Time';
+        } else {
+            // Parse format: number + unit (e.g., 3H, 7D, 2W, 6M, 1Yr)
+            const match = rangeParam.match(/^(\d+)(H|D|W|M|YR)$/i);
+
+            if (match) {
+                const num = parseInt(match[1], 10);
+                const unit = match[2].toUpperCase();
+
+                switch (unit) {
+                    case 'H':
+                        cutoffDate = new Date(Date.now() - num * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Hour${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'D':
+                        cutoffDate = new Date(Date.now() - num * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Day${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'W':
+                        cutoffDate = new Date(Date.now() - num * 7 * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Week${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'M':
+                        cutoffDate = new Date();
+                        cutoffDate.setMonth(cutoffDate.getMonth() - num);
+                        timeFilterLabel = `Last ${num} Month${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'YR':
+                        cutoffDate = new Date();
+                        cutoffDate.setFullYear(cutoffDate.getFullYear() - num);
+                        timeFilterLabel = `Last ${num} Year${num > 1 ? 's' : ''}`;
+                        break;
+                }
+            } else {
+                // Invalid format - default to 3M
+                cutoffDate = new Date();
+                cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+                timeFilterLabel = 'Last 3 Months (default)';
+            }
+        }
+
+        context.log(`Time filter: ${timeFilterLabel}, cutoff: ${cutoffDate?.toISOString() || 'none'}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -214,26 +301,29 @@ async function visitorHeatmapHandler(request, context) {
         let visitorCount = 0;
         let loginCount = 0;
 
-        // Query VisitorTrackingAnalytics
+        // Build time filter query
+        const timeFilter = cutoffDate ? { timestamp: { $gte: cutoffDate } } : {};
+
+        // Query VisitorTrackingHistory (for time-filtered data)
         if (includeVisitors) {
-            context.log('Querying VisitorTrackingAnalytics...');
-            const visitors = await db.collection('VisitorTrackingAnalytics').find({}).toArray();
+            context.log('Querying VisitorTrackingHistory...');
+            const visitors = await db.collection('VisitorTrackingHistory').find(timeFilter).toArray();
 
-            visitorCount = visitors.reduce((sum, doc) => sum + (doc.totalVisits || 0), 0);
-            visitorMatrix = aggregateData(visitors, timeType);
+            visitorCount = visitors.length;
+            visitorMatrix = aggregateHistoryData(visitors, timeType);
 
-            context.log(`Processed ${visitors.length} visitor records (${visitorCount} total visits)`);
+            context.log(`Processed ${visitorCount} visitor events`);
         }
 
-        // Query UserLoginAnalytics
+        // Query UserLoginHistory (for time-filtered data)
         if (includeLogins) {
-            context.log('Querying UserLoginAnalytics...');
-            const logins = await db.collection('UserLoginAnalytics').find({}).toArray();
+            context.log('Querying UserLoginHistory...');
+            const logins = await db.collection('UserLoginHistory').find(timeFilter).toArray();
 
-            loginCount = logins.reduce((sum, doc) => sum + (doc.totalLogins || 0), 0);
-            loginMatrix = aggregateData(logins, timeType);
+            loginCount = logins.length;
+            loginMatrix = aggregateHistoryData(logins, timeType);
 
-            context.log(`Processed ${logins.length} user records (${loginCount} total logins)`);
+            context.log(`Processed ${loginCount} login events`);
         }
 
         // Merge matrices
@@ -268,6 +358,9 @@ async function visitorHeatmapHandler(request, context) {
                     },
                     metadata: {
                         timeType: timeType,
+                        range: rangeParam,
+                        timeFilter: timeFilterLabel,
+                        cutoffDate: cutoffDate?.toISOString() || null,
                         includeLogins: includeLogins,
                         includeVisitors: includeVisitors,
                         generatedAt: new Date().toISOString(),
