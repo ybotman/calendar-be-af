@@ -1,6 +1,6 @@
 {
   "name": "calendar-be-af",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "description": "Master Calendar Backend - Azure Functions",
   "main": "src/app.js",
   "scripts": {
