@@ -1104,11 +1104,10 @@
           {
             "name": "range",
             "in": "query",
-            "description": "Time range filter for data",
+            "description": "Time range filter. Format: {number}{unit} where unit is H(ours), D(ays), W(eeks), M(onths), Yr(ears), or 'All'. Examples: 1H, 3H, 24H, 7D, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All",
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["1H", "1D", "1W", "1M", "3M", "1Yr", "All"],
               "default": "3M"
             }
           },

@@ -16,15 +16,20 @@ const { standardMiddleware } = require('../middleware');
  * - timeType: "local" | "zulu" (default: "local")
  * - includeLogins: boolean (default: true)
  * - includeVisitors: boolean (default: true)
- * - range: "1H" | "1D" | "1W" | "1M" | "3M" | "1Yr" | "All" (default: "3M")
+ * - range: Flexible time range (default: "3M")
+ *     Format: {number}{unit} where unit is H|D|W|M|Yr, or "All"
+ *     Examples: 1H, 3H, 24H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
  *
  * @returns {HeatmapResponse} 7x24 matrix with traffic patterns
  *
  * @example
- * GET /api/analytics/visitor-heatmap?range=1H
- * GET /api/analytics/visitor-heatmap?range=1D
- * GET /api/analytics/visitor-heatmap?range=1W
- * GET /api/analytics/visitor-heatmap?range=3M
+ * GET /api/analytics/visitor-heatmap?range=1H   (last 1 hour)
+ * GET /api/analytics/visitor-heatmap?range=24H  (last 24 hours)
+ * GET /api/analytics/visitor-heatmap?range=7D   (last 7 days)
+ * GET /api/analytics/visitor-heatmap?range=2W   (last 2 weeks)
+ * GET /api/analytics/visitor-heatmap?range=6M   (last 6 months)
+ * GET /api/analytics/visitor-heatmap?range=1Yr  (last 1 year)
+ * GET /api/analytics/visitor-heatmap?range=All  (all time)
  *
  * Response:
  * {
@@ -229,31 +234,54 @@ async function visitorHeatmapHandler(request, context) {
         }
 
         // Calculate time filter cutoff based on range
+        // Supports: NH (hours), ND (days), NW (weeks), NM (months), NYr (years), All
+        // Examples: 1H, 3H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
         let cutoffDate = null;
-        let timeFilterLabel = 'all time';
+        let timeFilterLabel = 'All Time';
 
-        const RANGE_CONFIG = {
-            '1H':  { hours: 1,    label: 'Last 1 Hour' },
-            '1D':  { days: 1,    label: 'Last 1 Day' },
-            '1W':  { days: 7,    label: 'Last 1 Week' },
-            '1M':  { months: 1,  label: 'Last 1 Month' },
-            '3M':  { months: 3,  label: 'Last 3 Months' },
-            '1YR': { months: 12, label: 'Last 1 Year' },
-            'ALL': { all: true,  label: 'All Time' }
-        };
+        if (rangeParam === 'ALL') {
+            // No filter - all time
+            cutoffDate = null;
+            timeFilterLabel = 'All Time';
+        } else {
+            // Parse format: number + unit (e.g., 3H, 7D, 2W, 6M, 1Yr)
+            const match = rangeParam.match(/^(\d+)(H|D|W|M|YR)$/i);
 
-        const rangeConfig = RANGE_CONFIG[rangeParam] || RANGE_CONFIG['3M'];
-        timeFilterLabel = rangeConfig.label;
+            if (match) {
+                const num = parseInt(match[1], 10);
+                const unit = match[2].toUpperCase();
 
-        if (rangeConfig.hours) {
-            cutoffDate = new Date(Date.now() - rangeConfig.hours * 60 * 60 * 1000);
-        } else if (rangeConfig.days) {
-            cutoffDate = new Date(Date.now() - rangeConfig.days * 24 * 60 * 60 * 1000);
-        } else if (rangeConfig.months) {
-            cutoffDate = new Date();
-            cutoffDate.setMonth(cutoffDate.getMonth() - rangeConfig.months);
+                switch (unit) {
+                    case 'H':
+                        cutoffDate = new Date(Date.now() - num * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Hour${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'D':
+                        cutoffDate = new Date(Date.now() - num * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Day${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'W':
+                        cutoffDate = new Date(Date.now() - num * 7 * 24 * 60 * 60 * 1000);
+                        timeFilterLabel = `Last ${num} Week${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'M':
+                        cutoffDate = new Date();
+                        cutoffDate.setMonth(cutoffDate.getMonth() - num);
+                        timeFilterLabel = `Last ${num} Month${num > 1 ? 's' : ''}`;
+                        break;
+                    case 'YR':
+                        cutoffDate = new Date();
+                        cutoffDate.setFullYear(cutoffDate.getFullYear() - num);
+                        timeFilterLabel = `Last ${num} Year${num > 1 ? 's' : ''}`;
+                        break;
+                }
+            } else {
+                // Invalid format - default to 3M
+                cutoffDate = new Date();
+                cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+                timeFilterLabel = 'Last 3 Months (default)';
+            }
         }
-        // If rangeConfig.all, cutoffDate stays null (no filter)
 
         context.log(`Time filter: ${timeFilterLabel}, cutoff: ${cutoffDate?.toISOString() || 'none'}`);
 
