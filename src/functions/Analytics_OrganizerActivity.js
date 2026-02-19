@@ -1,4 +1,4 @@
-// src/functions/Analytics_EventCreation.js
+// src/functions/Analytics_OrganizerActivity.js
 // Domain: Analytics - Event creation patterns by organizers
 
 const { app } = require('@azure/functions');
@@ -30,7 +30,7 @@ const { standardMiddleware } = require('../middleware');
  */
 async function eventCreationAnalyticsHandler(request, context) {
     const startTime = Date.now();
-    context.log('Analytics_EventCreation: Request received');
+    context.log('Analytics_OrganizerActivity: Request received');
 
     // Parse query parameters (Azure Functions v4 style)
     const url = new URL(request.url);
@@ -176,7 +176,7 @@ async function eventCreationAnalyticsHandler(request, context) {
         };
 
     } catch (error) {
-        context.error(`Analytics_EventCreation error: ${error.message}`);
+        context.error(`Analytics_OrganizerActivity error: ${error.message}`);
         return {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
@@ -196,7 +196,7 @@ function formatHour(hour) {
 }
 
 // Register function with standard middleware
-app.http('Analytics_EventCreation', {
+app.http('Analytics_OrganizerActivity', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'analytics/event-creation',

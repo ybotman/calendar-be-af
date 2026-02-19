@@ -92,3 +92,6 @@ temp/
 
 # Local scripts
 scripts/
+prod-settings-backup.json
+test-settings-backup.json
+backups/
