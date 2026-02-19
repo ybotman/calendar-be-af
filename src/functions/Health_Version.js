@@ -2,6 +2,15 @@
 const { app } = require('@azure/functions');
 const packageJson = require('../../package.json');
 
+// Helper: Extract database name from MongoDB URI
+function getMongoDbName() {
+  const uri = process.env.MONGODB_URI || '';
+  // URI format: mongodb+srv://user:pass@host/DatabaseName?params
+  // or: mongodb://user:pass@host/DatabaseName?params
+  const match = uri.match(/\/([A-Za-z0-9_-]+)(\?|$)/);
+  return match ? match[1] : 'unknown';
+}
+
 app.http('Health_Version', {
   methods: ['GET'],
   authLevel: 'anonymous',
@@ -22,8 +31,15 @@ app.http('Health_Version', {
         timestamp: new Date().toISOString(),
         environment: {
           NODE_ENV: process.env.NODE_ENV || 'development',
-          region: process.env.AZURE_REGION || 'unknown',
-          functionApp: process.env.WEBSITE_SITE_NAME || 'local'
+          database: getMongoDbName(),
+          nodeVersion: process.env.WEBSITE_NODE_DEFAULT_VERSION || process.version,
+          functionApp: process.env.WEBSITE_SITE_NAME || 'local',
+          region: process.env.REGION_NAME || process.env.AZURE_REGION || 'unknown',
+          instanceId: process.env.WEBSITE_INSTANCE_ID?.substring(0, 8) || 'local'
+        },
+        uptime: {
+          processSeconds: Math.floor(process.uptime()),
+          processStarted: new Date(Date.now() - process.uptime() * 1000).toISOString()
         }
       })
     };

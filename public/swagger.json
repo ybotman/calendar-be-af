@@ -2417,13 +2417,42 @@
             "type": "object",
             "properties": {
               "NODE_ENV": {
-                "type": "string"
+                "type": "string",
+                "description": "Environment mode (production, test, development)"
               },
-              "region": {
-                "type": "string"
+              "database": {
+                "type": "string",
+                "description": "MongoDB database name (TangoTiempoProd, TangoTiempo, etc.)"
+              },
+              "nodeVersion": {
+                "type": "string",
+                "description": "Node.js version configured in Azure"
               },
               "functionApp": {
-                "type": "string"
+                "type": "string",
+                "description": "Azure Function App name"
+              },
+              "region": {
+                "type": "string",
+                "description": "Azure region"
+              },
+              "instanceId": {
+                "type": "string",
+                "description": "Azure instance ID (first 8 chars)"
+              }
+            }
+          },
+          "uptime": {
+            "type": "object",
+            "properties": {
+              "processSeconds": {
+                "type": "integer",
+                "description": "Process uptime in seconds"
+              },
+              "processStarted": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the process started"
               }
             }
           }
