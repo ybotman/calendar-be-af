@@ -35,6 +35,7 @@ require('./functions/UserLoginTrack');
 require('./functions/VisitorTrack');
 require('./functions/MapCenterTrack');
 require('./functions/Analytics_VisitorHeatmap');
+require('./functions/Analytics_OrganizerActivity');
 
 // User Profile & Onboarding - TIEMPO-329 Phase 2/3
 require('./functions/User_FCMToken');
