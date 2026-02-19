@@ -16,16 +16,15 @@ const { standardMiddleware } = require('../middleware');
  * - timeType: "local" | "zulu" (default: "local")
  * - includeLogins: boolean (default: true)
  * - includeVisitors: boolean (default: true)
- * - hours: number (filter to last N hours, e.g., hours=1 for last hour)
- * - days: number (filter to last N days, e.g., days=7 for last week)
- * - months: number (filter to last N months, default: 3)
+ * - range: "1H" | "1D" | "1W" | "1M" | "3M" | "1Yr" | "All" (default: "3M")
  *
  * @returns {HeatmapResponse} 7x24 matrix with traffic patterns
  *
  * @example
- * GET /api/analytics/visitor-heatmap?hours=1
- * GET /api/analytics/visitor-heatmap?days=7
- * GET /api/analytics/visitor-heatmap?months=3
+ * GET /api/analytics/visitor-heatmap?range=1H
+ * GET /api/analytics/visitor-heatmap?range=1D
+ * GET /api/analytics/visitor-heatmap?range=1W
+ * GET /api/analytics/visitor-heatmap?range=3M
  *
  * Response:
  * {
@@ -213,10 +212,8 @@ async function visitorHeatmapHandler(request, context) {
         const includeLogins = url.searchParams.get('includeLogins') !== 'false';
         const includeVisitors = url.searchParams.get('includeVisitors') !== 'false';
 
-        // Time filter params (hours takes precedence over days over months)
-        const hoursParam = url.searchParams.get('hours');
-        const daysParam = url.searchParams.get('days');
-        const monthsParam = url.searchParams.get('months');
+        // Time range param: 1H, 1D, 1W, 1M, 3M, 1Yr, All
+        const rangeParam = (url.searchParams.get('range') || '3M').toUpperCase();
 
         // Validate timeType
         if (timeType !== 'local' && timeType !== 'zulu') {
@@ -231,35 +228,32 @@ async function visitorHeatmapHandler(request, context) {
             };
         }
 
-        // Calculate time filter cutoff
+        // Calculate time filter cutoff based on range
         let cutoffDate = null;
         let timeFilterLabel = 'all time';
 
-        if (hoursParam) {
-            const hours = parseInt(hoursParam, 10);
-            if (hours > 0) {
-                cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
-                timeFilterLabel = `last ${hours} hour${hours > 1 ? 's' : ''}`;
-            }
-        } else if (daysParam) {
-            const days = parseInt(daysParam, 10);
-            if (days > 0) {
-                cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-                timeFilterLabel = `last ${days} day${days > 1 ? 's' : ''}`;
-            }
-        } else if (monthsParam) {
-            const months = parseInt(monthsParam, 10);
-            if (months > 0) {
-                cutoffDate = new Date();
-                cutoffDate.setMonth(cutoffDate.getMonth() - months);
-                timeFilterLabel = `last ${months} month${months > 1 ? 's' : ''}`;
-            }
-        } else {
-            // Default: 3 months
+        const RANGE_CONFIG = {
+            '1H':  { hours: 1,    label: 'Last 1 Hour' },
+            '1D':  { days: 1,    label: 'Last 1 Day' },
+            '1W':  { days: 7,    label: 'Last 1 Week' },
+            '1M':  { months: 1,  label: 'Last 1 Month' },
+            '3M':  { months: 3,  label: 'Last 3 Months' },
+            '1YR': { months: 12, label: 'Last 1 Year' },
+            'ALL': { all: true,  label: 'All Time' }
+        };
+
+        const rangeConfig = RANGE_CONFIG[rangeParam] || RANGE_CONFIG['3M'];
+        timeFilterLabel = rangeConfig.label;
+
+        if (rangeConfig.hours) {
+            cutoffDate = new Date(Date.now() - rangeConfig.hours * 60 * 60 * 1000);
+        } else if (rangeConfig.days) {
+            cutoffDate = new Date(Date.now() - rangeConfig.days * 24 * 60 * 60 * 1000);
+        } else if (rangeConfig.months) {
             cutoffDate = new Date();
-            cutoffDate.setMonth(cutoffDate.getMonth() - 3);
-            timeFilterLabel = 'last 3 months (default)';
+            cutoffDate.setMonth(cutoffDate.getMonth() - rangeConfig.months);
         }
+        // If rangeConfig.all, cutoffDate stays null (no filter)
 
         context.log(`Time filter: ${timeFilterLabel}, cutoff: ${cutoffDate?.toISOString() || 'none'}`);
 
@@ -336,6 +330,7 @@ async function visitorHeatmapHandler(request, context) {
                     },
                     metadata: {
                         timeType: timeType,
+                        range: rangeParam,
                         timeFilter: timeFilterLabel,
                         cutoffDate: cutoffDate?.toISOString() || null,
                         includeLogins: includeLogins,
