@@ -32,8 +32,14 @@ app.http('Health_Version', {
         environment: {
           NODE_ENV: process.env.NODE_ENV || 'development',
           database: getMongoDbName(),
-          region: process.env.AZURE_REGION || 'unknown',
-          functionApp: process.env.WEBSITE_SITE_NAME || 'local'
+          nodeVersion: process.env.WEBSITE_NODE_DEFAULT_VERSION || process.version,
+          functionApp: process.env.WEBSITE_SITE_NAME || 'local',
+          region: process.env.REGION_NAME || process.env.AZURE_REGION || 'unknown',
+          instanceId: process.env.WEBSITE_INSTANCE_ID?.substring(0, 8) || 'local'
+        },
+        uptime: {
+          processSeconds: Math.floor(process.uptime()),
+          processStarted: new Date(Date.now() - process.uptime() * 1000).toISOString()
         }
       })
     };
