@@ -6,7 +6,7 @@ const { standardMiddleware } = require('../middleware');
  * Visitor/Login Traffic Heatmap Analytics
  *
  * @description Generates Time of Day vs Day of Week heatmap showing traffic patterns
- * Aggregates data from VisitorTrackingAnalytics and UserLoginAnalytics collections
+ * Aggregates data from VisitorTrackingHistory and UserLoginHistory collections
  * to create a 7x24 matrix of activity counts
  *
  * @route GET /api/analytics/visitor-heatmap
@@ -16,11 +16,16 @@ const { standardMiddleware } = require('../middleware');
  * - timeType: "local" | "zulu" (default: "local")
  * - includeLogins: boolean (default: true)
  * - includeVisitors: boolean (default: true)
+ * - hours: number (filter to last N hours, e.g., hours=1 for last hour)
+ * - days: number (filter to last N days, e.g., days=7 for last week)
+ * - months: number (filter to last N months, default: 3)
  *
  * @returns {HeatmapResponse} 7x24 matrix with traffic patterns
  *
  * @example
- * GET /api/analytics/visitor-heatmap?timeType=local&includeLogins=true&includeVisitors=true
+ * GET /api/analytics/visitor-heatmap?hours=1
+ * GET /api/analytics/visitor-heatmap?days=7
+ * GET /api/analytics/visitor-heatmap?months=3
  *
  * Response:
  * {
@@ -117,6 +122,29 @@ function aggregateData(docs, timeType) {
     return matrix;
 }
 
+// Helper: Aggregate individual history events into matrix
+function aggregateHistoryData(docs, timeType) {
+    const dayField = timeType === 'local' ? 'dayOfWeekLocal' : 'dayOfWeekZulu';
+    const hourField = timeType === 'local' ? 'hourOfDayLocal' : 'hourOfDayZulu';
+
+    const matrix = initializeMatrix();
+
+    docs.forEach(doc => {
+        const day = doc[dayField];
+        const hour = doc[hourField];
+
+        // Only count if we have valid day/hour data
+        if (day && DAYS_OF_WEEK.includes(day) && hour !== null && hour !== undefined) {
+            const hourInt = parseInt(hour, 10);
+            if (hourInt >= 0 && hourInt < 24) {
+                matrix[day][hourInt]++;
+            }
+        }
+    });
+
+    return matrix;
+}
+
 // Helper: Merge two matrices
 function mergeMatrices(matrix1, matrix2) {
     const merged = initializeMatrix();
@@ -185,6 +213,11 @@ async function visitorHeatmapHandler(request, context) {
         const includeLogins = url.searchParams.get('includeLogins') !== 'false';
         const includeVisitors = url.searchParams.get('includeVisitors') !== 'false';
 
+        // Time filter params (hours takes precedence over days over months)
+        const hoursParam = url.searchParams.get('hours');
+        const daysParam = url.searchParams.get('days');
+        const monthsParam = url.searchParams.get('months');
+
         // Validate timeType
         if (timeType !== 'local' && timeType !== 'zulu') {
             return {
@@ -197,6 +230,38 @@ async function visitorHeatmapHandler(request, context) {
                 })
             };
         }
+
+        // Calculate time filter cutoff
+        let cutoffDate = null;
+        let timeFilterLabel = 'all time';
+
+        if (hoursParam) {
+            const hours = parseInt(hoursParam, 10);
+            if (hours > 0) {
+                cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+                timeFilterLabel = `last ${hours} hour${hours > 1 ? 's' : ''}`;
+            }
+        } else if (daysParam) {
+            const days = parseInt(daysParam, 10);
+            if (days > 0) {
+                cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+                timeFilterLabel = `last ${days} day${days > 1 ? 's' : ''}`;
+            }
+        } else if (monthsParam) {
+            const months = parseInt(monthsParam, 10);
+            if (months > 0) {
+                cutoffDate = new Date();
+                cutoffDate.setMonth(cutoffDate.getMonth() - months);
+                timeFilterLabel = `last ${months} month${months > 1 ? 's' : ''}`;
+            }
+        } else {
+            // Default: 3 months
+            cutoffDate = new Date();
+            cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+            timeFilterLabel = 'last 3 months (default)';
+        }
+
+        context.log(`Time filter: ${timeFilterLabel}, cutoff: ${cutoffDate?.toISOString() || 'none'}`);
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
@@ -214,26 +279,29 @@ async function visitorHeatmapHandler(request, context) {
         let visitorCount = 0;
         let loginCount = 0;
 
-        // Query VisitorTrackingAnalytics
+        // Build time filter query
+        const timeFilter = cutoffDate ? { timestamp: { $gte: cutoffDate } } : {};
+
+        // Query VisitorTrackingHistory (for time-filtered data)
         if (includeVisitors) {
-            context.log('Querying VisitorTrackingAnalytics...');
-            const visitors = await db.collection('VisitorTrackingAnalytics').find({}).toArray();
+            context.log('Querying VisitorTrackingHistory...');
+            const visitors = await db.collection('VisitorTrackingHistory').find(timeFilter).toArray();
 
-            visitorCount = visitors.reduce((sum, doc) => sum + (doc.totalVisits || 0), 0);
-            visitorMatrix = aggregateData(visitors, timeType);
+            visitorCount = visitors.length;
+            visitorMatrix = aggregateHistoryData(visitors, timeType);
 
-            context.log(`Processed ${visitors.length} visitor records (${visitorCount} total visits)`);
+            context.log(`Processed ${visitorCount} visitor events`);
         }
 
-        // Query UserLoginAnalytics
+        // Query UserLoginHistory (for time-filtered data)
         if (includeLogins) {
-            context.log('Querying UserLoginAnalytics...');
-            const logins = await db.collection('UserLoginAnalytics').find({}).toArray();
+            context.log('Querying UserLoginHistory...');
+            const logins = await db.collection('UserLoginHistory').find(timeFilter).toArray();
 
-            loginCount = logins.reduce((sum, doc) => sum + (doc.totalLogins || 0), 0);
-            loginMatrix = aggregateData(logins, timeType);
+            loginCount = logins.length;
+            loginMatrix = aggregateHistoryData(logins, timeType);
 
-            context.log(`Processed ${logins.length} user records (${loginCount} total logins)`);
+            context.log(`Processed ${loginCount} login events`);
         }
 
         // Merge matrices
@@ -268,6 +336,8 @@ async function visitorHeatmapHandler(request, context) {
                     },
                     metadata: {
                         timeType: timeType,
+                        timeFilter: timeFilterLabel,
+                        cutoffDate: cutoffDate?.toISOString() || null,
                         includeLogins: includeLogins,
                         includeVisitors: includeVisitors,
                         generatedAt: new Date().toISOString(),
