@@ -31,9 +31,11 @@ async function eventCreationAnalyticsHandler(request, context) {
     const startTime = Date.now();
     context.log('Analytics_EventCreation: Request received');
 
-    const appId = request.query.get('appId') || '1';
-    const timeType = request.query.get('timeType') || 'local';
-    const days = Math.min(365, Math.max(1, parseInt(request.query.get('days') || '90', 10)));
+    // Parse query parameters (Azure Functions v4 style)
+    const url = new URL(request.url);
+    const appId = url.searchParams.get('appId') || '1';
+    const timeType = url.searchParams.get('timeType') || 'local';
+    const days = Math.min(365, Math.max(1, parseInt(url.searchParams.get('days') || '90', 10)));
 
     let mongoClient;
 
