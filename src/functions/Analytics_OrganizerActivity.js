@@ -44,6 +44,9 @@ async function eventCreationAnalyticsHandler(request, context) {
     // 'created' = when event was first added, 'updated' = when last modified
     const dateFieldParam = (url.searchParams.get('dateField') || 'created').toLowerCase();
 
+    // Organizer filter: filter by specific organizer shortName
+    const organizerFilter = url.searchParams.get('organizer') || null;
+
     let mongoClient;
 
     try {
@@ -211,15 +214,21 @@ async function eventCreationAnalyticsHandler(request, context) {
                 }
             }
 
+            // Track by organizer - use looked-up name
+            const orgId = event.ownerOrganizerID;
+            const orgName = orgId ? (organizerMap[orgId.toString()] || 'Unknown') : 'No Organizer';
+
+            // Skip if organizer filter is set and doesn't match
+            if (organizerFilter && orgName !== organizerFilter) {
+                continue;
+            }
+
             // Aggregate
             byDayOfWeek[dayNames[dayOfWeek]][hour]++;
             byDayOfMonth[dayOfMonth]++;
             byDomHour[dayOfMonth][hour]++;
             byHour[hour]++;
 
-            // Track by organizer - use looked-up name
-            const orgId = event.ownerOrganizerID;
-            const orgName = orgId ? (organizerMap[orgId.toString()] || 'Unknown') : 'No Organizer';
             organizerCounts[orgName] = (organizerCounts[orgName] || 0) + 1;
         }
 
@@ -276,6 +285,7 @@ async function eventCreationAnalyticsHandler(request, context) {
                     timeType,
                     source: sourceParam,
                     dateField: dateFieldParam,
+                    organizer: organizerFilter,
                     range: rangeParam || (daysParam ? `${daysParam}D` : '3M'),
                     timeFilter: timeFilterLabel,
                     cutoffDate: cutoffDate?.toISOString() || null,
