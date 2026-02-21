@@ -19,6 +19,8 @@ const { standardMiddleware } = require('../middleware');
  *     Examples: 1H, 3H, 24H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
  * - source: "all" | "manual" | "discovered" (default: "manual")
  *     all = all events, manual = human-created, discovered = AI-discovered
+ * - dateField: "created" | "updated" (default: "created")
+ *     created = when event was first added, updated = when last modified
  *
  * @returns {Object} Heatmaps for DOW and DOM with hourly breakdown
  */
@@ -37,6 +39,10 @@ async function eventCreationAnalyticsHandler(request, context) {
 
     // Source filter: all, manual, discovered (default: manual for backward compat)
     const sourceParam = (url.searchParams.get('source') || 'manual').toLowerCase();
+
+    // Date field: created or updated (default: created)
+    // 'created' = when event was first added, 'updated' = when last modified
+    const dateFieldParam = (url.searchParams.get('dateField') || 'created').toLowerCase();
 
     let mongoClient;
 
@@ -129,6 +135,7 @@ async function eventCreationAnalyticsHandler(request, context) {
         const events = await db.collection('events').find(query).project({
             _id: 1,
             createdAt: 1,
+            updatedAt: 1,
             ownerOrganizerID: 1
         }).toArray();
 
@@ -178,10 +185,15 @@ async function eventCreationAnalyticsHandler(request, context) {
 
         // Process each event
         for (const event of events) {
-            // Use createdAt if available, otherwise extract from ObjectId
-            const date = event.createdAt
-                ? new Date(event.createdAt)
-                : event._id.getTimestamp();
+            // Use selected date field: createdAt or updatedAt
+            let date;
+            if (dateFieldParam === 'updated' && event.updatedAt) {
+                date = new Date(event.updatedAt);
+            } else if (event.createdAt) {
+                date = new Date(event.createdAt);
+            } else {
+                date = event._id.getTimestamp();
+            }
 
             // Adjust for local time if requested (assume EST = UTC-5)
             let hour = date.getUTCHours();
@@ -263,6 +275,7 @@ async function eventCreationAnalyticsHandler(request, context) {
                     appId,
                     timeType,
                     source: sourceParam,
+                    dateField: dateFieldParam,
                     range: rangeParam || (daysParam ? `${daysParam}D` : '3M'),
                     timeFilter: timeFilterLabel,
                     cutoffDate: cutoffDate?.toISOString() || null,
