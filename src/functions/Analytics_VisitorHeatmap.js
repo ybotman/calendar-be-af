@@ -66,12 +66,21 @@ function formatHour(hour) {
     return `${hour - 12}:00 PM`;
 }
 
-// Helper: Initialize empty 7x24 matrix
+// Helper: Initialize empty 7x24 matrix (DOW)
 function initializeMatrix() {
     const matrix = {};
     DAYS_OF_WEEK.forEach(day => {
         matrix[day] = Array(24).fill(0);
     });
+    return matrix;
+}
+
+// Helper: Initialize empty 31x24 matrix (DOM)
+function initializeDomMatrix() {
+    const matrix = {};
+    for (let d = 1; d <= 31; d++) {
+        matrix[d] = Array(24).fill(0);
+    }
     return matrix;
 }
 
@@ -126,30 +135,37 @@ function aggregateData(docs, timeType) {
     return matrix;
 }
 
-// Helper: Aggregate individual history events into matrix
+// Helper: Aggregate individual history events into DOW and DOM matrices
 function aggregateHistoryData(docs, timeType) {
     const dayField = timeType === 'local' ? 'dayOfWeekLocal' : 'dayOfWeekZulu';
     const hourField = timeType === 'local' ? 'hourOfDayLocal' : 'hourOfDayZulu';
+    const domField = timeType === 'local' ? 'dayOfMonthLocal' : 'dayOfMonthZulu';
 
-    const matrix = initializeMatrix();
+    const dowMatrix = initializeMatrix();
+    const domMatrix = initializeDomMatrix();
 
     docs.forEach(doc => {
         const day = doc[dayField];
         const hour = doc[hourField];
+        const dom = doc[domField] || (doc.timestamp ? new Date(doc.timestamp).getUTCDate() : null);
 
-        // Only count if we have valid day/hour data
-        if (day && DAYS_OF_WEEK.includes(day) && hour !== null && hour !== undefined) {
-            const hourInt = parseInt(hour, 10);
-            if (hourInt >= 0 && hourInt < 24) {
-                matrix[day][hourInt]++;
-            }
+        const hourInt = hour !== null && hour !== undefined ? parseInt(hour, 10) : -1;
+
+        // DOW matrix
+        if (day && DAYS_OF_WEEK.includes(day) && hourInt >= 0 && hourInt < 24) {
+            dowMatrix[day][hourInt]++;
+        }
+
+        // DOM matrix (1-31)
+        if (dom && dom >= 1 && dom <= 31 && hourInt >= 0 && hourInt < 24) {
+            domMatrix[dom][hourInt]++;
         }
     });
 
-    return matrix;
+    return { dowMatrix, domMatrix };
 }
 
-// Helper: Merge two matrices
+// Helper: Merge two DOW matrices
 function mergeMatrices(matrix1, matrix2) {
     const merged = initializeMatrix();
 
@@ -160,6 +176,59 @@ function mergeMatrices(matrix1, matrix2) {
     });
 
     return merged;
+}
+
+// Helper: Merge two DOM matrices
+function mergeDomMatrices(matrix1, matrix2) {
+    const merged = initializeDomMatrix();
+
+    for (let d = 1; d <= 31; d++) {
+        for (let h = 0; h < 24; h++) {
+            merged[d][h] = Math.round(matrix1[d][h] + matrix2[d][h]);
+        }
+    }
+
+    return merged;
+}
+
+// Helper: Calculate DOM totals
+function calculateDomTotals(matrix) {
+    const byDom = {};
+    let overall = 0;
+
+    for (let d = 1; d <= 31; d++) {
+        let dayTotal = 0;
+        matrix[d].forEach(count => {
+            dayTotal += count;
+            overall += count;
+        });
+        byDom[d] = dayTotal;
+    }
+
+    return { byDom, overall };
+}
+
+// Helper: Find peak DOM
+function findDomPeak(matrix) {
+    let peakDom = null;
+    let peakHour = null;
+    let peakCount = 0;
+
+    for (let d = 1; d <= 31; d++) {
+        matrix[d].forEach((count, hour) => {
+            if (count > peakCount) {
+                peakCount = count;
+                peakDom = d;
+                peakHour = hour;
+            }
+        });
+    }
+
+    return {
+        day: peakDom,
+        hour: peakHour,
+        count: peakCount
+    };
 }
 
 // Helper: Calculate totals from matrix
@@ -296,8 +365,10 @@ async function visitorHeatmapHandler(request, context) {
 
         const db = mongoClient.db();
 
-        let visitorMatrix = initializeMatrix();
-        let loginMatrix = initializeMatrix();
+        let visitorDowMatrix = initializeMatrix();
+        let visitorDomMatrix = initializeDomMatrix();
+        let loginDowMatrix = initializeMatrix();
+        let loginDomMatrix = initializeDomMatrix();
         let visitorCount = 0;
         let loginCount = 0;
 
@@ -310,7 +381,9 @@ async function visitorHeatmapHandler(request, context) {
             const visitors = await db.collection('VisitorTrackingHistory').find(timeFilter).toArray();
 
             visitorCount = visitors.length;
-            visitorMatrix = aggregateHistoryData(visitors, timeType);
+            const visitorData = aggregateHistoryData(visitors, timeType);
+            visitorDowMatrix = visitorData.dowMatrix;
+            visitorDomMatrix = visitorData.domMatrix;
 
             context.log(`Processed ${visitorCount} visitor events`);
         }
@@ -321,21 +394,31 @@ async function visitorHeatmapHandler(request, context) {
             const logins = await db.collection('UserLoginHistory').find(timeFilter).toArray();
 
             loginCount = logins.length;
-            loginMatrix = aggregateHistoryData(logins, timeType);
+            const loginData = aggregateHistoryData(logins, timeType);
+            loginDowMatrix = loginData.dowMatrix;
+            loginDomMatrix = loginData.domMatrix;
 
             context.log(`Processed ${loginCount} login events`);
         }
 
-        // Merge matrices
-        const heatmap = mergeMatrices(visitorMatrix, loginMatrix);
+        // Merge DOW matrices
+        const heatmap = mergeMatrices(visitorDowMatrix, loginDowMatrix);
 
-        // Calculate totals and peak
+        // Merge DOM matrices
+        const domHeatmap = mergeDomMatrices(visitorDomMatrix, loginDomMatrix);
+
+        // Calculate DOW totals and peak
         const totals = calculateTotals(heatmap);
         const peak = findPeak(heatmap);
+
+        // Calculate DOM totals and peak
+        const domTotals = calculateDomTotals(domHeatmap);
+        const domPeak = findDomPeak(domHeatmap);
 
         context.log('Heatmap generated successfully', {
             totalDataPoints: totals.overall,
             peakTime: peak.timestamp,
+            domPeakDay: domPeak.day,
             timeType
         });
 
@@ -348,9 +431,12 @@ async function visitorHeatmapHandler(request, context) {
             body: JSON.stringify({
                 success: true,
                 data: {
-                    heatmap: heatmap,
+                    heatmap: heatmap,           // DOW heatmap (7x24)
+                    domHeatmap: domHeatmap,     // DOM heatmap (31x24)
                     totals: totals,
-                    peak: peak,
+                    domTotals: domTotals,
+                    peak: peak,                 // DOW peak
+                    domPeak: domPeak,           // DOM peak
                     sources: {
                         userLogins: loginCount,
                         anonymousVisitors: visitorCount,
