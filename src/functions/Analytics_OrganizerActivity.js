@@ -17,6 +17,8 @@ const { standardMiddleware } = require('../middleware');
  * - range: Flexible time range (default: "3M")
  *     Format: {number}{unit} where unit is H|D|W|M|Yr, or "All"
  *     Examples: 1H, 3H, 24H, 1D, 7D, 1W, 2W, 1M, 3M, 6M, 1Yr, 2Yr, All
+ * - source: "all" | "manual" | "discovered" (default: "manual")
+ *     all = all events, manual = human-created, discovered = AI-discovered
  *
  * @returns {Object} Heatmaps for DOW and DOM with hourly breakdown
  */
@@ -32,6 +34,9 @@ async function eventCreationAnalyticsHandler(request, context) {
     // Support both 'range' (new) and 'days' (legacy) params
     const rangeParam = (url.searchParams.get('range') || '').toUpperCase();
     const daysParam = url.searchParams.get('days');
+
+    // Source filter: all, manual, discovered (default: manual for backward compat)
+    const sourceParam = (url.searchParams.get('source') || 'manual').toLowerCase();
 
     let mongoClient;
 
@@ -104,10 +109,15 @@ async function eventCreationAnalyticsHandler(request, context) {
         }
 
         // Build query filter
-        const query = {
-            appId,
-            isDiscovered: { $ne: true }
-        };
+        const query = { appId };
+
+        // Apply source filter
+        if (sourceParam === 'manual') {
+            query.isDiscovered = { $ne: true };
+        } else if (sourceParam === 'discovered') {
+            query.isDiscovered = true;
+        }
+        // 'all' = no isDiscovered filter
 
         // Add time filter using ObjectId if cutoffDate is set
         if (cutoffDate) {
@@ -206,7 +216,7 @@ async function eventCreationAnalyticsHandler(request, context) {
             byDow: {},
             byDom: { ...byDayOfMonth },
             byHour: [...byHour],
-            overall: events.length
+            total: events.length  // 'total' to match frontend expectations
         };
 
         dayNames.forEach(day => {
@@ -224,11 +234,11 @@ async function eventCreationAnalyticsHandler(request, context) {
             hour: { hour: peakHourIdx, count: byHour[peakHourIdx], label: formatHour(peakHourIdx) }
         };
 
-        // Top organizers
+        // Top organizers - return shortName to match frontend expectations
         const topOrganizers = Object.entries(organizerCounts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 15)
-            .map(([name, count]) => ({ name, count }));
+            .map(([shortName, count]) => ({ shortName, count }));
 
         const duration = Date.now() - startTime;
 
@@ -252,6 +262,7 @@ async function eventCreationAnalyticsHandler(request, context) {
                 metadata: {
                     appId,
                     timeType,
+                    source: sourceParam,
                     range: rangeParam || (daysParam ? `${daysParam}D` : '3M'),
                     timeFilter: timeFilterLabel,
                     cutoffDate: cutoffDate?.toISOString() || null,
