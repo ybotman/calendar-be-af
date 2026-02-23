@@ -1228,6 +1228,255 @@
         }
       }
     },
+    "/api/analytics/login-history": {
+      "get": {
+        "summary": "Login History",
+        "description": "Returns paginated list of user login events from UserLoginHistory collection. Supports filtering by date range, appId, and device type.",
+        "tags": ["Analytics"],
+        "operationId": "getLoginHistory",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-indexed)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7D"
+            }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [1, 2]
+            }
+          },
+          {
+            "name": "deviceType",
+            "in": "query",
+            "description": "Filter by device type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["mobile", "tablet", "desktop"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginHistoryResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/visitor-history": {
+      "get": {
+        "summary": "Visitor History",
+        "description": "Returns paginated list of anonymous visitor events from VisitorTrackingHistory collection. Supports filtering by date range, appId, and device type.",
+        "tags": ["Analytics"],
+        "operationId": "getVisitorHistory",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-indexed)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7D"
+            }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction). Note: old records may have null.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [1, 2]
+            }
+          },
+          {
+            "name": "deviceType",
+            "in": "query",
+            "description": "Filter by device type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["mobile", "tablet", "desktop"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visitor history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorHistoryResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/map-center-history": {
+      "get": {
+        "summary": "Map Center History",
+        "description": "Returns paginated list of map center reset events from MapCenterHistory collection. Tracks when users SET/RESET their map center location.",
+        "tags": ["Analytics"],
+        "operationId": "getMapCenterHistory",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-indexed)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7D"
+            }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [1, 2]
+            }
+          },
+          {
+            "name": "deviceType",
+            "in": "query",
+            "description": "Filter by device type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["mobile", "tablet", "desktop"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map center history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapCenterHistoryResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/geo/bigdatacloud/ip": {
       "get": {
         "summary": "IP Geolocation - BigDataCloud",
@@ -3154,6 +3403,154 @@
           }
         },
         "required": ["success", "data", "timestamp"]
+      },
+      "LoginHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "firebaseUserId": { "type": "string" },
+                "appId": { "type": "integer", "description": "1=TangoTiempo, 2=HarmonyJunction" },
+                "timestamp": { "type": "string", "format": "date-time" },
+                "ip": { "type": "string" },
+                "deviceType": { "type": "string", "enum": ["mobile", "tablet", "desktop"] },
+                "userAgent": { "type": "string" },
+                "timezone": { "type": "string" },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "city": { "type": "string" },
+                    "region": { "type": "string" },
+                    "country": { "type": "string" },
+                    "latitude": { "type": "number" },
+                    "longitude": { "type": "number" },
+                    "source": { "type": "string" }
+                  }
+                },
+                "dayOfWeek": { "type": "string" },
+                "hourOfDay": { "type": "integer" }
+              }
+            }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "range": { "type": "string" },
+              "appId": { "type": "integer" },
+              "deviceType": { "type": "string" }
+            }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "VisitorHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "visitorId": { "type": "string", "description": "UUID from browser cookie" },
+                "appId": { "type": "integer", "description": "1=TangoTiempo, 2=HarmonyJunction (null for old records)" },
+                "timestamp": { "type": "string", "format": "date-time" },
+                "ip": { "type": "string" },
+                "page": { "type": "string" },
+                "deviceType": { "type": "string", "enum": ["mobile", "tablet", "desktop"] },
+                "userAgent": { "type": "string" },
+                "timezone": { "type": "string" },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "city": { "type": "string" },
+                    "region": { "type": "string" },
+                    "country": { "type": "string" },
+                    "latitude": { "type": "number" },
+                    "longitude": { "type": "number" },
+                    "source": { "type": "string" }
+                  }
+                },
+                "dayOfWeek": { "type": "string" },
+                "hourOfDay": { "type": "integer" }
+              }
+            }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "range": { "type": "string" },
+              "appId": { "type": "integer" },
+              "deviceType": { "type": "string" }
+            }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MapCenterHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "firebaseUserId": { "type": "string" },
+                "appId": { "type": "integer", "description": "1=TangoTiempo, 2=HarmonyJunction" },
+                "timestamp": { "type": "string", "format": "date-time" },
+                "ip": { "type": "string" },
+                "page": { "type": "string" },
+                "mapCenter": {
+                  "type": "object",
+                  "properties": {
+                    "latitude": { "type": "number" },
+                    "longitude": { "type": "number" }
+                  }
+                },
+                "deviceType": { "type": "string", "enum": ["mobile", "tablet", "desktop"] },
+                "userAgent": { "type": "string" },
+                "timezone": { "type": "string" },
+                "userLocation": {
+                  "type": "object",
+                  "properties": {
+                    "city": { "type": "string" },
+                    "region": { "type": "string" },
+                    "country": { "type": "string" },
+                    "latitude": { "type": "number" },
+                    "longitude": { "type": "number" },
+                    "source": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "range": { "type": "string" },
+              "appId": { "type": "integer" },
+              "deviceType": { "type": "string" }
+            }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
       },
       "ErrorResponse": {
         "type": "object",
