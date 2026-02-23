@@ -96,6 +96,9 @@ async function visitorTrackHandler(request, context) {
         // TIEMPO-329: Accept visitor_id UUID from frontend cookie
         const visitor_id = requestBody.visitor_id || null;
 
+        // Application ID (1=TangoTiempo, 2=HarmonyJunction) - null for old records without appId
+        const appId = requestBody.appId || null;
+
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
         const google_browser_long = requestBody.google_browser_long || null;
@@ -270,6 +273,7 @@ async function visitorTrackHandler(request, context) {
 
         const visitEvent = {
             visitor_id: visitor_id, // TIEMPO-329: Store visitor UUID from cookie
+            appId: appId, // Application ID (1=TangoTiempo, 2=HarmonyJunction)
             ip: userIp,
             timestamp: visitTime,
             page: page,
@@ -327,6 +331,7 @@ async function visitorTrackHandler(request, context) {
                 createdAt: new Date()
             },
             $set: {
+                appId: appId, // Track most recent app used (1=TangoTiempo, 2=HarmonyJunction)
                 // Update last known location (best available source)
                 lastKnownLocation: (bestLat && bestLong) ? {
                     latitude: bestLat,
