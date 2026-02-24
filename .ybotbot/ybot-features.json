@@ -29,7 +29,7 @@
   "integrations": {
     "jira": {
       "value": "MCP",
-      "cloudId": "http://hdtsllc@atlassian.net",
+      "cloudId": "https://hdtsllc.atlassian.net",
       "projectKey": "CALBEAF"
     },
     "github": {

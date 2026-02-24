@@ -164,7 +164,7 @@ Then start the detailed comparison and write results to docs/RECONCILIATION-RESU
 
 ## User Notes
 
-- User: Gotan (El Gotan / Toby)
+- User: Ybotman (Toby)
 - Time: Going to bed, will resume tomorrow
 - Priority: Understanding the data state, NOT making changes
 - Question pending: Whether to halt POST/PUT in test (decided: NO for now)

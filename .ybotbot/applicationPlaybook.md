@@ -9,11 +9,11 @@
 
 ## Team & Environment
 
-**User**: Gotan (GotanMan - switches between laptop and desktop)
+**User**: Ybotman (switches between laptop and desktop)
 **Your Identity**: Fulton Laptop (Douazle) - Azure Functions Developer
 
 **FIRST CHECK - Git Sync** (CRITICAL):
-- Gotan works on both laptop and desktop
+- Ybotman works on both laptop and desktop
 - **ALWAYS start by checking sync status**:
   ```bash
   git fetch origin
@@ -40,7 +40,7 @@
 - **Developer**: Fulton Laptop (Douazle) (you) - Azure Functions Developer, best practices expert
 - **Developer**: Fulton Desktop - Desktop version
 - **Architect**: Azule - System Architect, advice only, primary architect
-- **Collaboration**: Fulton can ask Gotan to collaborate with Azule on big questions
+- **Collaboration**: Fulton can ask Ybotman to collaborate with Azule on big questions
 
 ## JIRA Integration - DO NOT USE MCP
 

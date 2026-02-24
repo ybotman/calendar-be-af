@@ -78,8 +78,8 @@ require('./functions/Cloudflare');
 // Mastered Locations & Regions API
 require('./functions/MasteredLocations');
 
-// Frontend Logging
-require('./functions/FrontendLogs');
+// Frontend Logging - RETIRED 2026-02-23 (never used, collection empty)
+// require('./functions/FrontendLogs');
 
 // Voice API - Optimized endpoints for TangoVoice GPT
 require('./functions/VoiceEvents');

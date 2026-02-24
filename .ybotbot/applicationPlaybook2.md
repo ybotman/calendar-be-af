@@ -4,7 +4,7 @@
 **Version:** 1.3.2
 **Last Updated:** 2025-10-19
 **Compiled By:** Fulton Laptop (Douazle) - AI-GUILD Azure Functions Developer
-**User:** Gotan (GotanMan)
+**User:** Ybotman
 
 ---
 
@@ -69,7 +69,7 @@
 ## Team & Collaboration
 
 ### Primary User
-- **Name**: Gotan (GotanMan)
+- **Name**: Ybotman
 - **Role**: Product Owner
 - **Environment**: Switches between laptop and desktop
 - **Contact**: toby.balsley@gmail.com
@@ -118,7 +118,7 @@
 
 ### CRITICAL: Git Sync Protocol
 
-Gotan works on both laptop and desktop. **ALWAYS check sync status before starting work:**
+Ybotman works on both laptop and desktop. **ALWAYS check sync status before starting work:**
 
 ```bash
 git fetch origin
@@ -2102,7 +2102,7 @@ ls -lt inbox/fulton/
 
 ### Contact & Support
 
-**Primary User**: Gotan (toby.balsley@gmail.com)
+**Primary User**: Ybotman (toby.balsley@gmail.com)
 **Developer**: Fulton Laptop (AI-GUILD agent)
 **JIRA Project**: CALBEAF
 **Epic**: CALBEAF-5 (BE to AF Migration)
