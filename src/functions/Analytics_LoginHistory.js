@@ -79,13 +79,29 @@ async function loginHistoryHandler(request, context) {
         const appId = url.searchParams.get('appId');
         const deviceType = url.searchParams.get('deviceType');
 
+        // New filters
+        const geoSource = url.searchParams.get('geoSource');
+        const city = url.searchParams.get('city');
+        const region = url.searchParams.get('region');
+        const country = url.searchParams.get('country');
+        const ip = url.searchParams.get('ip');
+        const firebaseUserId = url.searchParams.get('firebaseUserId');
+        const startDateParam = url.searchParams.get('startDate');
+        const endDateParam = url.searchParams.get('endDate');
+
         // Build query
         const query = {};
 
-        // Date range filter
-        const startDate = parseRange(range);
-        if (startDate) {
-            query.timestamp = { $gte: startDate };
+        // Date range filter (explicit dates take precedence over range shorthand)
+        if (startDateParam || endDateParam) {
+            query.timestamp = {};
+            if (startDateParam) query.timestamp.$gte = new Date(startDateParam);
+            if (endDateParam) query.timestamp.$lte = new Date(endDateParam);
+        } else {
+            const startDate = parseRange(range);
+            if (startDate) {
+                query.timestamp = { $gte: startDate };
+            }
         }
 
         // appId filter
@@ -96,6 +112,28 @@ async function loginHistoryHandler(request, context) {
         // deviceType filter
         if (deviceType) {
             query.deviceType = deviceType;
+        }
+
+        // Geo filters
+        if (geoSource) {
+            query.geoSource = geoSource;
+        }
+        if (city) {
+            query.ipinfo_city = { $regex: city, $options: 'i' };
+        }
+        if (region) {
+            query.ipinfo_region = { $regex: region, $options: 'i' };
+        }
+        if (country) {
+            query.ipinfo_country = country.toUpperCase();
+        }
+
+        // Identity filters
+        if (ip) {
+            query.ip = ip;
+        }
+        if (firebaseUserId) {
+            query.firebaseUserId = firebaseUserId;
         }
 
         // Connect to MongoDB
