@@ -212,7 +212,9 @@ async function venueAgeOutTimerHandler(myTimer, context) {
 
 // Register timer function - runs weekly on Sunday at 3:00 AM UTC
 // Named App1 to indicate this is specific to appId="1"
-app.timer('Venue_AgeOut_Timer_App1', {
-    schedule: '0 0 3 * * 0', // CRON: second minute hour day month weekday
-    handler: venueAgeOutTimerHandler
-});
+// DISABLED 2026-02-24: Turned off per Ybotman - venues being archived unexpectedly
+// TODO: Consider adding notification to organizers before archiving
+// app.timer('Venue_AgeOut_Timer_App1', {
+//     schedule: '0 0 3 * * 0', // CRON: second minute hour day month weekday
+//     handler: venueAgeOutTimerHandler
+// });
