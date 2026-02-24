@@ -186,7 +186,7 @@ TO:   mongodb+srv://TangoTiempoBE:***@.../TangoTiempoProd?...
 **Agent Communication:**
 - Sarah identified the issue (frontend perspective)
 - Fulton investigated (backend/Azure Functions perspective)
-- Gotan clarified database naming convention
+- Ybotman clarified database naming convention
 - Resolution coordinated via agent-messages system
 
 **Cross-Project Learning:**
@@ -252,6 +252,65 @@ Voice-first Siri Shortcut integration for TangoTiempo — VOICE IN → VOICE OUT
 - [ ] Download working ChatGPT shortcut and examine actual flow
 - [ ] Test "Ask For Input" via "Hey Siri" (not manual tap)
 - [ ] Document iOS version for testing
+
+---
+
+## Session: 2026-02-23 - Analytics Endpoints & Function Registration
+
+### Context
+Built 3 new analytics endpoints for CalOps Activity Screen + added appId tracking to VisitorTrack.
+
+### Critical Issue: Functions Returned 404 on PROD
+
+**Symptom:** New endpoints deployed but returned 404 Not Found
+**CI/CD Status:** Showed "completed + success"
+**Root Cause:** Function files created but NOT registered in `src/app.js`
+
+#### The Problem
+
+```javascript
+// I created these files:
+src/functions/Analytics_LoginHistory.js
+src/functions/Analytics_VisitorHistory.js
+src/functions/Analytics_MapCenterHistory.js
+
+// But forgot to add to src/app.js:
+require('./functions/Analytics_LoginHistory');    // ← MISSING
+require('./functions/Analytics_VisitorHistory');  // ← MISSING
+require('./functions/Analytics_MapCenterHistory'); // ← MISSING
+```
+
+#### Why This Happened
+- Azure Functions v4 Node.js programming model uses `app.js` as entry point
+- Each function file self-registers with `app.http()` BUT must be imported in app.js
+- I looked at existing `Analytics_VisitorHeatmap.js` for patterns but missed the app.js import
+
+### ⚠️ CRITICAL CHECKLIST — New Azure Functions
+
+**When creating new Azure Function files, ALWAYS:**
+
+1. ✅ Create the function file in `src/functions/`
+2. ✅ Register with `app.http()` in the file
+3. ⚠️ **ADD `require()` to `src/app.js`** ← EASY TO FORGET!
+4. ✅ Add to `public/swagger.json`
+5. ✅ Test locally with `npm run dev` before deploying
+6. ✅ Test on TEST before PROD
+
+### What Worked Well
+- Cross-project messaging (Sarah, Quinn, Dash coordination)
+- Quick diagnosis once 404 was reported (~5 minutes)
+- Fast recovery and redeployment
+- Backwards compatibility (null appId for old records)
+
+### What Didn't Work
+- Deployed to PROD without local testing
+- Missed the app.js registration step despite looking at existing patterns
+- Wasted deployment cycle
+
+### Prevention Measures
+1. **Read this checklist** before creating new functions
+2. **Test locally** with `func start` or `npm run dev`
+3. **Grep for existing pattern**: `grep -l "require.*functions" src/app.js`
 
 ---
 
