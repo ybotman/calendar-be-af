@@ -47,7 +47,7 @@ async function userActivityHandler(request, context) {
         const now = new Date();
         const staleThreshold = new Date(now.getTime() - (staleDays * 24 * 60 * 60 * 1000));
 
-        // Get users with their login data (uses $lookup to join userlogintrack)
+        // Get users with their login data (uses $lookup to join UserLoginHistory)
         const usersCollection = db.collection('userlogins');
 
         // Aggregate users with their last login
@@ -55,7 +55,7 @@ async function userActivityHandler(request, context) {
             { $match: { appId } },
             {
                 $lookup: {
-                    from: 'userlogintrack',
+                    from: 'UserLoginHistory',
                     localField: 'firebaseUserId',
                     foreignField: 'firebaseUserId',
                     as: 'loginRecords'
