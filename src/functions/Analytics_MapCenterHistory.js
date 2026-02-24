@@ -133,12 +133,29 @@ async function mapCenterHistoryHandler(request, context) {
             userAgent: mc.userAgent,
             timezone: mc.timezone,
             userLocation: {
-                city: mc.ipinfo_city || null,
-                region: mc.ipinfo_region || null,
-                country: mc.ipinfo_country || null,
+                // Best available (priority: browser > api > ipinfo)
                 latitude: mc.google_browser_lat || mc.google_api_lat || mc.ipinfo_lat || null,
                 longitude: mc.google_browser_long || mc.google_api_long || mc.ipinfo_long || null,
-                source: mc.geoSource
+                source: mc.geoSource,
+                // Raw sources
+                browserGps: mc.google_browser_lat ? {
+                    lat: mc.google_browser_lat,
+                    long: mc.google_browser_long,
+                    accuracy: mc.google_browser_accuracy || null
+                } : null,
+                googleApi: mc.google_api_lat ? {
+                    lat: mc.google_api_lat,
+                    long: mc.google_api_long
+                } : null,
+                ipLookup: {
+                    lat: mc.ipinfo_lat || null,
+                    long: mc.ipinfo_long || null,
+                    city: mc.ipinfo_city || null,
+                    region: mc.ipinfo_region || null,
+                    country: mc.ipinfo_country || null,
+                    timezone: mc.ipinfo_timezone || null,
+                    postal: mc.ipinfo_postal || null
+                }
             }
         }));
 

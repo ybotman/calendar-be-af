@@ -132,12 +132,29 @@ async function loginHistoryHandler(request, context) {
             userAgent: login.userAgent,
             timezone: login.timezone,
             location: {
-                city: login.ipinfo_city || null,
-                region: login.ipinfo_region || null,
-                country: login.ipinfo_country || null,
+                // Best available (priority: browser > api > ipinfo)
                 latitude: login.google_browser_lat || login.google_api_lat || login.ipinfo_lat || null,
                 longitude: login.google_browser_long || login.google_api_long || login.ipinfo_long || null,
-                source: login.geoSource
+                source: login.geoSource,
+                // Raw sources
+                browserGps: login.google_browser_lat ? {
+                    lat: login.google_browser_lat,
+                    long: login.google_browser_long,
+                    accuracy: login.google_browser_accuracy || null
+                } : null,
+                googleApi: login.google_api_lat ? {
+                    lat: login.google_api_lat,
+                    long: login.google_api_long
+                } : null,
+                ipLookup: {
+                    lat: login.ipinfo_lat || null,
+                    long: login.ipinfo_long || null,
+                    city: login.ipinfo_city || null,
+                    region: login.ipinfo_region || null,
+                    country: login.ipinfo_country || null,
+                    timezone: login.ipinfo_timezone || null,
+                    postal: login.ipinfo_postal || null
+                }
             },
             dayOfWeek: login.dayOfWeekLocal || login.dayOfWeekZulu,
             hourOfDay: login.hourOfDayLocal ?? login.hourOfDayZulu

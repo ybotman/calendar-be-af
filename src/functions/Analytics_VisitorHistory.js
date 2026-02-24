@@ -133,12 +133,29 @@ async function visitorHistoryHandler(request, context) {
             userAgent: visitor.userAgent,
             timezone: visitor.timezone,
             location: {
-                city: visitor.ipinfo_city || null,
-                region: visitor.ipinfo_region || null,
-                country: visitor.ipinfo_country || null,
+                // Best available (priority: browser > api > ipinfo)
                 latitude: visitor.google_browser_lat || visitor.google_api_lat || visitor.ipinfo_lat || null,
                 longitude: visitor.google_browser_long || visitor.google_api_long || visitor.ipinfo_long || null,
-                source: visitor.geoSource
+                source: visitor.geoSource,
+                // Raw sources
+                browserGps: visitor.google_browser_lat ? {
+                    lat: visitor.google_browser_lat,
+                    long: visitor.google_browser_long,
+                    accuracy: visitor.google_browser_accuracy || null
+                } : null,
+                googleApi: visitor.google_api_lat ? {
+                    lat: visitor.google_api_lat,
+                    long: visitor.google_api_long
+                } : null,
+                ipLookup: {
+                    lat: visitor.ipinfo_lat || null,
+                    long: visitor.ipinfo_long || null,
+                    city: visitor.ipinfo_city || null,
+                    region: visitor.ipinfo_region || null,
+                    country: visitor.ipinfo_country || null,
+                    timezone: visitor.ipinfo_timezone || null,
+                    postal: visitor.ipinfo_postal || null
+                }
             },
             dayOfWeek: visitor.dayOfWeekLocal || visitor.dayOfWeekZulu,
             hourOfDay: visitor.hourOfDayLocal ?? visitor.hourOfDayZulu
