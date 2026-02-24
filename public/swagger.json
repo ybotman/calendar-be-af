@@ -1231,61 +1231,23 @@
     "/api/analytics/login-history": {
       "get": {
         "summary": "Login History",
-        "description": "Returns paginated list of user login events from UserLoginHistory collection. Supports filtering by date range, appId, and device type.",
+        "description": "Returns paginated list of user login events from UserLoginHistory collection. Supports filtering by date range, geo, device, and identity.",
         "tags": ["Analytics"],
         "operationId": "getLoginHistory",
         "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Page number (0-indexed)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Items per page (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "maximum": 200
-            }
-          },
-          {
-            "name": "range",
-            "in": "query",
-            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "7D"
-            }
-          },
-          {
-            "name": "appId",
-            "in": "query",
-            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "enum": [1, 2]
-            }
-          },
-          {
-            "name": "deviceType",
-            "in": "query",
-            "description": "Filter by device type",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": ["mobile", "tablet", "desktop"]
-            }
-          }
+          { "name": "page", "in": "query", "description": "Page number (0-indexed)", "schema": { "type": "integer", "default": 0 } },
+          { "name": "limit", "in": "query", "description": "Items per page (max 200)", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "name": "range", "in": "query", "description": "Time range shorthand: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All", "schema": { "type": "string", "default": "7D" } },
+          { "name": "startDate", "in": "query", "description": "Explicit start date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "endDate", "in": "query", "description": "Explicit end date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "appId", "in": "query", "description": "Filter by app (1=TangoTiempo, 2=HarmonyJunction)", "schema": { "type": "integer", "enum": [1, 2] } },
+          { "name": "deviceType", "in": "query", "description": "Filter by device", "schema": { "type": "string", "enum": ["mobile", "tablet", "desktop"] } },
+          { "name": "geoSource", "in": "query", "description": "Filter by geolocation source", "schema": { "type": "string", "enum": ["GoogleBrowser", "GoogleGeolocation", "IPInfoIO"] } },
+          { "name": "city", "in": "query", "description": "Filter by city (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "region", "in": "query", "description": "Filter by region/state (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "country", "in": "query", "description": "Filter by country code (e.g., US)", "schema": { "type": "string" } },
+          { "name": "ip", "in": "query", "description": "Filter by exact IP address", "schema": { "type": "string" } },
+          { "name": "firebaseUserId", "in": "query", "description": "Filter by Firebase user ID", "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -1314,61 +1276,23 @@
     "/api/analytics/visitor-history": {
       "get": {
         "summary": "Visitor History",
-        "description": "Returns paginated list of anonymous visitor events from VisitorTrackingHistory collection. Supports filtering by date range, appId, and device type.",
+        "description": "Returns paginated list of anonymous visitor events from VisitorTrackingHistory collection. Supports filtering by date range, geo, device, and identity.",
         "tags": ["Analytics"],
         "operationId": "getVisitorHistory",
         "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Page number (0-indexed)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Items per page (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "maximum": 200
-            }
-          },
-          {
-            "name": "range",
-            "in": "query",
-            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "7D"
-            }
-          },
-          {
-            "name": "appId",
-            "in": "query",
-            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction). Note: old records may have null.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "enum": [1, 2]
-            }
-          },
-          {
-            "name": "deviceType",
-            "in": "query",
-            "description": "Filter by device type",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": ["mobile", "tablet", "desktop"]
-            }
-          }
+          { "name": "page", "in": "query", "description": "Page number (0-indexed)", "schema": { "type": "integer", "default": 0 } },
+          { "name": "limit", "in": "query", "description": "Items per page (max 200)", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "name": "range", "in": "query", "description": "Time range shorthand: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All", "schema": { "type": "string", "default": "7D" } },
+          { "name": "startDate", "in": "query", "description": "Explicit start date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "endDate", "in": "query", "description": "Explicit end date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "appId", "in": "query", "description": "Filter by app (1=TangoTiempo, 2=HarmonyJunction). Old records may have null.", "schema": { "type": "integer", "enum": [1, 2] } },
+          { "name": "deviceType", "in": "query", "description": "Filter by device", "schema": { "type": "string", "enum": ["mobile", "tablet", "desktop"] } },
+          { "name": "geoSource", "in": "query", "description": "Filter by geolocation source", "schema": { "type": "string", "enum": ["GoogleBrowser", "GoogleGeolocation", "IPInfoIO"] } },
+          { "name": "city", "in": "query", "description": "Filter by city (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "region", "in": "query", "description": "Filter by region/state (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "country", "in": "query", "description": "Filter by country code (e.g., US)", "schema": { "type": "string" } },
+          { "name": "ip", "in": "query", "description": "Filter by exact IP address", "schema": { "type": "string" } },
+          { "name": "visitorId", "in": "query", "description": "Filter by visitor UUID (from browser cookie)", "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -1397,61 +1321,23 @@
     "/api/analytics/map-center-history": {
       "get": {
         "summary": "Map Center History",
-        "description": "Returns paginated list of map center reset events from MapCenterHistory collection. Tracks when users SET/RESET their map center location.",
+        "description": "Returns paginated list of map center reset events from MapCenterHistory collection. Tracks when users SET/RESET their map center location. Supports filtering by date range, geo, device, and identity.",
         "tags": ["Analytics"],
         "operationId": "getMapCenterHistory",
         "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Page number (0-indexed)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Items per page (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "maximum": 200
-            }
-          },
-          {
-            "name": "range",
-            "in": "query",
-            "description": "Time range filter. Format: {number}{unit} where unit is H, D, W, M, Yr, or 'All'. Examples: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "7D"
-            }
-          },
-          {
-            "name": "appId",
-            "in": "query",
-            "description": "Filter by application (1=TangoTiempo, 2=HarmonyJunction)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "enum": [1, 2]
-            }
-          },
-          {
-            "name": "deviceType",
-            "in": "query",
-            "description": "Filter by device type",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": ["mobile", "tablet", "desktop"]
-            }
-          }
+          { "name": "page", "in": "query", "description": "Page number (0-indexed)", "schema": { "type": "integer", "default": 0 } },
+          { "name": "limit", "in": "query", "description": "Items per page (max 200)", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "name": "range", "in": "query", "description": "Time range shorthand: 1H, 24H, 7D, 1M, 3M, 6M, 1Yr, All", "schema": { "type": "string", "default": "7D" } },
+          { "name": "startDate", "in": "query", "description": "Explicit start date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "endDate", "in": "query", "description": "Explicit end date (ISO 8601). Overrides range.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "appId", "in": "query", "description": "Filter by app (1=TangoTiempo, 2=HarmonyJunction)", "schema": { "type": "integer", "enum": [1, 2] } },
+          { "name": "deviceType", "in": "query", "description": "Filter by device", "schema": { "type": "string", "enum": ["mobile", "tablet", "desktop"] } },
+          { "name": "geoSource", "in": "query", "description": "Filter by geolocation source", "schema": { "type": "string", "enum": ["GoogleBrowser", "GoogleGeolocation", "IPInfoIO"] } },
+          { "name": "city", "in": "query", "description": "Filter by city (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "region", "in": "query", "description": "Filter by region/state (case-insensitive regex)", "schema": { "type": "string" } },
+          { "name": "country", "in": "query", "description": "Filter by country code (e.g., US)", "schema": { "type": "string" } },
+          { "name": "ip", "in": "query", "description": "Filter by exact IP address", "schema": { "type": "string" } },
+          { "name": "firebaseUserId", "in": "query", "description": "Filter by Firebase user ID", "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
