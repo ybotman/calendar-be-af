@@ -246,7 +246,7 @@ async function loginHistoryHandler(request, context) {
 
 app.http('Analytics_LoginHistory', {
     methods: ['GET', 'OPTIONS'],
-    authLevel: 'anonymous',
+    authLevel: 'function',
     route: 'analytics/login-history',
     handler: standardMiddleware(loginHistoryHandler)
 });

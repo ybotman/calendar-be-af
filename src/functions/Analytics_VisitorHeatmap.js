@@ -467,7 +467,7 @@ async function visitorHeatmapHandler(request, context) {
 // Register function with standard middleware
 app.http('Analytics_VisitorHeatmap', {
     methods: ['GET'],
-    authLevel: 'anonymous',
+    authLevel: 'function',
     route: 'analytics/visitor-heatmap',
     handler: standardMiddleware(visitorHeatmapHandler)
 });

@@ -245,7 +245,7 @@ async function mapCenterHistoryHandler(request, context) {
 
 app.http('Analytics_MapCenterHistory', {
     methods: ['GET', 'OPTIONS'],
-    authLevel: 'anonymous',
+    authLevel: 'function',
     route: 'analytics/map-center-history',
     handler: standardMiddleware(mapCenterHistoryHandler)
 });

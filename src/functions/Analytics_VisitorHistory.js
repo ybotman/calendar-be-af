@@ -247,7 +247,7 @@ async function visitorHistoryHandler(request, context) {
 
 app.http('Analytics_VisitorHistory', {
     methods: ['GET', 'OPTIONS'],
-    authLevel: 'anonymous',
+    authLevel: 'function',
     route: 'analytics/visitor-history',
     handler: standardMiddleware(visitorHistoryHandler)
 });

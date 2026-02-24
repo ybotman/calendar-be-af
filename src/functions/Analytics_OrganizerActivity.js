@@ -319,7 +319,7 @@ function formatHour(hour) {
 // Register function with standard middleware
 app.http('Analytics_OrganizerActivity', {
     methods: ['GET'],
-    authLevel: 'anonymous',
+    authLevel: 'function',
     route: 'analytics/event-creation',
     handler: standardMiddleware(eventCreationAnalyticsHandler)
 });
