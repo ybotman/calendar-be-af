@@ -25,6 +25,23 @@ Generated on: 2025-10-05T20:04:02.753Z
 
 ---
 
+## CRITICAL CHECKLISTS (Graduated from Retrospectives)
+
+### New Azure Function Checklist
+
+**When creating new Azure Function files, ALWAYS:**
+
+1. ✅ Create the function file in `src/functions/`
+2. ✅ Register with `app.http()` in the file
+3. ⚠️ **ADD `require()` to `src/app.js`** ← EASY TO FORGET!
+4. ✅ Add to `public/swagger.json`
+5. ✅ Test locally with `npm run dev` before deploying
+6. ✅ Test on TEST before PROD
+
+*Source: 2026-02-23 retrospective - 404 on PROD due to missing app.js registration*
+
+---
+
 
 ================================================================================
 START OF FILE: STARTUP-DEF.md
