@@ -314,6 +314,153 @@ require('./functions/Analytics_MapCenterHistory'); // ← MISSING
 
 ---
 
+---
+
+## Session: 2026-02-24 - Venue Archive & Duplicate Cleanup
+
+### Context
+Long session covering GDPR auth, venue auto-archive issues, event city fixes, and duplicate venue analysis.
+
+### Critical Failure: Output Formatting
+
+**User asked for "a list" 4+ times. I gave:**
+- Formatted tables
+- Scripts that output tables
+- Structured markdown
+- Analysis with headers
+
+**User wanted:**
+- Plain text
+- One item per line
+- Just the data
+
+#### ⚠️ RULE: When User Says "List" = Plain Text
+
+```
+❌ WRONG:
+| NAME | ADDRESS | CITY | COUNT |
+|------|---------|------|-------|
+| Venue A | 123 Main | Boston | 2 |
+
+✅ RIGHT:
+Venue A, 123 Main, Boston, 2
+Venue B, 456 Oak, NYC, 3
+Venue C, 789 Elm, LA, 2
+```
+
+**Key Signals:**
+- "give me the list" = plain text, no formatting
+- "show me" = can use some formatting
+- "I don't understand why you're not showing me the list" = YOU ARE OVERCOMPLICATING IT
+
+### What Worked Well
+
+1. **Venue Archive Timer (CALBEAF-58)**
+   - Identified timer was too aggressive (archived 543 venues)
+   - Disabled timer on all branches
+   - Created CALBEAF-86 for 2-tier redesign
+   - Reactivated TangoAffair + 13 Boston venues
+
+2. **Event City Fixes**
+   - Found 4 events with missing masteredCityName
+   - Fixed in PROD (TangoAffair, 2x Milonga NUEVA!, VICKY'S 70th)
+   - Identified root cause: frontend not inheriting city from venue
+
+3. **Venue Dropdown Bug**
+   - Found 213 venues showing instead of 40
+   - Root cause: isArchived=true not filtered out
+   - MSG sent to Sarah with clear findings
+
+### What Failed
+
+1. **Duplicate Cleanup Not Completed**
+   - Found 100 groups, 114 extras to delete
+   - User stopped due to frustration with output format
+   - Data ready but action not taken
+
+2. **Communication Style**
+   - Over-engineered responses
+   - Didn't match user's simplicity expectations
+   - Took 4+ attempts to understand "just give me a list"
+
+### Lessons Learned
+
+| Signal | Meaning | Action |
+|--------|---------|--------|
+| "list" | Plain text | No tables, no headers |
+| "show me X" | Visual OK | Light formatting acceptable |
+| Repeated request | You're not listening | Simplify drastically |
+| User frustrated | Stop adding complexity | Raw data only |
+
+### Technical Notes
+
+**Venue Archive Status Fields:**
+- `isActive: true/false` - Can organizers select it?
+- `isArchived: true/false` - Should it appear at all?
+- Frontend should filter: `isArchived != true`
+- Inactive venues shown at END of dropdown (intentional)
+
+**Duplicate Analysis:**
+- 100 groups with same name + city
+- 114 extra records (keep 1 per group)
+- All AI-discovered, no events connected
+- Ready to delete next session
+
+### Action Items for Next Session
+- [ ] Complete duplicate venue cleanup (114 extras)
+- [ ] Use PLAIN TEXT output format
+- [ ] Check Sarah's fixes for venue dropdown
+- [ ] Check Dash CalOps auth update
+
+---
+
+---
+
+## Session: 2026-02-25 - EventActivityLog userEmail Bug
+
+### What Happened
+Built EventActivityLog audit trail (CALBEAF-87). Dash reported inconsistent user display:
+- RA actions → showed email (correct)
+- RO actions → showed truncated Firebase ID (wrong)
+
+### Root Cause Analysis
+| Factor | EventsRA.js | Events.js |
+|--------|-------------|-----------|
+| Auth middleware | `requireRegionalAdmin` | `firebaseAuth` |
+| User data source | DB lookup → `userRecord.email` | Token only → `user.email` |
+| Email availability | Always present | May be null |
+
+**Why I missed it:**
+1. Copied pattern without understanding WHY it worked in EventsRA.js
+2. Assumed Firebase token always includes email (wrong - depends on auth provider)
+3. Didn't test with user whose token lacks email
+
+### Lesson Learned
+
+**AUDIT LOGGING RULE**: Always get user identity from authoritative source (database), never from auth tokens.
+
+| Source | Reliability | Use For |
+|--------|-------------|---------|
+| Firebase token | Variable | Authentication only |
+| userlogins collection | Authoritative | Display, audit, logging |
+
+**Pattern to follow:**
+```javascript
+// WRONG - token may not have email
+userEmail: user.email || null
+
+// RIGHT - always look up from DB
+const userEmail = user.email || await getUserEmailForLog(db, user.uid, appId);
+```
+
+### Action Items
+- [x] Add `getUserEmailForLog()` helper to activityLog.js
+- [x] Update Events.js CREATE/UPDATE/DELETE to use helper
+- [ ] Consider: Always lookup from DB (not just fallback)
+- [ ] Graduate this lesson to CLAUDE.md if it recurs
+
+---
+
 ## Previous Sessions
 
 No previous sessions recorded for this project.

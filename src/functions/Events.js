@@ -895,8 +895,8 @@ async function eventsCreateHandler(request, context) {
 
         // Log activity for audit trail
         const roleName = requestBody.selectedRole || 'RegionalOrganizer';
-        // Look up user email from userlogins (Firebase token may not include email)
-        const userEmail = user.email || await getUserEmailForLog(db, user.uid, requestBody.appId);
+        // Always look up user email from userlogins (authoritative source)
+        const userEmail = await getUserEmailForLog(db, user.uid, requestBody.appId) || user.email || null;
         await logEventActivity(db, {
             eventId: result.insertedId,
             action: 'CREATE',
@@ -1087,8 +1087,8 @@ async function eventsUpdateHandler(request, context) {
         // Log activity for audit trail
         const roleName = requestBody.selectedRole || eventBefore.selectedRole || 'RegionalOrganizer';
         const changes = getChanges(eventBefore, updatedDoc);
-        // Look up user email from userlogins (Firebase token may not include email)
-        const userEmail = user.email || await getUserEmailForLog(db, user.uid, eventBefore.appId);
+        // Always look up user email from userlogins (authoritative source)
+        const userEmail = await getUserEmailForLog(db, user.uid, eventBefore.appId) || user.email || null;
         await logEventActivity(db, {
             eventId: new ObjectId(eventId),
             action: 'UPDATE',
@@ -1196,8 +1196,8 @@ async function eventsDeleteHandler(request, context) {
 
         // Log activity for audit trail (preserve deleted event)
         const roleName = eventToDelete.selectedRole || 'RegionalOrganizer';
-        // Look up user email from userlogins (Firebase token may not include email)
-        const userEmail = user.email || await getUserEmailForLog(db, user.uid, eventToDelete.appId);
+        // Always look up user email from userlogins (authoritative source)
+        const userEmail = await getUserEmailForLog(db, user.uid, eventToDelete.appId) || user.email || null;
         await logEventActivity(db, {
             eventId: new ObjectId(eventId),
             action: 'DELETE',
