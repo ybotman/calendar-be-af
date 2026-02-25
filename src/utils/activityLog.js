@@ -159,9 +159,32 @@ function getIpAddress(request) {
         || null;
 }
 
+/**
+ * Look up user email from userlogins collection
+ * Use when Firebase token doesn't include email
+ *
+ * @param {Db} db - MongoDB database instance
+ * @param {string} firebaseUserId - Firebase UID
+ * @param {string} appId - Application ID (default '1')
+ * @returns {Promise<string|null>} - User email or null
+ */
+async function getUserEmailForLog(db, firebaseUserId, appId = '1') {
+    try {
+        const userRecord = await db.collection('userlogins').findOne(
+            { firebaseUserId, appId },
+            { projection: { email: 1 } }
+        );
+        return userRecord?.email || null;
+    } catch (error) {
+        console.error('getUserEmailForLog failed:', error.message);
+        return null;
+    }
+}
+
 module.exports = {
     logEventActivity,
     getChanges,
     getIpAddress,
+    getUserEmailForLog,
     COLLECTION_NAME
 };

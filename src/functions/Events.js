@@ -5,7 +5,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
-const { logEventActivity, getChanges, getIpAddress } = require('../utils/activityLog');
+const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = require('../utils/activityLog');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -895,12 +895,14 @@ async function eventsCreateHandler(request, context) {
 
         // Log activity for audit trail
         const roleName = requestBody.selectedRole || 'RegionalOrganizer';
+        // Look up user email from userlogins (Firebase token may not include email)
+        const userEmail = user.email || await getUserEmailForLog(db, user.uid, requestBody.appId);
         await logEventActivity(db, {
             eventId: result.insertedId,
             action: 'CREATE',
             appId: requestBody.appId,
             firebaseUserId: user.uid,
-            userEmail: user.email || null,
+            userEmail: userEmail,
             roleName: roleName,
             endpoint: '/api/events',
             ipAddress: getIpAddress(request),
@@ -1085,12 +1087,14 @@ async function eventsUpdateHandler(request, context) {
         // Log activity for audit trail
         const roleName = requestBody.selectedRole || eventBefore.selectedRole || 'RegionalOrganizer';
         const changes = getChanges(eventBefore, updatedDoc);
+        // Look up user email from userlogins (Firebase token may not include email)
+        const userEmail = user.email || await getUserEmailForLog(db, user.uid, eventBefore.appId);
         await logEventActivity(db, {
             eventId: new ObjectId(eventId),
             action: 'UPDATE',
             appId: eventBefore.appId,
             firebaseUserId: user.uid,
-            userEmail: user.email || null,
+            userEmail: userEmail,
             roleName: roleName,
             endpoint: `/api/events/${eventId}`,
             ipAddress: getIpAddress(request),
@@ -1192,12 +1196,14 @@ async function eventsDeleteHandler(request, context) {
 
         // Log activity for audit trail (preserve deleted event)
         const roleName = eventToDelete.selectedRole || 'RegionalOrganizer';
+        // Look up user email from userlogins (Firebase token may not include email)
+        const userEmail = user.email || await getUserEmailForLog(db, user.uid, eventToDelete.appId);
         await logEventActivity(db, {
             eventId: new ObjectId(eventId),
             action: 'DELETE',
             appId: eventToDelete.appId,
             firebaseUserId: user.uid,
-            userEmail: user.email || null,
+            userEmail: userEmail,
             roleName: roleName,
             endpoint: `/api/events/${eventId}`,
             ipAddress: getIpAddress(request),
