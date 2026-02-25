@@ -5,6 +5,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
+const { logEventActivity, getChanges, getIpAddress } = require('../utils/activityLog');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -892,6 +893,20 @@ async function eventsCreateHandler(request, context) {
 
         context.log(`Event created: ${result.insertedId}`);
 
+        // Log activity for audit trail
+        const roleName = requestBody.selectedRole || 'RegionalOrganizer';
+        await logEventActivity(db, {
+            eventId: result.insertedId,
+            action: 'CREATE',
+            appId: requestBody.appId,
+            firebaseUserId: user.uid,
+            userEmail: user.email || null,
+            roleName: roleName,
+            endpoint: '/api/events',
+            ipAddress: getIpAddress(request),
+            context
+        });
+
         // CALBEAF-57: Reactivate venue if it's currently inactive
         // When an event is created with an inactive venue, set venue.isActive=true
         // Note: calendar-be uses venueID (capital ID)
@@ -997,6 +1012,21 @@ async function eventsUpdateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
+        // Capture event BEFORE update for activity log
+        const eventBefore = await collection.findOne({ _id: new ObjectId(eventId) });
+        if (!eventBefore) {
+            context.log(`Event not found: ${eventId}`);
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Event not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         // Build update document - use startDate/endDate like calendar-be
         const updateDoc = {
             $set: {
@@ -1051,6 +1081,22 @@ async function eventsUpdateHandler(request, context) {
         }
 
         context.log(`Event updated: ${eventId}`);
+
+        // Log activity for audit trail
+        const roleName = requestBody.selectedRole || eventBefore.selectedRole || 'RegionalOrganizer';
+        const changes = getChanges(eventBefore, updatedDoc);
+        await logEventActivity(db, {
+            eventId: new ObjectId(eventId),
+            action: 'UPDATE',
+            appId: eventBefore.appId,
+            firebaseUserId: user.uid,
+            userEmail: user.email || null,
+            roleName: roleName,
+            endpoint: `/api/events/${eventId}`,
+            ipAddress: getIpAddress(request),
+            changes: changes,
+            context
+        });
 
         return {
             status: 200,
@@ -1111,10 +1157,9 @@ async function eventsDeleteHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('events');
 
-        // Delete document
-        const result = await collection.deleteOne({ _id: new ObjectId(eventId) });
-
-        if (result.deletedCount === 0) {
+        // Capture event BEFORE delete for activity log
+        const eventToDelete = await collection.findOne({ _id: new ObjectId(eventId) });
+        if (!eventToDelete) {
             context.log(`Event not found: ${eventId}`);
             return {
                 status: 404,
@@ -1127,7 +1172,38 @@ async function eventsDeleteHandler(request, context) {
             };
         }
 
+        // Delete document
+        const result = await collection.deleteOne({ _id: new ObjectId(eventId) });
+
+        if (result.deletedCount === 0) {
+            context.log(`Event delete failed: ${eventId}`);
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Failed to delete event',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         context.log(`Event deleted: ${eventId}`);
+
+        // Log activity for audit trail (preserve deleted event)
+        const roleName = eventToDelete.selectedRole || 'RegionalOrganizer';
+        await logEventActivity(db, {
+            eventId: new ObjectId(eventId),
+            action: 'DELETE',
+            appId: eventToDelete.appId,
+            firebaseUserId: user.uid,
+            userEmail: user.email || null,
+            roleName: roleName,
+            endpoint: `/api/events/${eventId}`,
+            ipAddress: getIpAddress(request),
+            deletedEvent: eventToDelete,
+            context
+        });
 
         return {
             status: 200,

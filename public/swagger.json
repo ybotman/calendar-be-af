@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.21.0",
+    "version": "1.22.0",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -1357,6 +1357,79 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/event-activity": {
+      "get": {
+        "summary": "Event Activity Audit Trail",
+        "description": "Returns paginated audit trail of event CRUD operations (CREATE, UPDATE, DELETE). Tracks who did what, when, with full change history for updates and snapshots for deletes. Requires function key.",
+        "tags": ["Analytics"],
+        "operationId": "getEventActivity",
+        "security": [{ "functionKey": [] }],
+        "parameters": [
+          { "name": "appId", "in": "query", "description": "Filter by app ID (1=TangoTiempo, 2=HarmonyJunction)", "schema": { "type": "string" } },
+          { "name": "action", "in": "query", "description": "Filter by action type", "schema": { "type": "string", "enum": ["CREATE", "UPDATE", "DELETE"] } },
+          { "name": "roleName", "in": "query", "description": "Filter by role (e.g., RegionalAdmin, RegionalOrganizer)", "schema": { "type": "string" } },
+          { "name": "firebaseUserId", "in": "query", "description": "Filter by Firebase user ID", "schema": { "type": "string" } },
+          { "name": "eventId", "in": "query", "description": "Filter by specific event ID", "schema": { "type": "string" } },
+          { "name": "range", "in": "query", "description": "Time range: {n}H, {n}D, {n}W, {n}M, {n}Yr, All (default: 7D)", "schema": { "type": "string", "default": "7D" } },
+          { "name": "limit", "in": "query", "description": "Results per page (max 1000)", "schema": { "type": "integer", "default": 100, "maximum": 1000 } },
+          { "name": "page", "in": "query", "description": "Page number (1-indexed)", "schema": { "type": "integer", "default": 1 } },
+          { "name": "sort", "in": "query", "description": "Sort order by timestamp", "schema": { "type": "string", "enum": ["desc", "asc"], "default": "desc" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event activity retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "activities": [
+                      {
+                        "_id": "65f...",
+                        "eventId": "65e...",
+                        "action": "UPDATE",
+                        "appId": "1",
+                        "firebaseUserId": "abc123",
+                        "userEmail": "user@example.com",
+                        "roleName": "RegionalAdmin",
+                        "endpoint": "/api/events/ra/65e...",
+                        "timestamp": "2026-02-25T12:00:00Z",
+                        "changes": {
+                          "before": { "title": "Old Title" },
+                          "after": { "title": "New Title" }
+                        }
+                      }
+                    ],
+                    "pagination": { "total": 150, "page": 1, "limit": 100, "pages": 2 },
+                    "summary": {
+                      "totalActivities": 150,
+                      "creates": 45,
+                      "updates": 95,
+                      "deletes": 10,
+                      "uniqueUserCount": 12,
+                      "uniqueEventCount": 87
+                    },
+                    "breakdowns": {
+                      "byRole": { "RegionalAdmin": 80, "RegionalOrganizer": 70 },
+                      "byApp": { "1": 140, "2": 10 }
+                    }
+                  },
+                  "timestamp": "2026-02-25T12:00:00Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Function key required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
               }
             }
           }

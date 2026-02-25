@@ -5,6 +5,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { requireRegionalAdmin, checkRAPermission, forbiddenResponse } = require('../middleware/requireRegionalAdmin');
 const { unauthorizedResponse } = require('../middleware/firebaseAuth');
+const { logEventActivity, getChanges, getIpAddress } = require('../utils/activityLog');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -187,6 +188,20 @@ async function eventsRACreateHandler(request, context) {
 
         context.log(`RA ${raUser.firebaseUserId} created event ${result.insertedId} for organizer ${ownerOrganizerID}`);
 
+        // Log activity for audit trail
+        await logEventActivity(db, {
+            eventId: result.insertedId,
+            action: 'CREATE',
+            appId: appId,
+            firebaseUserId: raUser.firebaseUserId,
+            userLoginId: raUser.userRecord._id,
+            userEmail: raUser.userRecord.email || null,
+            roleName: 'RegionalAdmin',
+            endpoint: '/api/events/ra/create',
+            ipAddress: getIpAddress(request),
+            context
+        });
+
         return {
             status: 201,
             headers: { 'Content-Type': 'application/json' },
@@ -346,6 +361,22 @@ async function eventsRAUpdateHandler(request, context) {
 
         context.log(`RA ${raUser.firebaseUserId} updated event ${eventId}`);
 
+        // Log activity for audit trail
+        const changes = getChanges(event, result);
+        await logEventActivity(db, {
+            eventId: new ObjectId(eventId),
+            action: 'UPDATE',
+            appId: event.appId,
+            firebaseUserId: raUser.firebaseUserId,
+            userLoginId: raUser.userRecord._id,
+            userEmail: raUser.userRecord.email || null,
+            roleName: 'RegionalAdmin',
+            endpoint: `/api/events/ra/${eventId}`,
+            ipAddress: getIpAddress(request),
+            changes: changes,
+            context
+        });
+
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -462,6 +493,21 @@ async function eventsRADeleteHandler(request, context) {
 
             context.log(`RA ${raUser.firebaseUserId} soft deleted event ${eventId}`);
 
+            // Log activity for audit trail
+            await logEventActivity(db, {
+                eventId: new ObjectId(eventId),
+                action: 'DELETE',
+                appId: event.appId,
+                firebaseUserId: raUser.firebaseUserId,
+                userLoginId: raUser.userRecord._id,
+                userEmail: raUser.userRecord.email || null,
+                roleName: 'RegionalAdmin',
+                endpoint: `/api/events/ra/${eventId}`,
+                ipAddress: getIpAddress(request),
+                deletedEvent: { ...event, deletionType: 'soft', deletionReason: reason },
+                context
+            });
+
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -483,6 +529,21 @@ async function eventsRADeleteHandler(request, context) {
             await eventsCollection.deleteOne({ _id: new ObjectId(eventId) });
 
             context.log(`RA ${raUser.firebaseUserId} hard deleted event ${eventId}`);
+
+            // Log activity for audit trail (preserve deleted event)
+            await logEventActivity(db, {
+                eventId: new ObjectId(eventId),
+                action: 'DELETE',
+                appId: event.appId,
+                firebaseUserId: raUser.firebaseUserId,
+                userLoginId: raUser.userRecord._id,
+                userEmail: raUser.userRecord.email || null,
+                roleName: 'RegionalAdmin',
+                endpoint: `/api/events/ra/${eventId}`,
+                ipAddress: getIpAddress(request),
+                deletedEvent: { ...event, deletionType: 'hard', deletionReason: reason },
+                context
+            });
 
             return {
                 status: 200,
