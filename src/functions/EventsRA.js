@@ -199,6 +199,7 @@ async function eventsRACreateHandler(request, context) {
             roleName: 'RegionalAdmin',
             endpoint: '/api/events/ra/create',
             ipAddress: getIpAddress(request),
+            createdEvent: { ...eventData, _id: result.insertedId },
             context
         });
 

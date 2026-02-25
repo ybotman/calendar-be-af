@@ -24,6 +24,7 @@ const COLLECTION_NAME = 'EventActivityLog';
  * @param {ObjectId} [params.roleId] - Reference to roles collection
  * @param {string} params.endpoint - API endpoint used
  * @param {string} [params.ipAddress] - Client IP address
+ * @param {Object} [params.createdEvent] - For CREATE: full event document
  * @param {Object} [params.changes] - For UPDATE: { before: {}, after: {} }
  * @param {Object} [params.deletedEvent] - For DELETE: full event document
  * @param {Object} [params.context] - Azure Functions context for logging
@@ -41,6 +42,7 @@ async function logEventActivity(db, params) {
         roleId = null,
         endpoint,
         ipAddress = null,
+        createdEvent = null,
         changes = null,
         deletedEvent = null,
         context = null
@@ -72,6 +74,11 @@ async function logEventActivity(db, params) {
         ipAddress,
         timestamp: new Date()
     };
+
+    // Add full event for CREATE (preserve what was created)
+    if (action === 'CREATE' && createdEvent) {
+        logEntry.createdEvent = createdEvent;
+    }
 
     // Add changes for UPDATE
     if (action === 'UPDATE' && changes) {

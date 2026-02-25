@@ -906,6 +906,7 @@ async function eventsCreateHandler(request, context) {
             roleName: roleName,
             endpoint: '/api/events',
             ipAddress: getIpAddress(request),
+            createdEvent: { ...newEvent, _id: result.insertedId },
             context
         });
 
