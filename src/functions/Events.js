@@ -893,7 +893,7 @@ async function eventsCreateHandler(request, context) {
         // An event from 8pm-1am crosses midnight but is NOT multi-day (only 5 hours)
         // A festival from Fri 7pm - Sun 10pm IS multi-day (51 hours)
         const durationHours = (parsedEndDate - parsedStartDate) / (1000 * 60 * 60);
-        if (durationHours > 18) {
+        if (durationHours > 24) {
             if (newEvent.isRepeating || newEvent.recurrenceRule) {
                 context.log(`Events_Create: Multi-day event detected (${durationHours.toFixed(1)} hours), forcing isRepeating=false`);
             }
@@ -1084,7 +1084,7 @@ async function eventsUpdateHandler(request, context) {
             // Use duration check (>18 hours) instead of date comparison
             // An event from 8pm-1am crosses midnight but is NOT multi-day (only 5 hours)
             const durationHours = (new Date(finalEndDate) - new Date(finalStartDate)) / (1000 * 60 * 60);
-            if (durationHours > 18) {
+            if (durationHours > 24) {
                 if (updateDoc.$set.isRepeating || eventBefore.isRepeating || updateDoc.$set.recurrenceRule || eventBefore.recurrenceRule) {
                     context.log(`Events_Update: Multi-day event detected (${durationHours.toFixed(1)} hours), forcing isRepeating=false`);
                 }
