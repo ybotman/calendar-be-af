@@ -64,6 +64,9 @@ require('./functions/UserLogins');
 // Events RA (Regional Admin) API
 require('./functions/EventsRA');
 
+// Events Instance Overrides (TIEMPO-362) - Recurring event instance modifications
+require('./functions/Events_InstanceOverrides');
+
 // Events Summary + Image Upload
 require('./functions/EventsSummary');
 require('./functions/EventsImageUpload');
@@ -93,5 +96,8 @@ require('./functions/Admin_DataHealth');
 // Backup API - Daily backups (CALBEAF-75, CALBEAF-77)
 require('./functions/Backup_MongoDB');
 require('./functions/Backup_Firebase');
+
+// SEO - Sitemap URL generation
+require('./functions/Sitemap_GetUrls');
 
 module.exports = { app };
