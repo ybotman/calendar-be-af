@@ -888,6 +888,18 @@ async function eventsCreateHandler(request, context) {
             }
         }
 
+        // TIEMPO-362: Multi-day events cannot be repeating
+        // If startDate and endDate span multiple calendar days, force isRepeating=false
+        const startDay = parsedStartDate.toISOString().split('T')[0];
+        const endDay = parsedEndDate.toISOString().split('T')[0];
+        if (startDay !== endDay) {
+            if (newEvent.isRepeating || newEvent.recurrenceRule) {
+                context.log(`Events_Create: Multi-day event detected (${startDay} to ${endDay}), forcing isRepeating=false`);
+            }
+            newEvent.isRepeating = false;
+            newEvent.recurrenceRule = null;
+        }
+
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
 
@@ -1060,6 +1072,22 @@ async function eventsUpdateHandler(request, context) {
                 updateDoc.$set.venueTimezone = venue.timezone;
             } else {
                 context.warn(`Venue ${updatedVenueId} not found or missing timezone - venueTimezone not updated`);
+            }
+        }
+
+        // TIEMPO-362: Multi-day events cannot be repeating
+        // If startDate and endDate span multiple calendar days, force isRepeating=false
+        const finalStartDate = updateDoc.$set.startDate || eventBefore.startDate;
+        const finalEndDate = updateDoc.$set.endDate || eventBefore.endDate;
+        if (finalStartDate && finalEndDate) {
+            const startDay = new Date(finalStartDate).toISOString().split('T')[0];
+            const endDay = new Date(finalEndDate).toISOString().split('T')[0];
+            if (startDay !== endDay) {
+                if (updateDoc.$set.isRepeating || eventBefore.isRepeating || updateDoc.$set.recurrenceRule || eventBefore.recurrenceRule) {
+                    context.log(`Events_Update: Multi-day event detected (${startDay} to ${endDay}), forcing isRepeating=false`);
+                }
+                updateDoc.$set.isRepeating = false;
+                updateDoc.$set.recurrenceRule = null;
             }
         }
 
