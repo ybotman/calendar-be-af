@@ -1127,6 +1127,148 @@ app.http('Events_Update', {
 });
 
 // ============================================
+// FUNCTION 4b: PATCH /api/events/{eventId}
+// Partial update - supports excludedDates for RRULE EXDATE
+// ============================================
+
+/**
+ * PATCH /api/events/{eventId}
+ * Partial update for specific fields (excludedDates, instanceOverrides, etc.)
+ * Used for RRULE EXDATE additions without full event replacement.
+ *
+ * @param {string} eventId - Event ID
+ * @body {object} Partial update fields:
+ *   - excludedDates: Array of ISO date strings to exclude from recurrence
+ *   - instanceOverrides: Array of override objects (optional)
+ */
+async function eventsPatchHandler(request, context) {
+    const eventId = request.params.eventId;
+    context.log(`Events_Patch: Request for event ${eventId}`);
+
+    // Firebase auth required
+    const user = await firebaseAuth(request, context);
+    if (!user) {
+        return unauthorizedResponse();
+    }
+    context.log(`Events_Patch: Authenticated user ${user.uid}`);
+
+    let mongoClient;
+
+    try {
+        const requestBody = await request.json();
+
+        // Connect to MongoDB
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+            throw new Error('MongoDB connection string not configured');
+        }
+
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+
+        const db = mongoClient.db();
+        const collection = db.collection('events');
+
+        // Check event exists
+        const existingEvent = await collection.findOne({ _id: new ObjectId(eventId) });
+        if (!existingEvent) {
+            return {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Event not found',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Build $set for allowed PATCH fields
+        const updateDoc = { $set: { updatedAt: new Date() } };
+
+        // Handle excludedDates - validate and set
+        if (requestBody.excludedDates !== undefined) {
+            if (!Array.isArray(requestBody.excludedDates)) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'excludedDates must be an array',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            // Store as ISO strings (consistent with frontend)
+            updateDoc.$set.excludedDates = requestBody.excludedDates.map(d =>
+                typeof d === 'string' ? d : new Date(d).toISOString()
+            );
+            context.log(`Events_Patch: Setting excludedDates (${updateDoc.$set.excludedDates.length} dates)`);
+        }
+
+        // Handle instanceOverrides if passed (full replacement)
+        if (requestBody.instanceOverrides !== undefined) {
+            if (!Array.isArray(requestBody.instanceOverrides)) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'instanceOverrides must be an array',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            updateDoc.$set.instanceOverrides = requestBody.instanceOverrides;
+            context.log(`Events_Patch: Setting instanceOverrides (${requestBody.instanceOverrides.length} overrides)`);
+        }
+
+        // Perform update
+        const updatedDoc = await collection.findOneAndUpdate(
+            { _id: new ObjectId(eventId) },
+            updateDoc,
+            { returnDocument: 'after' }
+        );
+
+        if (!updatedDoc) {
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Failed to update event',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        context.log(`Events_Patch: Event ${eventId} updated successfully`);
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                data: updatedDoc,
+                timestamp: new Date().toISOString()
+            })
+        };
+
+    } finally {
+        if (mongoClient) {
+            await mongoClient.close();
+        }
+    }
+}
+
+app.http('Events_Patch', {
+    methods: ['PATCH'],
+    authLevel: 'anonymous',
+    route: 'events/{eventId}',
+    handler: standardMiddleware(eventsPatchHandler)
+});
+
+// ============================================
 // FUNCTION 5: DELETE /api/events/{eventId}
 // ============================================
 

@@ -78,6 +78,18 @@ function expandRecurringEvent(event, queryStart, queryEnd, venueTimezone, option
             }
         }
 
+        // Build set of excluded dates (RRULE EXDATE equivalent)
+        // These dates are completely removed from the series
+        const excludedDatesSet = new Set();
+        if (event.excludedDates && Array.isArray(event.excludedDates)) {
+            for (const exDate of event.excludedDates) {
+                // Normalize to date-only string (YYYY-MM-DD) for comparison
+                const dateStr = typeof exDate === 'string' ? exDate : new Date(exDate).toISOString();
+                const dateOnly = dateStr.split('T')[0];
+                excludedDatesSet.add(dateOnly);
+            }
+        }
+
         // Create expanded event for each occurrence
         // Preserve original time-of-day from event.startDate
         const originalHours = eventStart.getUTCHours();
@@ -89,6 +101,13 @@ function expandRecurringEvent(event, queryStart, queryEnd, venueTimezone, option
             // rrule returns dates - set the original time
             const newDate = new Date(occurrenceDate);
             newDate.setUTCHours(originalHours, originalMinutes, 0, 0);
+
+            // Check if this date is excluded (RRULE EXDATE)
+            const occurrenceDateOnly = newDate.toISOString().split('T')[0];
+            if (excludedDatesSet.has(occurrenceDateOnly)) {
+                // Skip excluded dates entirely
+                continue;
+            }
 
             // Build base expanded occurrence
             let expandedEvent = {
