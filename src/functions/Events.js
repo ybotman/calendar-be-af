@@ -889,12 +889,13 @@ async function eventsCreateHandler(request, context) {
         }
 
         // TIEMPO-362: Multi-day events cannot be repeating
-        // If startDate and endDate span multiple calendar days, force isRepeating=false
-        const startDay = parsedStartDate.toISOString().split('T')[0];
-        const endDay = parsedEndDate.toISOString().split('T')[0];
-        if (startDay !== endDay) {
+        // Use duration check (>18 hours) instead of date comparison
+        // An event from 8pm-1am crosses midnight but is NOT multi-day (only 5 hours)
+        // A festival from Fri 7pm - Sun 10pm IS multi-day (51 hours)
+        const durationHours = (parsedEndDate - parsedStartDate) / (1000 * 60 * 60);
+        if (durationHours > 18) {
             if (newEvent.isRepeating || newEvent.recurrenceRule) {
-                context.log(`Events_Create: Multi-day event detected (${startDay} to ${endDay}), forcing isRepeating=false`);
+                context.log(`Events_Create: Multi-day event detected (${durationHours.toFixed(1)} hours), forcing isRepeating=false`);
             }
             newEvent.isRepeating = false;
             newEvent.recurrenceRule = null;
@@ -1080,11 +1081,12 @@ async function eventsUpdateHandler(request, context) {
         const finalStartDate = updateDoc.$set.startDate || eventBefore.startDate;
         const finalEndDate = updateDoc.$set.endDate || eventBefore.endDate;
         if (finalStartDate && finalEndDate) {
-            const startDay = new Date(finalStartDate).toISOString().split('T')[0];
-            const endDay = new Date(finalEndDate).toISOString().split('T')[0];
-            if (startDay !== endDay) {
+            // Use duration check (>18 hours) instead of date comparison
+            // An event from 8pm-1am crosses midnight but is NOT multi-day (only 5 hours)
+            const durationHours = (new Date(finalEndDate) - new Date(finalStartDate)) / (1000 * 60 * 60);
+            if (durationHours > 18) {
                 if (updateDoc.$set.isRepeating || eventBefore.isRepeating || updateDoc.$set.recurrenceRule || eventBefore.recurrenceRule) {
-                    context.log(`Events_Update: Multi-day event detected (${startDay} to ${endDay}), forcing isRepeating=false`);
+                    context.log(`Events_Update: Multi-day event detected (${durationHours.toFixed(1)} hours), forcing isRepeating=false`);
                 }
                 updateDoc.$set.isRepeating = false;
                 updateDoc.$set.recurrenceRule = null;
