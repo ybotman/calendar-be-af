@@ -799,6 +799,308 @@
         }
       }
     },
+    "/api/events/{eventId}": {
+      "patch": {
+        "summary": "Patch event fields (excludedDates)",
+        "description": "Partially update an event. Currently supports adding/removing excludedDates for RRULE EXDATE functionality.",
+        "tags": ["Events"],
+        "operationId": "patchEvent",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "excludedDates": {
+                    "type": "array",
+                    "items": { "type": "string", "format": "date-time" },
+                    "description": "Array of dates to exclude from RRULE expansion (EXDATE)"
+                  }
+                }
+              },
+              "example": {
+                "excludedDates": ["2026-04-08T20:00:00", "2026-04-15T20:00:00"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event patched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "event": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Event not found" }
+        }
+      }
+    },
+    "/api/events/{eventId}/override": {
+      "post": {
+        "summary": "Create or update instance override",
+        "description": "Create or update an override for a specific occurrence of a recurring event. Use for canceling, modifying, or restoring individual instances.",
+        "tags": ["Events"],
+        "operationId": "createInstanceOverride",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId (must be a recurring event)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["instanceKey", "overrideType"],
+                "properties": {
+                  "instanceKey": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Original occurrence datetime in VENUE TIMEZONE (no Z suffix)"
+                  },
+                  "overrideType": {
+                    "type": "string",
+                    "enum": ["modify", "cancel", "restore"],
+                    "description": "Type of override"
+                  },
+                  "patch": {
+                    "type": "object",
+                    "description": "Fields to override for this instance",
+                    "properties": {
+                      "title": { "type": "string" },
+                      "notes": { "type": "string" },
+                      "djId": { "type": "string" },
+                      "djName": { "type": "string" },
+                      "startDate": { "type": "string", "format": "date-time" },
+                      "endDate": { "type": "string", "format": "date-time" },
+                      "venueID": { "type": "string" },
+                      "cost": { "type": "string" },
+                      "isCanceled": { "type": "boolean" },
+                      "overrideImage": { "type": "string", "description": "URL from upload-image endpoint" }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "cancel": {
+                  "summary": "Cancel one occurrence",
+                  "value": {
+                    "instanceKey": "2026-04-08T20:00:00",
+                    "overrideType": "cancel"
+                  }
+                },
+                "modify": {
+                  "summary": "Modify one occurrence",
+                  "value": {
+                    "instanceKey": "2026-04-08T20:00:00",
+                    "overrideType": "modify",
+                    "patch": {
+                      "notes": "Live orchestra tonight!",
+                      "djName": "Carlos Gardel Jr."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Override created/updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "event": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request or not a recurring event" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Event not found" }
+        }
+      }
+    },
+    "/api/events/{eventId}/override/{instanceKey}": {
+      "delete": {
+        "summary": "Remove instance override",
+        "description": "Remove an override and restore the occurrence to regular schedule.",
+        "tags": ["Events"],
+        "operationId": "deleteInstanceOverride",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "instanceKey",
+            "in": "path",
+            "required": true,
+            "description": "Instance key (URL-encoded datetime, e.g., 2026-04-08T20%3A00%3A00)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Override removed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Occurrence restored to regular schedule"
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Event or override not found" }
+        }
+      }
+    },
+    "/api/events/{eventId}/overrides": {
+      "get": {
+        "summary": "List instance overrides",
+        "description": "Get all overrides for a recurring event series.",
+        "tags": ["Events"],
+        "operationId": "listInstanceOverrides",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Overrides retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "overrides": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instanceKey": { "type": "string", "format": "date-time" },
+                          "overrideType": { "type": "string", "enum": ["modify", "cancel", "restore"] },
+                          "patch": { "type": "object" },
+                          "modifiedBy": { "type": "string" },
+                          "modifiedAt": { "type": "string", "format": "date-time" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Event not found" }
+        }
+      }
+    },
+    "/api/events/upload-image": {
+      "post": {
+        "summary": "Upload event image",
+        "description": "Upload an image to Azure Blob Storage for use with events or instance overrides.",
+        "tags": ["Events"],
+        "operationId": "uploadEventImage",
+        "security": [{ "firebaseAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["image"],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Image file to upload"
+                  },
+                  "appId": {
+                    "type": "string",
+                    "description": "Application ID (default: 1)",
+                    "default": "1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "imageUrl": { "type": "string", "description": "Public URL of uploaded image" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "imageUrl": "https://tangotiempo.blob.core.windows.net/event-images/1/abc123-photo.jpg"
+                }
+              }
+            }
+          },
+          "400": { "description": "No image file provided" },
+          "401": { "description": "Unauthorized" },
+          "503": { "description": "Azure Storage not configured" }
+        }
+      }
+    },
     "/api/mapcenter": {
       "get": {
         "summary": "Get user's map center",
