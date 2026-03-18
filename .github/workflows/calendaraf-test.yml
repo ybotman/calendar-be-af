@@ -1,0 +1,77 @@
+# CalendarAF-TEST Deployment Workflow
+# Official Microsoft-recommended pattern: CI-built node_modules + WEBSITE_RUN_FROM_PACKAGE=1
+# Reference: https://learn.microsoft.com/en-us/azure/azure-functions/functions-how-to-github-actions
+#
+# Key insights from research:
+# - WEBSITE_RUN_FROM_PACKAGE=1 and SCM_DO_BUILD_DURING_DEPLOYMENT=true are MUTUALLY EXCLUSIVE
+# - Use windows-latest runner to match target OS (avoids native module issues)
+# - npm prune --production reduces package size
+# - Azure/functions-action works when npm install runs first in workflow
+
+name: Deploy to CalendarAF-TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Deployment reason'
+        required: false
+        default: 'Manual deployment'
+
+env:
+  AZURE_FUNCTIONAPP_NAME: 'CalendarAF-TEST'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: windows-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 'Install, build, and prune'
+        shell: pwsh
+        run: |
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          npm ci
+          npm run build --if-present
+          npm run lint --if-present
+          npm prune --production
+          popd
+
+      - name: 'Login to Azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_F146423A44BC44A9A904B5FD339D5984 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BB21745BBF2B46F6A1A75DEEC21055EC }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_F3F79772122B4B5FB666E43ED4B2D312 }}
+
+      - name: 'Deploy to Azure Functions'
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+
+      - name: 'Verify deployment'
+        shell: pwsh
+        run: |
+          Write-Host "Waiting for app to start..."
+          Start-Sleep -Seconds 30
+          Write-Host "Checking health endpoint..."
+          $response = Invoke-WebRequest -Uri "https://calendaraf-test.azurewebsites.net/api/health" -UseBasicParsing -ErrorAction SilentlyContinue
+          Write-Host "Health check status: $($response.StatusCode)"
+          if ($response.StatusCode -ne 200) {
+            Write-Host "WARNING: Health check failed"
+            exit 1
+          }
+          Write-Host "Deployment verified successfully!"
