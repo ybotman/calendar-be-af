@@ -52,9 +52,10 @@ async function isApprovedOrganizer(db, firebaseUID, appId) {
         return { approved: false, reason: 'User has no active organizer' };
     }
 
+    // Note: isApproved is nested in regionalOrganizerInfo
     const organizer = await db.collection('organizers').findOne({
         _id: userLogin.activeOrganizerId,
-        isApproved: true
+        "regionalOrganizerInfo.isApproved": true
     });
 
     if (!organizer) {
@@ -221,7 +222,7 @@ async function spotlightsHandler(request, context) {
             };
         }
 
-        context.log(`Events_Spotlights: Approved organizer ${orgCheck.organizer.name} (${orgCheck.organizer._id})`);
+        context.log(`Events_Spotlights: Approved organizer ${(orgCheck.organizer.fullName || orgCheck.organizer.shortName)} (${orgCheck.organizer._id})`);
 
         // Build spotlight entry with metadata
         const spotlightEntry = {
@@ -231,7 +232,7 @@ async function spotlightsHandler(request, context) {
             addedBy: {
                 firebaseUID: user.uid,
                 organizerId: orgCheck.organizer._id,
-                organizerName: orgCheck.organizer.name,
+                organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
                 email: orgCheck.userLogin.email || user.email
             },
             addedAt: new Date()
@@ -244,7 +245,7 @@ async function spotlightsHandler(request, context) {
             by: {
                 firebaseUID: user.uid,
                 organizerId: orgCheck.organizer._id,
-                organizerName: orgCheck.organizer.name,
+                organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
                 email: orgCheck.userLogin.email || user.email
             },
             at: new Date()
@@ -429,7 +430,7 @@ async function spotlightsHandler(request, context) {
         // Send notification to event owner
         await sendSpotlightNotification(db, event, action, spotlight, {
             firebaseUID: user.uid,
-            organizerName: orgCheck.organizer.name,
+            organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
             email: orgCheck.userLogin.email || user.email
         }, context);
 
@@ -448,7 +449,7 @@ async function spotlightsHandler(request, context) {
                 instanceKey: instanceKey || null,
                 affectedScope: isSingleOccurrence ? 'single_occurrence' : (isRecurring ? 'all_occurrences' : 'single_event'),
                 modifiedBy: {
-                    organizerName: orgCheck.organizer.name,
+                    organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
                     organizerId: orgCheck.organizer._id
                 },
                 event: {
