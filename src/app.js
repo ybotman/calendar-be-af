@@ -67,6 +67,9 @@ require('./functions/EventsRA');
 // Events Instance Overrides (TIEMPO-362) - Recurring event instance modifications
 require('./functions/Events_InstanceOverrides');
 
+// Events Spotlights - Any approved organizer can add/remove spotlights on any event
+require('./functions/Events_Spotlights');
+
 // Events Summary + Image Upload
 require('./functions/EventsSummary');
 require('./functions/EventsImageUpload');

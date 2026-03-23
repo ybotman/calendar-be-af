@@ -1046,6 +1046,134 @@
         }
       }
     },
+    "/api/events/{eventId}/spotlights": {
+      "patch": {
+        "summary": "Add or remove spotlight (any approved organizer)",
+        "description": "Add or remove spotlights (DJ, Instructor, Performer, Band) on ANY event. Any approved organizer can modify spotlights, not just the event owner. For recurring events, can target all occurrences or a single instance via instanceKey.",
+        "tags": ["Events"],
+        "operationId": "modifySpotlights",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action", "spotlight"],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": ["add", "remove"],
+                    "description": "Whether to add or remove the spotlight"
+                  },
+                  "spotlight": {
+                    "type": "object",
+                    "required": ["type", "name"],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["dj", "instructor", "performer", "band"],
+                        "description": "Type of spotlight"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Name of the DJ/instructor/performer/band"
+                      },
+                      "organizerId": {
+                        "type": "string",
+                        "description": "Optional ObjectId if they are a registered organizer"
+                      }
+                    }
+                  },
+                  "instanceKey": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Optional - for recurring events, apply to single occurrence only"
+                  }
+                }
+              },
+              "example": {
+                "action": "add",
+                "spotlight": { "type": "dj", "name": "DJ Carlos" }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Spotlight modified successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "action": { "type": "string" },
+                    "spotlight": { "type": "object" },
+                    "affectedScope": {
+                      "type": "string",
+                      "enum": ["single_event", "all_occurrences", "single_occurrence"]
+                    },
+                    "modifiedBy": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Not an approved organizer" },
+          "404": { "description": "Event not found" },
+          "409": { "description": "Spotlight already exists (for add) or not found (for remove)" }
+        }
+      },
+      "get": {
+        "summary": "Get spotlights for an event",
+        "description": "Get all spotlights and spotlight history for an event, including instance-specific spotlights for recurring events.",
+        "tags": ["Events"],
+        "operationId": "getSpotlights",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Event ObjectId",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spotlights retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "eventId": { "type": "string" },
+                    "title": { "type": "string" },
+                    "isRecurring": { "type": "boolean" },
+                    "spotlights": { "type": "array" },
+                    "spotlightLog": { "type": "array" },
+                    "instanceSpotlights": { "type": "array" },
+                    "hasLegacyFeatures": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Event not found" }
+        }
+      }
+    },
     "/api/events/upload-image": {
       "post": {
         "summary": "Upload event image",
