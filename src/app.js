@@ -58,6 +58,9 @@ require('./functions/OrganizersSASToken');
 // Roles API
 require('./functions/Roles');
 
+// Affiliations API (appId=2 HarmonyJunction societies)
+require('./functions/Affiliations');
+
 // UserLogins API
 require('./functions/UserLogins');
 
