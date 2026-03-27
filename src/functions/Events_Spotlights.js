@@ -34,6 +34,46 @@ function getSpotlightsFromEvent(event) {
 }
 
 // ============================================
+// HELPER: Check if user has Spotlighter role AND it's enabled
+// Two-layer check:
+// 1. roleIds contains Spotlighter
+// 2. spotlighterInfo.isEnabled = true (can be turned off by admin)
+// ============================================
+async function hasSpotlighterRole(db, firebaseUID, appId) {
+    const userLogin = await db.collection('userlogins').findOne({
+        firebaseUID: firebaseUID,
+        appId: appId
+    });
+
+    if (!userLogin) {
+        return { hasRole: false, reason: 'User not found' };
+    }
+
+    // Check 1: Does user have Spotlighter in roleIds?
+    const hasRoleInArray = userLogin.roleIds?.some(
+        r => r.roleName === 'Spotlighter'
+    );
+
+    if (!hasRoleInArray) {
+        return { hasRole: false, reason: 'User does not have Spotlighter role' };
+    }
+
+    // Check 2: Is spotlighterInfo enabled? (allows admin to disable)
+    // If spotlighterInfo doesn't exist, default to enabled (role alone is enough)
+    // If spotlighterInfo exists, check isEnabled flag
+    const spotlighterInfo = userLogin.spotlighterInfo;
+    if (spotlighterInfo && spotlighterInfo.isEnabled === false) {
+        return { hasRole: false, reason: 'Spotlighter role is disabled for this user' };
+    }
+
+    return {
+        hasRole: true,
+        userLogin: userLogin,
+        spotlighterInfo: spotlighterInfo
+    };
+}
+
+// ============================================
 // HELPER: Check if user is an approved organizer
 // ============================================
 async function isApprovedOrganizer(db, firebaseUID, appId) {
@@ -206,23 +246,30 @@ async function spotlightsHandler(request, context) {
             };
         }
 
-        // Check if user is an approved organizer
+        // Check if user can manage spotlights (approved organizer OR Spotlighter role)
         const orgCheck = await isApprovedOrganizer(db, user.uid, event.appId);
-        if (!orgCheck.approved) {
-            context.log(`Events_Spotlights: User ${user.uid} not approved - ${orgCheck.reason}`);
+        const spotlighterCheck = await hasSpotlighterRole(db, user.uid, event.appId);
+
+        if (!orgCheck.approved && !spotlighterCheck.hasRole) {
+            context.log(`Events_Spotlights: User ${user.uid} not authorized - org: ${orgCheck.reason}, spotlighter: ${spotlighterCheck.reason}`);
             return {
                 status: 403,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     success: false,
-                    error: 'Must be an approved organizer to modify spotlights',
+                    error: 'Must be an approved organizer or have Spotlighter role to modify spotlights',
                     reason: orgCheck.reason,
                     timestamp: new Date().toISOString()
                 })
             };
         }
 
-        context.log(`Events_Spotlights: Approved organizer ${(orgCheck.organizer.fullName || orgCheck.organizer.shortName)} (${orgCheck.organizer._id})`);
+        // Log who is making the change
+        if (orgCheck.approved) {
+            context.log(`Events_Spotlights: Approved organizer ${(orgCheck.organizer.fullName || orgCheck.organizer.shortName)} (${orgCheck.organizer._id})`);
+        } else {
+            context.log(`Events_Spotlights: Spotlighter role user ${user.uid}`);
+        }
 
         // Build spotlight entry with metadata
         const spotlightEntry = {
@@ -231,9 +278,12 @@ async function spotlightsHandler(request, context) {
             organizerId: spotlight.organizerId ? new ObjectId(spotlight.organizerId) : null,
             addedBy: {
                 firebaseUID: user.uid,
-                organizerId: orgCheck.organizer._id,
-                organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
-                email: orgCheck.userLogin.email || user.email
+                organizerId: orgCheck.approved ? orgCheck.organizer._id : null,
+                organizerName: orgCheck.approved
+                    ? (orgCheck.organizer.fullName || orgCheck.organizer.shortName)
+                    : 'Spotlighter',
+                email: (orgCheck.approved ? orgCheck.userLogin?.email : spotlighterCheck.userLogin?.email) || user.email,
+                role: orgCheck.approved ? 'organizer' : 'spotlighter'
             },
             addedAt: new Date()
         };
@@ -244,9 +294,12 @@ async function spotlightsHandler(request, context) {
             spotlight: { type: spotlight.type.toLowerCase(), name: spotlight.name },
             by: {
                 firebaseUID: user.uid,
-                organizerId: orgCheck.organizer._id,
-                organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
-                email: orgCheck.userLogin.email || user.email
+                organizerId: orgCheck.approved ? orgCheck.organizer._id : null,
+                organizerName: orgCheck.approved
+                    ? (orgCheck.organizer.fullName || orgCheck.organizer.shortName)
+                    : 'Spotlighter',
+                email: (orgCheck.approved ? orgCheck.userLogin?.email : spotlighterCheck.userLogin?.email) || user.email,
+                role: orgCheck.approved ? 'organizer' : 'spotlighter'
             },
             at: new Date()
         };
@@ -430,8 +483,11 @@ async function spotlightsHandler(request, context) {
         // Send notification to event owner
         await sendSpotlightNotification(db, event, action, spotlight, {
             firebaseUID: user.uid,
-            organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
-            email: orgCheck.userLogin.email || user.email
+            organizerName: orgCheck.approved
+                ? (orgCheck.organizer.fullName || orgCheck.organizer.shortName)
+                : 'Spotlighter',
+            email: (orgCheck.approved ? orgCheck.userLogin?.email : spotlighterCheck.userLogin?.email) || user.email,
+            role: orgCheck.approved ? 'organizer' : 'spotlighter'
         }, context);
 
         // Fetch updated event
@@ -449,8 +505,11 @@ async function spotlightsHandler(request, context) {
                 instanceKey: instanceKey || null,
                 affectedScope: isSingleOccurrence ? 'single_occurrence' : (isRecurring ? 'all_occurrences' : 'single_event'),
                 modifiedBy: {
-                    organizerName: (orgCheck.organizer.fullName || orgCheck.organizer.shortName),
-                    organizerId: orgCheck.organizer._id
+                    organizerName: orgCheck.approved
+                        ? (orgCheck.organizer.fullName || orgCheck.organizer.shortName)
+                        : 'Spotlighter',
+                    organizerId: orgCheck.approved ? orgCheck.organizer._id : null,
+                    role: orgCheck.approved ? 'organizer' : 'spotlighter'
                 },
                 event: {
                     _id: updatedEvent._id,
