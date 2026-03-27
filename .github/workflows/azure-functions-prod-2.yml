@@ -1,0 +1,66 @@
+# Deploy to Azure Functions PROD-2 (Failover)
+# This is the backup/failover function app in West US 2
+# Only deploy manually or when promoting a stable version
+
+name: Deploy to Azure Functions PROD-2 (Failover)
+
+on:
+  # Manual trigger only - we control when backup gets updated
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm deployment to PROD-2 failover'
+        required: true
+        default: ''
+
+env:
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'deploy'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ env.NODE_VERSION }} Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 'Resolve Project Dependencies Using NPM'
+        shell: bash
+        run: |
+          npm install
+          npm run build --if-present
+          npm run lint --if-present
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_PROD2 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_PROD2 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_PROD2 }}
+
+      - name: 'Run Azure Functions Action'
+        uses: Azure/functions-action@v1.5.2
+        id: fa
+        with:
+          app-name: 'calendarbeaf-prod-2'
+          slot-name: 'Production'
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+
+      - name: 'Post-deployment verification'
+        shell: bash
+        run: |
+          echo "Deployment completed to calendarbeaf-prod-2 (Failover)"
+          echo "Verify: https://calendarbeaf-prod-2.azurewebsites.net/api/events?appId=1&limit=1"
+          sleep 30
+          curl -s -w "\nHTTP: %{http_code}\n" "https://calendarbeaf-prod-2.azurewebsites.net/api/events?appId=1&limit=1" | head -3
