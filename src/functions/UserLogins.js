@@ -5,6 +5,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { getFirebaseAdmin } = require('../lib/firebase-admin');
+const { syncAdminClaim } = require('../lib/syncFirebaseClaims');
 
 /**
  * GET /api/userlogins/firebase/{firebaseId}
@@ -500,6 +501,11 @@ async function userLoginsUpdateUserInfoHandler(request, context) {
 
         context.log(`[USERLOGIN UPDATE] firebaseUserId: ${firebaseUserId}, updatedFields: ${Object.keys(updateFields).join(', ')}`);
 
+        // Sync Firebase custom claims if roleIds were updated (TIEMPO-387)
+        if (updateFields.roleIds) {
+            await syncAdminClaim(firebaseUserId, updateFields.roleIds, db, appId, context);
+        }
+
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -632,6 +638,9 @@ async function userLoginsUpdateRolesHandler(request, context) {
         }
 
         context.log(`[USERLOGIN ROLES UPDATE] firebaseUserId: ${firebaseUserId}, roleIds: [${roleIds.join(', ')}]`);
+
+        // Sync Firebase custom claims for admin access (TIEMPO-387)
+        await syncAdminClaim(firebaseUserId, roleObjectIds, db, appId, context);
 
         return {
             status: 200,
