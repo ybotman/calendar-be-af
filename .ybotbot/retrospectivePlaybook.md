@@ -461,6 +461,98 @@ const userEmail = user.email || await getUserEmailForLog(db, user.uid, appId);
 
 ---
 
+## Session: 2026-03-30 - PROD2 Failover Deployment & Bot Blocking
+
+### Context
+Setting up CalendarBEAF-PROD2 failover in West US 2 + implementing bot blocking for Google API 429 errors.
+
+### Critical Issue: "0 functions found" on PROD2
+
+**Symptom:** Deployed to PROD2, got 404 on all endpoints. Logs showed "0 functions found (Custom)"
+**Multiple Attempts:** Tried `func azure functionapp publish`, restart, sync triggers — all failed
+**Root Cause:** `func` CLI only uploaded 251KB (code without node_modules)
+
+#### The Problem
+
+```bash
+# func CLI upload size: 251KB ❌
+func azure functionapp publish CalendarBEAF-PROD2 --javascript
+
+# Full zip with node_modules: 68MB ✅
+az functionapp deployment source config-zip --src /tmp/full-deploy.zip
+```
+
+**Why PROD worked but PROD2 didn't:**
+- PROD uses GitHub Actions workflow which runs `npm install` before deploy
+- PROD2 was deployed via `func` CLI which doesn't include node_modules
+- Without node_modules, Azure can't discover the functions
+
+#### Settings That Matter
+
+| Setting | Correct | Wrong |
+|---------|---------|-------|
+| `WEBSITE_RUN_FROM_PACKAGE` | `1` | missing |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` or missing | `true` |
+
+#### The Fix
+
+```bash
+# 1. Install production dependencies locally
+npm ci --production
+
+# 2. Create full zip including node_modules
+zip -r /tmp/deploy.zip . -x "*.git*" -x ".github/*" -x "test/*" -x "docs/*"
+
+# 3. Deploy with az CLI (68MB zip)
+az functionapp deployment source config-zip \
+  --name CalendarBEAF-PROD2 \
+  --resource-group CalendarBEAF \
+  --src /tmp/deploy.zip
+```
+
+### ⚠️ CRITICAL RULE — Azure Functions Deployment
+
+**`func` CLI does NOT include node_modules. MUST use full zip deployment for new/failover apps.**
+
+| Method | Includes node_modules | Works |
+|--------|----------------------|-------|
+| GitHub Actions | ✅ Yes (npm install step) | ✅ |
+| `func azure functionapp publish` | ❌ No | ❌ |
+| `az functionapp deployment source config-zip` | ✅ Yes (if in zip) | ✅ |
+
+### Bot Blocking Implementation (v1.24.2)
+
+Also implemented bot detection in `Geo_GoogleGeolocate.js`:
+- 28 bot patterns (Googlebot, Bingbot, crawlers, headless browsers)
+- Bots get default US center coords (Kansas)
+- Skips Google API call entirely
+- Should fix 87% of 429 errors from bot traffic
+
+### What Worked Well
+- Quick diagnosis once we compared PROD (GitHub Actions) vs PROD2 (func CLI)
+- Full zip deployment worked immediately
+- PROD2 now running v1.24.2 in West US 2
+
+### What Didn't Work
+- Wasted time trying various func CLI flags (--build local, --build remote)
+- Tried changing app settings (SCM_DO_BUILD_DURING_DEPLOYMENT) — didn't help
+- Should have checked zip size earlier (251KB vs 68MB was the clue)
+
+### Lessons Learned
+
+1. **Check zip size** — if it's ~250KB, node_modules is missing
+2. **GitHub Actions vs func CLI** — different behavior for node_modules
+3. **New function apps need full zip** — don't assume func CLI "just works"
+4. **Compare working vs broken** — PROD config was the reference
+
+### Action Items
+- [x] Add deployment checklist to CLAUDE.md
+- [x] Document in retrospectivePlaybook.md
+- [ ] Update GitHub workflow for PROD2 (future automation)
+- [ ] Delete old `calendarbeaf-prod-2` (lowercase)
+
+---
+
 ## Previous Sessions
 
 No previous sessions recorded for this project.
