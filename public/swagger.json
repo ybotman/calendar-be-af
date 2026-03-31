@@ -3401,6 +3401,7 @@
           "discoveredFirstDate": { "type": "string", "format": "date-time", "description": "First discovery date" },
           "discoveredComments": { "type": "string", "description": "Discovery comments" },
           "cost": { "type": "string", "description": "Event cost/price info" },
+          "eventUrl": { "type": "string", "format": "uri", "description": "Event website or registration URL" },
           "expiresAt": { "type": "string", "format": "date-time", "description": "Event expiration date" },
           "createdByRA": {
             "type": "object",
