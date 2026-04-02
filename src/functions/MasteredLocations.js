@@ -498,6 +498,19 @@ async function nearestMasteredGetHandler(request, context) {
             };
         }
 
+        // Validate coordinate ranges (prevents MongoDB GeoJSON errors)
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            context.log(`Invalid coordinates: lat=${lat}, lng=${lng} - outside valid range`);
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: 'Invalid coordinates. lat must be -90 to 90, lng must be -180 to 180',
+                    received: { lat, lng }
+                })
+            };
+        }
+
         context.log(`Finding nearest mastered city to lat=${lat}, lng=${lng}, maxDistance=${maxDistance}, appId=${appId}`);
 
         const mongoUri = process.env.MONGODB_URI;
