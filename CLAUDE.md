@@ -40,6 +40,32 @@ Generated on: 2025-10-05T20:04:02.753Z
 
 *Source: 2026-02-23 retrospective - 404 on PROD due to missing app.js registration*
 
+### Azure Functions Deployment Checklist
+
+**When deploying to Azure Functions (especially new/failover apps):**
+
+1. ⚠️ **`func` CLI does NOT include node_modules** — results in "0 functions found"
+2. ✅ **Deploy full zip (68MB+) with `az functionapp deployment source config-zip`**
+3. ✅ Ensure `WEBSITE_RUN_FROM_PACKAGE=1` is set
+4. ❌ Do NOT use `SCM_DO_BUILD_DURING_DEPLOYMENT=true` (causes discovery issues)
+
+**Correct deployment command:**
+```bash
+# 1. Install dependencies locally
+npm ci --production
+
+# 2. Create full zip (includes node_modules)
+zip -r /tmp/deploy.zip . -x "*.git*" -x ".github/*" -x "test/*" -x "docs/*"
+
+# 3. Deploy with az CLI (NOT func CLI)
+az functionapp deployment source config-zip \
+  --name YOUR-FUNCTION-APP \
+  --resource-group YOUR-RG \
+  --src /tmp/deploy.zip
+```
+
+*Source: 2026-03-30 retrospective - PROD2 failover showed "0 functions found" until full zip deployed*
+
 ---
 
 

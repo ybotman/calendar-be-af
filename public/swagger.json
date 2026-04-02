@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Calendar Backend - Azure Functions API",
-    "version": "1.22.0",
+    "version": "1.24.3",
     "description": "Azure Functions API for Master Calendar (TangoTiempo & HarmonyJunction). Migrating from Express to serverless architecture.",
     "contact": {
       "name": "API Support",
@@ -67,6 +67,10 @@
     {
       "name": "Venues",
       "description": "Venue management"
+    },
+    {
+      "name": "Mastered Locations",
+      "description": "Mastered location hierarchy (countries, regions, divisions, cities)"
     },
     {
       "name": "Ops",
@@ -2859,6 +2863,155 @@
         }
       }
     },
+    "/api/masteredLocations/cities": {
+      "get": {
+        "summary": "Get mastered cities",
+        "description": "Retrieve mastered cities with optional filtering and search. Each city includes latitude/longitude for map centering.",
+        "tags": ["Mastered Locations"],
+        "operationId": "getMasteredCities",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID",
+            "schema": { "type": "string", "default": "1" }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Search by city name (case-insensitive partial match for typeahead)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "divisionId",
+            "in": "query",
+            "description": "Filter by masteredDivisionId",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Results per page (max 500)",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "populate",
+            "in": "query",
+            "description": "Populate division data",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of mastered cities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": { "type": "string" },
+                          "cityName": { "type": "string" },
+                          "latitude": { "type": "number" },
+                          "longitude": { "type": "number" },
+                          "isActive": { "type": "boolean" }
+                        }
+                      }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/masteredLocations/nearestMastered": {
+      "get": {
+        "summary": "Find nearest mastered city",
+        "description": "Find the nearest mastered city to given coordinates with full location hierarchy",
+        "tags": ["Mastered Locations"],
+        "operationId": "getNearestMasteredCity",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude coordinate (-90 to 90)",
+            "schema": { "type": "number", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude coordinate (-180 to 180)",
+            "schema": { "type": "number", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "maxDistance",
+            "in": "query",
+            "description": "Maximum distance in meters",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "Application ID",
+            "schema": { "type": "string", "default": "1" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Nearest mastered city with hierarchy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cityID": { "type": "string" },
+                    "cityName": { "type": "string" },
+                    "latitude": { "type": "number" },
+                    "longitude": { "type": "number" },
+                    "divisionID": { "type": "string" },
+                    "divisionName": { "type": "string" },
+                    "regionID": { "type": "string" },
+                    "regionName": { "type": "string" },
+                    "countryID": { "type": "string" },
+                    "countryName": { "type": "string" },
+                    "distance": { "type": "number" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid coordinates (lat must be -90 to 90, lng must be -180 to 180)" },
+          "404": { "description": "No mastered city found near the given coordinates" }
+        }
+      }
+    },
     "/api/ops/data-health": {
       "get": {
         "summary": "Get data health report",
@@ -3401,6 +3554,7 @@
           "discoveredFirstDate": { "type": "string", "format": "date-time", "description": "First discovery date" },
           "discoveredComments": { "type": "string", "description": "Discovery comments" },
           "cost": { "type": "string", "description": "Event cost/price info" },
+          "eventUrl": { "type": "string", "format": "uri", "description": "Event website or registration URL" },
           "expiresAt": { "type": "string", "format": "date-time", "description": "Event expiration date" },
           "createdByRA": {
             "type": "object",

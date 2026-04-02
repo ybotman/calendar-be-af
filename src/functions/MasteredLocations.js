@@ -332,6 +332,7 @@ app.http('MasteredLocations_Divisions', {
  * - appId: Application ID (default: "1")
  * - divisionId: Filter by masteredDivisionId (optional)
  * - isActive: Filter by isActive status (optional boolean string)
+ * - name: Search by city name (case-insensitive partial match, optional)
  * - page: Page number (default: 1)
  * - limit: Results per page (default: 100, max: 500)
  * - populate: "true" to lookup and attach division data (optional)
@@ -348,12 +349,13 @@ async function masteredCitiesGetHandler(request, context) {
         const appId = request.query.get('appId') || '1';
         const divisionId = request.query.get('divisionId');
         const isActiveParam = request.query.get('isActive');
+        const name = request.query.get('name');
         const page = parseInt(request.query.get('page') || '1', 10);
         const limit = Math.min(500, Math.max(1, parseInt(request.query.get('limit') || '100', 10)));
         const skip = (page - 1) * limit;
         const populate = request.query.get('populate') === 'true';
 
-        context.log(`Fetching mastered cities: appId=${appId}, divisionId=${divisionId}, page=${page}, limit=${limit}, populate=${populate}`);
+        context.log(`Fetching mastered cities: appId=${appId}, divisionId=${divisionId}, name=${name}, page=${page}, limit=${limit}, populate=${populate}`);
 
         const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
@@ -373,6 +375,10 @@ async function masteredCitiesGetHandler(request, context) {
         }
         if (isActiveParam !== null && isActiveParam !== undefined) {
             query.isActive = isActiveParam === 'true';
+        }
+        // Filter by name (case-insensitive partial match for typeahead)
+        if (name) {
+            query.cityName = { $regex: name, $options: 'i' };
         }
 
         // Execute query with pagination
@@ -495,6 +501,19 @@ async function nearestMasteredGetHandler(request, context) {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: 'latitude and longitude must be valid numbers' })
+            };
+        }
+
+        // Validate coordinate ranges (prevents MongoDB GeoJSON errors)
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            context.log(`Invalid coordinates: lat=${lat}, lng=${lng} - outside valid range`);
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: 'Invalid coordinates. lat must be -90 to 90, lng must be -180 to 180',
+                    received: { lat, lng }
+                })
             };
         }
 

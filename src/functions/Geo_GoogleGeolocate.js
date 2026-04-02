@@ -4,6 +4,58 @@ const { app } = require('@azure/functions');
 const { standardMiddleware } = require('../middleware');
 
 // ============================================================================
+// Bot Detection & Default Location
+// - Bots get default US center coords immediately (no Google API call)
+// - Prevents 429 errors from bot traffic (87% of errors)
+// ============================================================================
+const DEFAULT_LOCATION = {
+    lat: 39.8283,   // Geographic center of USA (Kansas)
+    lng: -98.5795
+};
+const DEFAULT_ACCURACY = 50000; // 50km - intentionally low accuracy for bots
+
+// Known bot user-agent patterns (case-insensitive matching)
+const BOT_PATTERNS = [
+    /googlebot/i,
+    /bingbot/i,
+    /slurp/i,           // Yahoo
+    /duckduckbot/i,
+    /baiduspider/i,
+    /yandexbot/i,
+    /facebookexternalhit/i,
+    /twitterbot/i,
+    /linkedinbot/i,
+    /whatsapp/i,
+    /telegrambot/i,
+    /discordbot/i,
+    /slackbot/i,
+    /applebot/i,
+    /semrushbot/i,
+    /ahrefsbot/i,
+    /mj12bot/i,
+    /dotbot/i,
+    /petalbot/i,
+    /bytespider/i,
+    /crawler/i,
+    /spider/i,
+    /scraper/i,
+    /headless/i,        // Headless browsers
+    /phantomjs/i,
+    /selenium/i,
+    /puppeteer/i,
+    /playwright/i
+];
+
+// Check if user-agent is a known bot
+function isBot(userAgent) {
+    if (!userAgent) return false;
+    return BOT_PATTERNS.some(pattern => pattern.test(userAgent));
+}
+
+// Bot stats for monitoring
+let botStats = { blocked: 0, lastBlocked: null };
+
+// ============================================================================
 // IP-Based Caching & Rate Limiting
 // - Cache TTL: 5 minutes (users don't move that fast)
 // - Rate limit: 10 requests per minute per IP
@@ -145,7 +197,36 @@ function checkRateLimit(ip) {
  */
 async function geoGoogleGeolocateHandler(request, context) {
     const clientIP = getClientIP(request);
-    context.log('Geo_GoogleGeolocate: Request received', { clientIP });
+    const userAgent = request.headers.get('user-agent') || '';
+    context.log('Geo_GoogleGeolocate: Request received', { clientIP, userAgent: userAgent.substring(0, 50) });
+
+    // ================================================================
+    // BOT DETECTION - Early return, skip Google API entirely
+    // ================================================================
+    if (isBot(userAgent)) {
+        botStats.blocked++;
+        botStats.lastBlocked = new Date().toISOString();
+        context.log('Geo_GoogleGeolocate: BOT BLOCKED', {
+            clientIP,
+            userAgent: userAgent.substring(0, 100),
+            totalBlocked: botStats.blocked
+        });
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                data: {
+                    location: DEFAULT_LOCATION,
+                    accuracy: DEFAULT_ACCURACY,
+                    bot: true,
+                    cached: false
+                },
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
 
     // Run periodic cleanup
     cleanupCache();
