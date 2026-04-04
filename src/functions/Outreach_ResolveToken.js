@@ -129,7 +129,8 @@ async function outreachResolveTokenHandler(request, context) {
                     region: tokenDoc.region || prefillData.region || null,
                     regionId: tokenDoc.regionId || prefillData.regionId || null,
                     city: tokenDoc.city || prefillData.city || null,
-                    website: tokenDoc.website || prefillData.website || null
+                    website: tokenDoc.website || prefillData.website || null,
+                    facebookUrl: tokenDoc.facebookUrl || prefillData.facebookUrl || null
                 },
                 metadata: {
                     campaignId: tokenDoc.campaignId || null,

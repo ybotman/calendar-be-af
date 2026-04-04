@@ -3277,17 +3277,20 @@
                 "required": ["token", "event"],
                 "properties": {
                   "token": { "type": "string", "description": "Outreach token" },
-                  "event": { "type": "string", "enum": ["link_click", "signup_started", "form_submitted", "approved", "rejected"] },
-                  "metadata": { "type": "object", "description": "Additional event metadata" }
+                  "event": { "type": "string", "enum": ["link_clicked", "auth_completed", "form_opened", "application_submitted", "onboarding_complete"] },
+                  "firebaseUserId": { "type": "string", "description": "Firebase UID (optional, available after auth step)" },
+                  "timestamp": { "type": "string", "format": "date-time", "description": "Event timestamp (optional, defaults to now)" }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Event tracked successfully" },
-          "400": { "description": "Validation error" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Event tracked",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "tracked": { "type": "boolean" } } } } }
+          },
+          "400": { "description": "Validation error (token_required or invalid_event)" }
         }
       }
     },
@@ -3312,19 +3315,19 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean" },
+                    "campaignId": { "type": "string" },
                     "funnel": {
                       "type": "object",
                       "properties": {
                         "links_generated": { "type": "integer" },
-                        "clicks": { "type": "integer" },
-                        "signups_started": { "type": "integer" },
-                        "submitted": { "type": "integer" },
-                        "approved": { "type": "integer" },
-                        "rejected": { "type": "integer" }
+                        "links_clicked": { "type": "integer" },
+                        "auth_completed": { "type": "integer" },
+                        "forms_opened": { "type": "integer" },
+                        "applications_submitted": { "type": "integer" },
+                        "onboarding_complete": { "type": "integer" }
                       }
                     },
-                    "byOrg": { "type": "array" }
+                    "tokens": { "type": "array", "items": { "type": "object", "properties": { "tokenId": { "type": "string" }, "orgName": { "type": "string" }, "status": { "type": "string" }, "events": { "type": "array", "items": { "type": "string" } }, "completedAt": { "type": "string", "format": "date-time", "nullable": true } } } }
                   }
                 }
               }

@@ -4,20 +4,22 @@
 const { app } = require('@azure/functions');
 const { MongoClient } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
-const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
+const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKeyAuth');
 
 /**
- * GET /api/outreach/status
+ * GET /api/outreach/status?campaignId=...
  * Query outreach funnel metrics. Used by AIDI/Dash for conversion reporting.
  *
- * @auth Firebase Bearer token (admin-level)
+ * @auth X-Service-Key header (service-to-service)
  *
  * @query {string} campaignId - Filter by campaign (optional)
- * @query {string} appId - Filter by appId (optional, default: all)
+ * @query {string} appId - Filter by appId (optional)
  * @query {string} dateFrom - Filter from date ISO string (optional)
  * @query {string} dateTo - Filter to date ISO string (optional)
  *
- * @returns {object} { funnel: { links_generated, clicks, signups_started, submitted, approved, rejected }, byOrg: [...] }
+ * @returns {object} { campaignId, funnel: { links_generated, links_clicked,
+ *   auth_completed, forms_opened, applications_submitted, onboarding_complete },
+ *   tokens: [{ tokenId, orgName, status, events, completedAt }] }
  */
 async function outreachStatusHandler(request, context) {
     context.log('Outreach_Status: GET request received');
@@ -28,26 +30,25 @@ async function outreachStatusHandler(request, context) {
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                'Access-Control-Allow-Headers': 'Content-Type, x-api-key'
             }
         };
     }
 
-    // Require Firebase auth
-    const user = await firebaseAuth(request, context);
-    if (!user) {
-        return unauthorizedResponse();
+    // Require service API key
+    if (!apiKeyAuth(request, context)) {
+        return apiKeyUnauthorizedResponse();
     }
 
     let mongoClient;
 
     try {
-        const campaignId = request.query.get('campaignId');
-        const appId = request.query.get('appId');
-        const dateFrom = request.query.get('dateFrom');
-        const dateTo = request.query.get('dateTo');
+        const url = new URL(request.url);
+        const campaignId = url.searchParams.get('campaignId');
+        const appId = url.searchParams.get('appId') ? parseInt(url.searchParams.get('appId')) : null;
+        const dateFrom = url.searchParams.get('dateFrom');
+        const dateTo = url.searchParams.get('dateTo');
 
-        // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
@@ -57,7 +58,7 @@ async function outreachStatusHandler(request, context) {
         await mongoClient.connect();
         const db = mongoClient.db();
 
-        // Build query filter for tracking events
+        // Build query filters
         const trackingFilter = {};
         if (campaignId) trackingFilter.campaignId = campaignId;
         if (appId) trackingFilter.appId = appId;
@@ -67,7 +68,6 @@ async function outreachStatusHandler(request, context) {
             if (dateTo) trackingFilter.timestamp.$lte = new Date(dateTo);
         }
 
-        // Build query filter for tokens (links_generated count)
         const tokenFilter = {};
         if (campaignId) tokenFilter.campaignId = campaignId;
         if (appId) tokenFilter.appId = appId;
@@ -77,64 +77,66 @@ async function outreachStatusHandler(request, context) {
             if (dateTo) tokenFilter.createdAt.$lte = new Date(dateTo);
         }
 
-        // Get funnel counts in parallel
-        const [linksGenerated, eventCounts, byOrg] = await Promise.all([
-            // Count tokens generated
+        // Get funnel counts and token list in parallel
+        const [linksGenerated, eventCounts, tokenDocs] = await Promise.all([
             db.collection('outreach_tokens').countDocuments(tokenFilter),
 
-            // Aggregate event counts by type
             db.collection('outreach_tracking').aggregate([
                 { $match: trackingFilter },
                 { $group: { _id: '$event', count: { $sum: 1 } } }
             ]).toArray(),
 
-            // Aggregate by org
-            db.collection('outreach_tracking').aggregate([
-                { $match: trackingFilter },
+            // Per-token summary: join tokens with their tracking events
+            db.collection('outreach_tokens').aggregate([
+                { $match: tokenFilter },
                 {
-                    $group: {
-                        _id: { orgName: '$orgName', token: '$token' },
-                        events: { $push: '$event' },
-                        lastEvent: { $max: '$timestamp' },
-                        campaignId: { $first: '$campaignId' }
+                    $lookup: {
+                        from: 'outreach_tracking',
+                        localField: '_id',
+                        foreignField: 'tokenId',
+                        as: 'trackingEvents'
                     }
                 },
-                { $sort: { lastEvent: -1 } },
-                { $limit: 100 }
+                { $sort: { createdAt: -1 } },
+                { $limit: 200 }
             ]).toArray()
         ]);
 
-        // Build funnel object from event counts
+        // Build funnel using canonical event names
         const eventCountMap = {};
         eventCounts.forEach(e => { eventCountMap[e._id] = e.count; });
 
         const funnel = {
             links_generated: linksGenerated,
-            clicks: eventCountMap.link_click || 0,
-            signups_started: eventCountMap.signup_started || 0,
-            submitted: eventCountMap.form_submitted || 0,
-            approved: eventCountMap.approved || 0,
-            rejected: eventCountMap.rejected || 0
+            links_clicked: eventCountMap.link_clicked || 0,
+            auth_completed: eventCountMap.auth_completed || 0,
+            forms_opened: eventCountMap.form_opened || 0,
+            applications_submitted: eventCountMap.application_submitted || 0,
+            onboarding_complete: eventCountMap.onboarding_complete || 0
         };
 
-        // Format byOrg results
-        const byOrgFormatted = byOrg.map(item => ({
-            orgName: item._id.orgName,
-            token: item._id.token,
-            campaignId: item.campaignId,
-            events: item.events,
-            lastEvent: item.lastEvent
-        }));
+        // Format per-token results
+        const tokens = tokenDocs.map(t => {
+            const events = t.trackingEvents.map(e => e.event);
+            const completedEvent = t.trackingEvents.find(e => e.event === 'onboarding_complete');
+            return {
+                tokenId: t._id.toString(),
+                orgName: t.orgName,
+                status: t.status,
+                events,
+                completedAt: completedEvent ? completedEvent.timestamp : null
+            };
+        });
 
-        context.log(`[OUTREACH STATUS] campaign="${campaignId || 'all'}" links=${funnel.links_generated} clicks=${funnel.clicks} submitted=${funnel.submitted}`);
+        context.log(`[OUTREACH STATUS] campaign="${campaignId || 'all'}" links=${linksGenerated} clicked=${funnel.links_clicked} submitted=${funnel.applications_submitted}`);
 
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
+                campaignId: campaignId || null,
                 funnel,
-                byOrg: byOrgFormatted
+                tokens
             })
         };
 

@@ -2,29 +2,28 @@
 // Domain: Outreach Onboarding - Log funnel events to outreach_tracking collection
 // CALBEAF-95
 const { app } = require('@azure/functions');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
-const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKeyAuth');
-const { firebaseAuth } = require('../middleware/firebaseAuth');
 
 const VALID_EVENTS = [
-    'link_click',
-    'signup_started',
-    'form_submitted',
-    'approved',
-    'rejected'
+    'link_clicked',
+    'auth_completed',
+    'form_opened',
+    'application_submitted',
+    'onboarding_complete'
 ];
 
 /**
  * POST /api/outreach/track
  * Log a funnel event to the outreach_tracking collection.
- * Called by frontend (Firebase auth) or services (API key).
+ * Called by frontend (no auth required; token provides context).
  *
- * @auth x-api-key OR Firebase Bearer token
+ * @auth None
  *
  * @body {string} token - The outreach token (required)
  * @body {string} event - Event type (required, one of VALID_EVENTS)
- * @body {object} metadata - Additional event metadata (optional)
+ * @body {string} firebaseUserId - Firebase UID (optional, available after auth step)
+ * @body {string} timestamp - ISO timestamp (optional, defaults to now)
  */
 async function outreachTrackHandler(request, context) {
     context.log('Outreach_Track: POST request received');
@@ -35,21 +34,9 @@ async function outreachTrackHandler(request, context) {
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
             }
         };
-    }
-
-    // Auth: accept either API key OR Firebase token
-    const hasApiKey = apiKeyAuth(request, context);
-    let firebaseUid = null;
-
-    if (!hasApiKey) {
-        const user = await firebaseAuth(request, context);
-        if (!user) {
-            return apiKeyUnauthorizedResponse();
-        }
-        firebaseUid = user.uid;
     }
 
     let mongoClient;
@@ -57,17 +44,11 @@ async function outreachTrackHandler(request, context) {
     try {
         const body = await request.json();
 
-        // Validate required fields
         if (!body.token) {
             return {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'ValidationError',
-                    message: 'token is required',
-                    timestamp: new Date().toISOString()
-                })
+                body: JSON.stringify({ tracked: false, reason: 'token_required' })
             };
         }
 
@@ -76,15 +57,13 @@ async function outreachTrackHandler(request, context) {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    success: false,
-                    error: 'ValidationError',
-                    message: `event must be one of: ${VALID_EVENTS.join(', ')}`,
-                    timestamp: new Date().toISOString()
+                    tracked: false,
+                    reason: 'invalid_event',
+                    validEvents: VALID_EVENTS
                 })
             };
         }
 
-        // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
         if (!mongoUri) {
             throw new Error('MongoDB connection string not configured');
@@ -97,62 +76,57 @@ async function outreachTrackHandler(request, context) {
         // Look up token for campaign context
         const tokenDoc = await db.collection('outreach_tokens').findOne({ token: body.token });
 
+        const firebaseUserId = body.firebaseUserId || null;
+        const eventTimestamp = body.timestamp ? new Date(body.timestamp) : new Date();
+
         // Insert tracking event
-        const trackingEvent = {
+        await db.collection('outreach_tracking').insertOne({
             token: body.token,
+            tokenId: tokenDoc ? tokenDoc._id : null,
             campaignId: tokenDoc ? tokenDoc.campaignId : null,
-            orgName: tokenDoc ? tokenDoc.orgName : null,
             appId: tokenDoc ? tokenDoc.appId : null,
             event: body.event,
-            timestamp: new Date(),
+            firebaseUserId,
+            organizerId: null,
+            timestamp: eventTimestamp,
             metadata: {
-                ...(body.metadata || {}),
-                firebaseUid,
                 userAgent: request.headers.get('user-agent') || null
             }
-        };
+        });
 
-        await db.collection('outreach_tracking').insertOne(trackingEvent);
-
-        // If form_submitted, mark the token as used and update organizer
-        if (body.event === 'form_submitted' && tokenDoc && tokenDoc.status === 'active') {
+        // Mark token used on application_submitted
+        if (body.event === 'application_submitted' && tokenDoc && tokenDoc.status === 'active') {
             await db.collection('outreach_tokens').updateOne(
                 { token: body.token },
                 {
                     $set: {
                         status: 'used',
                         usedAt: new Date(),
-                        usedByFirebaseUid: firebaseUid
+                        usedByFirebaseUserId: firebaseUserId
                     }
                 }
             );
 
-            // Update organizer onboardingStatus if we can find one linked to this token
-            if (firebaseUid) {
+            // Update organizer onboardingStatus if Firebase UID available
+            if (firebaseUserId) {
                 await db.collection('organizers').updateOne(
-                    { firebaseUserId: firebaseUid, appId: tokenDoc.appId },
+                    { firebaseUserId, appId: tokenDoc.appId },
                     {
                         $set: {
-                            onboardingStatus: 'submitted',
-                            onboardingToken: body.token,
-                            onboardingCompletedAt: new Date(),
-                            outreachCampaignId: tokenDoc.campaignId
+                            onboardingStatus: 'applied',
+                            onboardingSource: 'outreach',
+                            outreachTokenId: tokenDoc._id
                         }
                     }
                 );
             }
         }
 
-        // If approved/rejected, update organizer onboardingStatus
-        if ((body.event === 'approved' || body.event === 'rejected') && tokenDoc) {
+        // Update organizer to active on onboarding_complete
+        if (body.event === 'onboarding_complete' && tokenDoc && firebaseUserId) {
             await db.collection('organizers').updateOne(
-                { onboardingToken: body.token, appId: tokenDoc.appId },
-                {
-                    $set: {
-                        onboardingStatus: body.event,
-                        updatedAt: new Date()
-                    }
-                }
+                { firebaseUserId, appId: tokenDoc.appId },
+                { $set: { onboardingStatus: 'active' } }
             );
         }
 
@@ -161,7 +135,7 @@ async function outreachTrackHandler(request, context) {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ success: true })
+            body: JSON.stringify({ tracked: true })
         };
 
     } catch (error) {
@@ -169,12 +143,7 @@ async function outreachTrackHandler(request, context) {
         return {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                success: false,
-                error: 'ServerError',
-                message: 'Failed to track outreach event',
-                timestamp: new Date().toISOString()
-            })
+            body: JSON.stringify({ tracked: false, reason: 'server_error' })
         };
     } finally {
         if (mongoClient) {

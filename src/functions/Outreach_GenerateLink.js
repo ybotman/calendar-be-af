@@ -98,6 +98,7 @@ async function outreachGenerateLinkHandler(request, context) {
             regionId: body.regionId || null,
             city: additionalData.city || null,
             website: additionalData.website || null,
+            facebookUrl: additionalData.facebookUrl || null,
             // Outreach metadata
             campaignId: body.campaignId || null,
             source: body.source || 'unknown',
