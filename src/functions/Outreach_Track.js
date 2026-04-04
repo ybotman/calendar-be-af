@@ -23,6 +23,7 @@ const VALID_EVENTS = [
  * @body {string} token - The outreach token (required)
  * @body {string} event - Event type (required, one of VALID_EVENTS)
  * @body {string} firebaseUserId - Firebase UID (optional, available after auth step)
+ * @body {string} organizerId - MongoDB organizer _id (optional; preferred over firebaseUserId lookup when available)
  * @body {string} timestamp - ISO timestamp (optional, defaults to now)
  */
 async function outreachTrackHandler(request, context) {
@@ -77,7 +78,12 @@ async function outreachTrackHandler(request, context) {
         const tokenDoc = await db.collection('outreach_tokens').findOne({ token: body.token });
 
         const firebaseUserId = body.firebaseUserId || null;
+        const organizerId = body.organizerId || null;
         const eventTimestamp = body.timestamp ? new Date(body.timestamp) : new Date();
+
+        // Build organizer filter: prefer direct _id lookup when organizerId provided
+        const organizerFilter = (id, appId) =>
+            id ? { _id: new ObjectId(id) } : { firebaseUserId, appId };
 
         // Insert tracking event
         await db.collection('outreach_tracking').insertOne({
@@ -87,7 +93,7 @@ async function outreachTrackHandler(request, context) {
             appId: tokenDoc ? tokenDoc.appId : null,
             event: body.event,
             firebaseUserId,
-            organizerId: null,
+            organizerId: organizerId ? new ObjectId(organizerId) : null,
             timestamp: eventTimestamp,
             metadata: {
                 userAgent: request.headers.get('user-agent') || null
@@ -102,15 +108,16 @@ async function outreachTrackHandler(request, context) {
                     $set: {
                         status: 'used',
                         usedAt: new Date(),
-                        usedByFirebaseUserId: firebaseUserId
+                        usedByFirebaseUserId: firebaseUserId,
+                        usedByOrganizerId: organizerId ? new ObjectId(organizerId) : null
                     }
                 }
             );
 
-            // Update organizer onboardingStatus if Firebase UID available
-            if (firebaseUserId) {
+            // Update organizer onboardingStatus — prefer organizerId direct lookup
+            if (organizerId || firebaseUserId) {
                 await db.collection('organizers').updateOne(
-                    { firebaseUserId, appId: tokenDoc.appId },
+                    organizerFilter(organizerId, tokenDoc.appId),
                     {
                         $set: {
                             onboardingStatus: 'applied',
@@ -123,9 +130,9 @@ async function outreachTrackHandler(request, context) {
         }
 
         // Update organizer to active on onboarding_complete
-        if (body.event === 'onboarding_complete' && tokenDoc && firebaseUserId) {
+        if (body.event === 'onboarding_complete' && tokenDoc && (organizerId || firebaseUserId)) {
             await db.collection('organizers').updateOne(
-                { firebaseUserId, appId: tokenDoc.appId },
+                organizerFilter(organizerId, tokenDoc.appId),
                 { $set: { onboardingStatus: 'active' } }
             );
         }

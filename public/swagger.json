@@ -3279,6 +3279,7 @@
                   "token": { "type": "string", "description": "Outreach token" },
                   "event": { "type": "string", "enum": ["link_clicked", "auth_completed", "form_opened", "application_submitted", "onboarding_complete"] },
                   "firebaseUserId": { "type": "string", "description": "Firebase UID (optional, available after auth step)" },
+                  "organizerId": { "type": "string", "description": "MongoDB organizer _id (optional; preferred over firebaseUserId for organizer updates when available)" },
                   "timestamp": { "type": "string", "format": "date-time", "description": "Event timestamp (optional, defaults to now)" }
                 }
               }
