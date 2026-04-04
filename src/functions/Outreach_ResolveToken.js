@@ -6,15 +6,15 @@ const { MongoClient } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 
 /**
- * GET /api/outreach/resolve/{token}
+ * GET /api/outreach/resolve-token?token=abc123
  * Validate an outreach token and return pre-fill data for the application form.
  * Called by Sarah's frontend when organizer lands on the apply page with a token.
  *
  * @auth None (token IS the auth)
  *
- * @param {string} token - URL param, the opaque outreach token
+ * @param {string} token - Query param, the opaque outreach token
  *
- * @returns {object} Pre-fill data or error (TOKEN_EXPIRED, TOKEN_USED, TOKEN_INVALID)
+ * @returns {object} Pre-fill data or error with { valid: false, reason }
  */
 async function outreachResolveTokenHandler(request, context) {
     context.log('Outreach_ResolveToken: GET request received');
@@ -33,17 +33,16 @@ async function outreachResolveTokenHandler(request, context) {
     let mongoClient;
 
     try {
-        const token = request.params.token;
+        const url = new URL(request.url);
+        const token = url.searchParams.get('token');
 
         if (!token) {
             return {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    success: false,
-                    error: 'ValidationError',
-                    message: 'Token parameter is required',
-                    timestamp: new Date().toISOString()
+                    valid: false,
+                    reason: 'token_required'
                 })
             };
         }
@@ -66,10 +65,8 @@ async function outreachResolveTokenHandler(request, context) {
                 status: 404,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    success: false,
-                    error: 'TOKEN_INVALID',
-                    message: 'This link is not valid.',
-                    timestamp: new Date().toISOString()
+                    valid: false,
+                    reason: 'token_not_found'
                 })
             };
         }
@@ -80,10 +77,9 @@ async function outreachResolveTokenHandler(request, context) {
                 status: 410,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    success: false,
-                    error: 'TOKEN_EXPIRED',
-                    message: 'This link has expired. Please contact the organizer for a new link.',
-                    timestamp: new Date().toISOString()
+                    valid: false,
+                    reason: 'token_expired',
+                    expiredAt: tokenDoc.expiresAt
                 })
             };
         }
@@ -94,21 +90,20 @@ async function outreachResolveTokenHandler(request, context) {
                 status: 409,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    success: false,
-                    error: 'TOKEN_USED',
-                    message: 'This application has already been submitted.',
-                    timestamp: new Date().toISOString()
+                    valid: false,
+                    reason: 'token_already_used',
+                    usedAt: tokenDoc.usedAt
                 })
             };
         }
 
-        // Log the click event to outreach_tracking
+        // Log the resolve event to outreach_tracking
         await db.collection('outreach_tracking').insertOne({
             token,
+            tokenId: tokenDoc._id,
             campaignId: tokenDoc.campaignId,
-            orgName: tokenDoc.orgName,
             appId: tokenDoc.appId,
-            event: 'link_click',
+            event: 'link_clicked',
             timestamp: new Date(),
             metadata: {
                 userAgent: request.headers.get('user-agent') || null
@@ -117,23 +112,29 @@ async function outreachResolveTokenHandler(request, context) {
 
         context.log(`[OUTREACH TOKEN RESOLVED] org="${tokenDoc.orgName}" campaign="${tokenDoc.campaignId}"`);
 
-        // Return pre-fill data
+        // Merge flat fields + prefillData blob into the prefill shape Sarah expects
+        const prefillData = tokenDoc.prefillData || {};
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
-                data: {
-                    orgName: tokenDoc.orgName,
-                    contactEmail: tokenDoc.contactEmail,
-                    contactName: tokenDoc.contactName,
-                    appId: tokenDoc.appId,
-                    campaignId: tokenDoc.campaignId,
-                    regionId: tokenDoc.regionId,
-                    divisionId: tokenDoc.divisionId,
-                    cityId: tokenDoc.cityId,
-                    prefillData: tokenDoc.prefillData,
-                    tokenStatus: 'active'
+                valid: true,
+                used: false,
+                expiresAt: tokenDoc.expiresAt,
+                prefill: {
+                    orgName: tokenDoc.orgName || prefillData.orgName || null,
+                    contactName: tokenDoc.contactName || prefillData.contactName || null,
+                    contactEmail: tokenDoc.contactEmail || prefillData.contactEmail || null,
+                    organizerType: tokenDoc.organizerType || prefillData.organizerType || null,
+                    region: tokenDoc.region || prefillData.region || null,
+                    regionId: tokenDoc.regionId || prefillData.regionId || null,
+                    city: tokenDoc.city || prefillData.city || null,
+                    website: tokenDoc.website || prefillData.website || null
+                },
+                metadata: {
+                    campaignId: tokenDoc.campaignId || null,
+                    source: tokenDoc.source || null,
+                    sourceDetail: tokenDoc.sourceDetail || prefillData.sourceDetail || null
                 }
             })
         };
@@ -144,10 +145,8 @@ async function outreachResolveTokenHandler(request, context) {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: false,
-                error: 'ServerError',
-                message: 'Failed to resolve outreach token',
-                timestamp: new Date().toISOString()
+                valid: false,
+                reason: 'server_error'
             })
         };
     } finally {
@@ -160,6 +159,6 @@ async function outreachResolveTokenHandler(request, context) {
 app.http('Outreach_ResolveToken', {
     methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
-    route: 'outreach/resolve/{token}',
+    route: 'outreach/resolve-token',
     handler: standardMiddleware(outreachResolveTokenHandler)
 });

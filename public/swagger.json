@@ -3155,16 +3155,17 @@
                 "type": "object",
                 "required": ["orgName"],
                 "properties": {
+                  "appId": { "type": "integer", "default": 1, "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
                   "orgName": { "type": "string", "description": "Organization name" },
-                  "appId": { "type": "string", "default": "1", "description": "Application ID" },
+                  "contactName": { "type": "string", "description": "Contact person name (optional)" },
                   "contactEmail": { "type": "string", "description": "Contact email for pre-fill" },
-                  "contactName": { "type": "string", "description": "Contact name for pre-fill" },
-                  "campaignId": { "type": "string", "description": "Campaign identifier" },
-                  "source": { "type": "string", "description": "Source identifier" },
-                  "regionId": { "type": "string", "description": "Mastered region ID" },
-                  "divisionId": { "type": "string", "description": "Mastered division ID" },
-                  "cityId": { "type": "string", "description": "Mastered city ID" },
-                  "prefillData": { "type": "object", "description": "Additional pre-fill fields" },
+                  "organizerType": { "type": "string", "example": "isEventOrganizer", "description": "Organizer type" },
+                  "region": { "type": "string", "description": "Region display name" },
+                  "regionId": { "type": "string", "description": "Mastered region ID (optional)" },
+                  "campaignId": { "type": "string", "description": "Campaign identifier for tracking" },
+                  "source": { "type": "string", "example": "facebook_group", "description": "Source identifier" },
+                  "sourceDetail": { "type": "string", "example": "BA Tango Events Group", "description": "Source detail (group name, campaign name, etc.)" },
+                  "additionalData": { "type": "object", "description": "Optional extras (city, website, etc.)", "example": { "city": "Buenos Aires", "website": "https://example.com" } },
                   "expiryDays": { "type": "integer", "default": 30, "description": "Token expiry in days (max 90)" }
                 }
               }
@@ -3179,10 +3180,10 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean" },
                     "token": { "type": "string" },
-                    "url": { "type": "string" },
-                    "expiresAt": { "type": "string", "format": "date-time" }
+                    "link": { "type": "string", "description": "Full URL with orgToken query param" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "tokenId": { "type": "string", "description": "MongoDB _id of the created token doc" }
                   }
                 }
               }
@@ -3193,19 +3194,19 @@
         }
       }
     },
-    "/api/outreach/resolve/{token}": {
+    "/api/outreach/resolve-token": {
       "get": {
         "summary": "Resolve outreach token",
-        "description": "Validate token and return pre-fill data for the application form. Called by frontend.",
+        "description": "Validate token and return pre-fill data for the application form. Called by frontend after landing on apply page with orgToken query param.",
         "tags": ["Outreach"],
         "operationId": "resolveOutreachToken",
         "parameters": [
           {
             "name": "token",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": { "type": "string" },
-            "description": "Opaque outreach token"
+            "description": "Opaque outreach token (from URL orgToken param)"
           }
         ],
         "responses": {
@@ -3216,20 +3217,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean" },
-                    "data": {
+                    "valid": { "type": "boolean", "example": true },
+                    "used": { "type": "boolean", "example": false },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "prefill": {
                       "type": "object",
                       "properties": {
                         "orgName": { "type": "string" },
-                        "contactEmail": { "type": "string" },
                         "contactName": { "type": "string" },
-                        "appId": { "type": "string" },
-                        "campaignId": { "type": "string" },
+                        "contactEmail": { "type": "string" },
+                        "organizerType": { "type": "string" },
+                        "region": { "type": "string" },
                         "regionId": { "type": "string" },
-                        "divisionId": { "type": "string" },
-                        "cityId": { "type": "string" },
-                        "prefillData": { "type": "object" },
-                        "tokenStatus": { "type": "string" }
+                        "city": { "type": "string" },
+                        "website": { "type": "string" }
+                      }
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "campaignId": { "type": "string" },
+                        "source": { "type": "string" },
+                        "sourceDetail": { "type": "string" }
                       }
                     }
                   }
@@ -3237,9 +3246,18 @@
               }
             }
           },
-          "404": { "description": "TOKEN_INVALID - token not found" },
-          "409": { "description": "TOKEN_USED - application already submitted" },
-          "410": { "description": "TOKEN_EXPIRED - link has expired" }
+          "404": {
+            "description": "Token not found",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_not_found" } } } } }
+          },
+          "409": {
+            "description": "Token already used",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_already_used" }, "usedAt": { "type": "string", "format": "date-time" } } } } }
+          },
+          "410": {
+            "description": "Token expired",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_expired" }, "expiredAt": { "type": "string", "format": "date-time" } } } } }
+          }
         }
       }
     },

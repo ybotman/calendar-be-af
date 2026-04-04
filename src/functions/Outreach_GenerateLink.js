@@ -15,18 +15,18 @@ const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKey
  * @auth x-api-key (service-to-service)
  *
  * @body {string} orgName - Organization name (required)
- * @body {string} appId - Application ID (default: "1")
  * @body {string} contactEmail - Contact email for pre-fill
- * @body {string} contactName - Contact name for pre-fill
+ * @body {string} organizerType - e.g. "isEventOrganizer"
+ * @body {string} region - Region display name
+ * @body {string} regionId - Mastered region ID (optional)
  * @body {string} campaignId - Campaign identifier for tracking
- * @body {string} source - Source identifier (e.g. "email_outreach")
- * @body {string} regionId - Mastered region ID for pre-fill
- * @body {string} divisionId - Mastered division ID for pre-fill
- * @body {string} cityId - Mastered city ID for pre-fill
- * @body {object} prefillData - Additional pre-fill fields
+ * @body {string} source - Source identifier (e.g. "facebook_group")
+ * @body {string} sourceDetail - e.g. group name or email campaign name
+ * @body {object} additionalData - Optional extras: { city, website, ... }
+ * @body {number} appId - Application ID (default: 1)
  * @body {number} expiryDays - Token expiry in days (default: 30, max: 90)
  *
- * @returns {object} { success, token, url, expiresAt }
+ * @returns {object} { token, link, expiresAt, tokenId }
  */
 async function outreachGenerateLinkHandler(request, context) {
     context.log('Outreach_GenerateLink: POST request received');
@@ -66,8 +66,9 @@ async function outreachGenerateLinkHandler(request, context) {
             };
         }
 
-        const appId = body.appId || '1';
+        const appId = body.appId || 1;
         const expiryDays = Math.min(90, Math.max(1, parseInt(body.expiryDays) || 30));
+        const additionalData = body.additionalData || {};
 
         // Generate opaque token
         const token = crypto.randomBytes(32).toString('hex');
@@ -87,34 +88,40 @@ async function outreachGenerateLinkHandler(request, context) {
         // Store token with metadata
         const tokenDoc = {
             token,
-            orgName: body.orgName,
-            contactEmail: body.contactEmail || null,
-            contactName: body.contactName || null,
             appId,
+            // Primary pre-fill fields (flat for efficient resolve-token mapping)
+            orgName: body.orgName,
+            contactName: body.contactName || null,
+            contactEmail: body.contactEmail || null,
+            organizerType: body.organizerType || null,
+            region: body.region || null,
+            regionId: body.regionId || null,
+            city: additionalData.city || null,
+            website: additionalData.website || null,
+            // Outreach metadata
             campaignId: body.campaignId || null,
             source: body.source || 'unknown',
-            regionId: body.regionId || null,
-            divisionId: body.divisionId || null,
-            cityId: body.cityId || null,
-            prefillData: body.prefillData || {},
+            sourceDetail: body.sourceDetail || null,
+            // Lifecycle
             status: 'active',
             createdAt: now,
             expiresAt,
             usedAt: null,
-            usedByFirebaseUid: null
+            usedByFirebaseUserId: null
         };
 
-        await db.collection('outreach_tokens').insertOne(tokenDoc);
+        const result = await db.collection('outreach_tokens').insertOne(tokenDoc);
 
         // Ensure indexes exist (idempotent)
         await db.collection('outreach_tokens').createIndex({ token: 1 }, { unique: true });
         await db.collection('outreach_tokens').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+        await db.collection('outreach_tokens').createIndex({ campaignId: 1, status: 1 });
 
         // Build the full URL
-        const baseUrl = appId === '2'
+        const baseUrl = appId === 2
             ? 'https://harmonyjunction.org'
             : 'https://tangotiempo.com';
-        const url = `${baseUrl}/organizers/apply?ref=outreach&orgToken=${token}`;
+        const link = `${baseUrl}/organizers/apply?ref=outreach&orgToken=${token}`;
 
         context.log(`[OUTREACH TOKEN GENERATED] org="${body.orgName}" campaign="${body.campaignId}" expires=${expiresAt.toISOString()}`);
 
@@ -122,10 +129,10 @@ async function outreachGenerateLinkHandler(request, context) {
             status: 201,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                success: true,
                 token,
-                url,
-                expiresAt: expiresAt.toISOString()
+                link,
+                expiresAt: expiresAt.toISOString(),
+                tokenId: result.insertedId.toString()
             })
         };
 
