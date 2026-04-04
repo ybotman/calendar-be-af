@@ -75,6 +75,10 @@
     {
       "name": "Ops",
       "description": "Operations endpoints for data health and monitoring (requires function key)"
+    },
+    {
+      "name": "Outreach",
+      "description": "Organizer outreach onboarding - token generation, resolution, and funnel tracking (CALBEAF-95)"
     }
   ],
   "paths": {
@@ -3135,6 +3139,182 @@
           "500": { "description": "Server error" }
         }
       }
+    },
+    "/api/outreach/generate-link": {
+      "post": {
+        "summary": "Generate outreach onboarding link",
+        "description": "Generate an opaque token URL for organizer outreach. Called by AIDI with org metadata.",
+        "tags": ["Outreach"],
+        "operationId": "generateOutreachLink",
+        "security": [{ "apiKey": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orgName"],
+                "properties": {
+                  "orgName": { "type": "string", "description": "Organization name" },
+                  "appId": { "type": "string", "default": "1", "description": "Application ID" },
+                  "contactEmail": { "type": "string", "description": "Contact email for pre-fill" },
+                  "contactName": { "type": "string", "description": "Contact name for pre-fill" },
+                  "campaignId": { "type": "string", "description": "Campaign identifier" },
+                  "source": { "type": "string", "description": "Source identifier" },
+                  "regionId": { "type": "string", "description": "Mastered region ID" },
+                  "divisionId": { "type": "string", "description": "Mastered division ID" },
+                  "cityId": { "type": "string", "description": "Mastered city ID" },
+                  "prefillData": { "type": "object", "description": "Additional pre-fill fields" },
+                  "expiryDays": { "type": "integer", "default": 30, "description": "Token expiry in days (max 90)" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "token": { "type": "string" },
+                    "url": { "type": "string" },
+                    "expiresAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error - orgName required" },
+          "401": { "description": "Unauthorized - valid x-api-key required" }
+        }
+      }
+    },
+    "/api/outreach/resolve/{token}": {
+      "get": {
+        "summary": "Resolve outreach token",
+        "description": "Validate token and return pre-fill data for the application form. Called by frontend.",
+        "tags": ["Outreach"],
+        "operationId": "resolveOutreachToken",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Opaque outreach token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token valid - returns pre-fill data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "orgName": { "type": "string" },
+                        "contactEmail": { "type": "string" },
+                        "contactName": { "type": "string" },
+                        "appId": { "type": "string" },
+                        "campaignId": { "type": "string" },
+                        "regionId": { "type": "string" },
+                        "divisionId": { "type": "string" },
+                        "cityId": { "type": "string" },
+                        "prefillData": { "type": "object" },
+                        "tokenStatus": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "TOKEN_INVALID - token not found" },
+          "409": { "description": "TOKEN_USED - application already submitted" },
+          "410": { "description": "TOKEN_EXPIRED - link has expired" }
+        }
+      }
+    },
+    "/api/outreach/track": {
+      "post": {
+        "summary": "Track outreach funnel event",
+        "description": "Log a funnel event (click, signup, submit, approve/reject). Accepts API key or Firebase auth.",
+        "tags": ["Outreach"],
+        "operationId": "trackOutreachEvent",
+        "security": [{ "apiKey": [] }, { "firebaseAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "event"],
+                "properties": {
+                  "token": { "type": "string", "description": "Outreach token" },
+                  "event": { "type": "string", "enum": ["link_click", "signup_started", "form_submitted", "approved", "rejected"] },
+                  "metadata": { "type": "object", "description": "Additional event metadata" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Event tracked successfully" },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/outreach/status": {
+      "get": {
+        "summary": "Get outreach funnel metrics",
+        "description": "Query conversion funnel data. Used by AIDI/Dash for reporting.",
+        "tags": ["Outreach"],
+        "operationId": "getOutreachStatus",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "schema": { "type": "string" }, "description": "Filter by campaign" },
+          { "name": "appId", "in": "query", "schema": { "type": "string" }, "description": "Filter by appId" },
+          { "name": "dateFrom", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter from date" },
+          { "name": "dateTo", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter to date" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Funnel metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "funnel": {
+                      "type": "object",
+                      "properties": {
+                        "links_generated": { "type": "integer" },
+                        "clicks": { "type": "integer" },
+                        "signups_started": { "type": "integer" },
+                        "submitted": { "type": "integer" },
+                        "approved": { "type": "integer" },
+                        "rejected": { "type": "integer" }
+                      }
+                    },
+                    "byOrg": { "type": "array" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
     }
   },
   "components": {
@@ -4511,6 +4691,12 @@
         "in": "query",
         "name": "code",
         "description": "Azure Functions key. Pass as ?code=<key> query parameter or x-functions-key header"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Service-to-service API key for outreach endpoints"
       }
     }
   }

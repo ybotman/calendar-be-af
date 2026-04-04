@@ -106,4 +106,10 @@ require('./functions/Backup_Firebase');
 // SEO - Sitemap URL generation
 require('./functions/Sitemap_GetUrls');
 
+// Outreach Onboarding - CALBEAF-95
+require('./functions/Outreach_GenerateLink');
+require('./functions/Outreach_ResolveToken');
+require('./functions/Outreach_Track');
+require('./functions/Outreach_Status');
+
 module.exports = { app };
