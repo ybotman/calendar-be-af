@@ -3166,6 +3166,7 @@
                   "source": { "type": "string", "example": "facebook_group", "description": "Source identifier" },
                   "sourceDetail": { "type": "string", "example": "BA Tango Events Group", "description": "Source detail (group name, campaign name, etc.)" },
                   "additionalData": { "type": "object", "description": "Optional extras (city, website, etc.)", "example": { "city": "Buenos Aires", "website": "https://example.com" } },
+                  "discoveredOrganizerId": { "type": "string", "description": "Firestore discoveredOrganizers doc ID (for prefill enrichment from campaign data)" },
                   "expiryDays": { "type": "integer", "default": 30, "description": "Token expiry in days (max 90)" }
                 }
               }
@@ -3230,7 +3231,9 @@
                         "region": { "type": "string" },
                         "regionId": { "type": "string" },
                         "city": { "type": "string" },
-                        "website": { "type": "string" }
+                        "website": { "type": "string" },
+                        "facebookUrl": { "type": "string" },
+                        "sampleEventTitles": { "type": "array", "items": { "type": "string" }, "description": "Sample event titles from Firestore discoveredOrganizer (if available)" }
                       }
                     },
                     "metadata": {
@@ -3238,7 +3241,8 @@
                       "properties": {
                         "campaignId": { "type": "string" },
                         "source": { "type": "string" },
-                        "sourceDetail": { "type": "string" }
+                        "sourceDetail": { "type": "string" },
+                        "discoveredOrganizerId": { "type": "string", "description": "Firestore discoveredOrganizers doc ID (if token was generated with one)" }
                       }
                     }
                   }

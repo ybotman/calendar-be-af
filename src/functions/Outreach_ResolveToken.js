@@ -4,6 +4,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { getFirestore } = require('../lib/firebase-admin');
 
 /**
  * GET /api/outreach/resolve-token?token=abc123
@@ -112,7 +113,28 @@ async function outreachResolveTokenHandler(request, context) {
 
         context.log(`[OUTREACH TOKEN RESOLVED] org="${tokenDoc.orgName}" campaign="${tokenDoc.campaignId}"`);
 
-        // Merge flat fields + prefillData blob into the prefill shape Sarah expects
+        // Enrich prefill from Firestore discoveredOrganizers (campaign workspace)
+        // Token data takes priority; Firestore fills gaps
+        let firestoreData = {};
+        const discoveredOrgId = tokenDoc.discoveredOrganizerId;
+        if (discoveredOrgId) {
+            try {
+                const firestore = getFirestore();
+                const orgDoc = await firestore
+                    .collection('discoveredOrganizers')
+                    .doc(discoveredOrgId)
+                    .get();
+                if (orgDoc.exists) {
+                    firestoreData = orgDoc.data();
+                    context.log(`[OUTREACH] Enriched from Firestore discoveredOrganizer: ${discoveredOrgId}`);
+                }
+            } catch (fsErr) {
+                // Firestore enrichment is best-effort; don't fail the resolve
+                context.log(`[OUTREACH] Firestore lookup failed (non-blocking): ${fsErr.message}`);
+            }
+        }
+
+        // Merge: token fields > tokenDoc.prefillData > firestoreData
         const prefillData = tokenDoc.prefillData || {};
         return {
             status: 200,
@@ -122,20 +144,22 @@ async function outreachResolveTokenHandler(request, context) {
                 used: false,
                 expiresAt: tokenDoc.expiresAt,
                 prefill: {
-                    orgName: tokenDoc.orgName || prefillData.orgName || null,
+                    orgName: tokenDoc.orgName || prefillData.orgName || firestoreData.name || null,
                     contactName: tokenDoc.contactName || prefillData.contactName || null,
-                    contactEmail: tokenDoc.contactEmail || prefillData.contactEmail || null,
-                    organizerType: tokenDoc.organizerType || prefillData.organizerType || null,
-                    region: tokenDoc.region || prefillData.region || null,
+                    contactEmail: tokenDoc.contactEmail || prefillData.contactEmail || firestoreData.email || null,
+                    organizerType: tokenDoc.organizerType || prefillData.organizerType || firestoreData.hostType || null,
+                    region: tokenDoc.region || prefillData.region || firestoreData.state || null,
                     regionId: tokenDoc.regionId || prefillData.regionId || null,
-                    city: tokenDoc.city || prefillData.city || null,
-                    website: tokenDoc.website || prefillData.website || null,
-                    facebookUrl: tokenDoc.facebookUrl || prefillData.facebookUrl || null
+                    city: tokenDoc.city || prefillData.city || firestoreData.city || null,
+                    website: tokenDoc.website || prefillData.website || firestoreData.website || null,
+                    facebookUrl: tokenDoc.facebookUrl || prefillData.facebookUrl || firestoreData.fbProfileUrl || null,
+                    sampleEventTitles: firestoreData.sampleEventTitles || null
                 },
                 metadata: {
                     campaignId: tokenDoc.campaignId || null,
                     source: tokenDoc.source || null,
-                    sourceDetail: tokenDoc.sourceDetail || prefillData.sourceDetail || null
+                    sourceDetail: tokenDoc.sourceDetail || prefillData.sourceDetail || null,
+                    discoveredOrganizerId: discoveredOrgId || null
                 }
             })
         };

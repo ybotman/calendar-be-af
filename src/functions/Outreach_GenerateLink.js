@@ -22,6 +22,7 @@ const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKey
  * @body {string} campaignId - Campaign identifier for tracking
  * @body {string} source - Source identifier (e.g. "facebook_group")
  * @body {string} sourceDetail - e.g. group name or email campaign name
+ * @body {string} discoveredOrganizerId - Firestore discoveredOrganizers doc ID (for prefill enrichment)
  * @body {object} additionalData - Optional extras: { city, website, ... }
  * @body {number} appId - Application ID (default: 1)
  * @body {number} expiryDays - Token expiry in days (default: 30, max: 90)
@@ -99,6 +100,8 @@ async function outreachGenerateLinkHandler(request, context) {
             city: additionalData.city || null,
             website: additionalData.website || null,
             facebookUrl: additionalData.facebookUrl || null,
+            // Firestore discoveredOrganizer reference (for prefill enrichment)
+            discoveredOrganizerId: body.discoveredOrganizerId || null,
             // Outreach metadata
             campaignId: body.campaignId || null,
             source: body.source || 'unknown',
