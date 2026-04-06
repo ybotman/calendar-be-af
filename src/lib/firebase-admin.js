@@ -51,6 +51,16 @@ function getFirebaseAdmin() {
 }
 
 /**
+ * Get Firestore instance
+ * Uses the initialized Firebase Admin app
+ * @returns {FirebaseFirestore.Firestore} Firestore instance
+ */
+function getFirestore() {
+    const adminSDK = getFirebaseAdmin();
+    return adminSDK.firestore();
+}
+
+/**
  * Verify Firebase ID token
  * @param {string} token - Firebase ID token from Authorization header
  * @returns {Promise<Object>} Decoded token with user info
@@ -63,5 +73,6 @@ async function verifyIdToken(token) {
 module.exports = {
     initializeFirebase,
     getFirebaseAdmin,
+    getFirestore,
     verifyIdToken
 };
