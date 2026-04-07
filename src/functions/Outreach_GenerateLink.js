@@ -87,19 +87,21 @@ async function outreachGenerateLinkHandler(request, context) {
         const db = mongoClient.db();
 
         // Store token with metadata
+        // Accept fields at top level OR inside additionalData (caller's choice)
         const tokenDoc = {
             token,
             appId,
             // Primary pre-fill fields (flat for efficient resolve-token mapping)
             orgName: body.orgName,
             contactName: body.contactName || null,
-            contactEmail: body.contactEmail || null,
+            contactEmail: body.contactEmail || body.email || null,
             organizerType: body.organizerType || null,
             region: body.region || null,
             regionId: body.regionId || null,
-            city: additionalData.city || null,
-            website: additionalData.website || null,
-            facebookUrl: additionalData.facebookUrl || null,
+            city: body.city || additionalData.city || null,
+            website: body.website || additionalData.website || null,
+            facebookUrl: body.facebookUrl || additionalData.facebookUrl || null,
+            sampleEventTitles: body.sampleEventTitles || additionalData.sampleEventTitles || null,
             // Firestore discoveredOrganizer reference (for prefill enrichment)
             discoveredOrganizerId: body.discoveredOrganizerId || null,
             // Outreach metadata
