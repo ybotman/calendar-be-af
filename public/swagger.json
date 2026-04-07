@@ -3165,7 +3165,12 @@
                   "campaignId": { "type": "string", "description": "Campaign identifier for tracking" },
                   "source": { "type": "string", "example": "facebook_group", "description": "Source identifier" },
                   "sourceDetail": { "type": "string", "example": "BA Tango Events Group", "description": "Source detail (group name, campaign name, etc.)" },
-                  "additionalData": { "type": "object", "description": "Optional extras (city, website, etc.)", "example": { "city": "Buenos Aires", "website": "https://example.com" } },
+                  "email": { "type": "string", "description": "Alias for contactEmail" },
+                  "city": { "type": "string", "description": "City (also accepted in additionalData)" },
+                  "website": { "type": "string", "description": "Website URL (also accepted in additionalData)" },
+                  "facebookUrl": { "type": "string", "description": "Facebook profile URL (also accepted in additionalData)" },
+                  "sampleEventTitles": { "type": "array", "items": { "type": "string" }, "description": "Sample event titles for prefill (also accepted in additionalData)" },
+                  "additionalData": { "type": "object", "description": "Optional extras (city, website, facebookUrl, sampleEventTitles) — alternative to top-level fields", "example": { "city": "Buenos Aires", "website": "https://example.com" } },
                   "discoveredOrganizerId": { "type": "string", "description": "Firestore discoveredOrganizers doc ID (for prefill enrichment from campaign data)" },
                   "expiryDays": { "type": "integer", "default": 30, "description": "Token expiry in days (max 90)" }
                 }

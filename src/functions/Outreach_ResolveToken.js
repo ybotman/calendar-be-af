@@ -153,7 +153,7 @@ async function outreachResolveTokenHandler(request, context) {
                     city: tokenDoc.city || prefillData.city || firestoreData.city || null,
                     website: tokenDoc.website || prefillData.website || firestoreData.website || null,
                     facebookUrl: tokenDoc.facebookUrl || prefillData.facebookUrl || firestoreData.fbProfileUrl || null,
-                    sampleEventTitles: firestoreData.sampleEventTitles || null
+                    sampleEventTitles: tokenDoc.sampleEventTitles || prefillData.sampleEventTitles || firestoreData.sampleEventTitles || null
                 },
                 metadata: {
                     campaignId: tokenDoc.campaignId || null,
