@@ -75,6 +75,10 @@
     {
       "name": "Ops",
       "description": "Operations endpoints for data health and monitoring (requires function key)"
+    },
+    {
+      "name": "Outreach",
+      "description": "Organizer outreach onboarding - token generation, resolution, and funnel tracking (CALBEAF-95)"
     }
   ],
   "paths": {
@@ -3135,6 +3139,213 @@
           "500": { "description": "Server error" }
         }
       }
+    },
+    "/api/outreach/generate-link": {
+      "post": {
+        "summary": "Generate outreach onboarding link",
+        "description": "Generate an opaque token URL for organizer outreach. Called by AIDI with org metadata.",
+        "tags": ["Outreach"],
+        "operationId": "generateOutreachLink",
+        "security": [{ "apiKey": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orgName"],
+                "properties": {
+                  "appId": { "type": "integer", "default": 1, "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
+                  "orgName": { "type": "string", "description": "Organization name" },
+                  "contactName": { "type": "string", "description": "Contact person name (optional)" },
+                  "contactEmail": { "type": "string", "description": "Contact email for pre-fill" },
+                  "organizerType": { "type": "string", "example": "isEventOrganizer", "description": "Organizer type" },
+                  "region": { "type": "string", "description": "Region display name" },
+                  "regionId": { "type": "string", "description": "Mastered region ID (optional)" },
+                  "campaignId": { "type": "string", "description": "Campaign identifier for tracking" },
+                  "source": { "type": "string", "example": "facebook_group", "description": "Source identifier" },
+                  "sourceDetail": { "type": "string", "example": "BA Tango Events Group", "description": "Source detail (group name, campaign name, etc.)" },
+                  "email": { "type": "string", "description": "Alias for contactEmail" },
+                  "city": { "type": "string", "description": "City (also accepted in additionalData)" },
+                  "website": { "type": "string", "description": "Website URL (also accepted in additionalData)" },
+                  "facebookUrl": { "type": "string", "description": "Facebook profile URL (also accepted in additionalData)" },
+                  "sampleEventTitles": { "type": "array", "items": { "type": "string" }, "description": "Sample event titles for prefill (also accepted in additionalData)" },
+                  "additionalData": { "type": "object", "description": "Optional extras (city, website, facebookUrl, sampleEventTitles) — alternative to top-level fields", "example": { "city": "Buenos Aires", "website": "https://example.com" } },
+                  "discoveredOrganizerId": { "type": "string", "description": "Firestore discoveredOrganizers doc ID (for prefill enrichment from campaign data)" },
+                  "expiryDays": { "type": "integer", "default": 30, "description": "Token expiry in days (max 90)" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string" },
+                    "link": { "type": "string", "description": "Full URL with orgToken query param" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "tokenId": { "type": "string", "description": "MongoDB _id of the created token doc" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error - orgName required" },
+          "401": { "description": "Unauthorized - valid x-api-key required" }
+        }
+      }
+    },
+    "/api/outreach/resolve-token": {
+      "get": {
+        "summary": "Resolve outreach token",
+        "description": "Validate token and return pre-fill data for the application form. Called by frontend after landing on apply page with orgToken query param.",
+        "tags": ["Outreach"],
+        "operationId": "resolveOutreachToken",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Opaque outreach token (from URL orgToken param)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token valid - returns pre-fill data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": { "type": "boolean", "example": true },
+                    "used": { "type": "boolean", "example": false },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "prefill": {
+                      "type": "object",
+                      "properties": {
+                        "orgName": { "type": "string" },
+                        "contactName": { "type": "string" },
+                        "contactEmail": { "type": "string" },
+                        "organizerType": { "type": "string" },
+                        "region": { "type": "string" },
+                        "regionId": { "type": "string" },
+                        "city": { "type": "string" },
+                        "website": { "type": "string" },
+                        "facebookUrl": { "type": "string" },
+                        "sampleEventTitles": { "type": "array", "items": { "type": "string" }, "description": "Sample event titles from Firestore discoveredOrganizer (if available)" }
+                      }
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "campaignId": { "type": "string" },
+                        "source": { "type": "string" },
+                        "sourceDetail": { "type": "string" },
+                        "discoveredOrganizerId": { "type": "string", "description": "Firestore discoveredOrganizers doc ID (if token was generated with one)" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_not_found" } } } } }
+          },
+          "409": {
+            "description": "Token already used",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_already_used" }, "usedAt": { "type": "string", "format": "date-time" } } } } }
+          },
+          "410": {
+            "description": "Token expired",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean", "example": false }, "reason": { "type": "string", "example": "token_expired" }, "expiredAt": { "type": "string", "format": "date-time" } } } } }
+          }
+        }
+      }
+    },
+    "/api/outreach/track": {
+      "post": {
+        "summary": "Track outreach funnel event",
+        "description": "Log a funnel event (click, signup, submit, approve/reject). Accepts API key or Firebase auth.",
+        "tags": ["Outreach"],
+        "operationId": "trackOutreachEvent",
+        "security": [{ "apiKey": [] }, { "firebaseAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "event"],
+                "properties": {
+                  "token": { "type": "string", "description": "Outreach token" },
+                  "event": { "type": "string", "enum": ["link_clicked", "auth_completed", "form_opened", "application_submitted", "onboarding_complete"] },
+                  "firebaseUserId": { "type": "string", "description": "Firebase UID (optional, available after auth step)" },
+                  "organizerId": { "type": "string", "description": "MongoDB organizer _id (optional; preferred over firebaseUserId for organizer updates when available)" },
+                  "timestamp": { "type": "string", "format": "date-time", "description": "Event timestamp (optional, defaults to now)" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event tracked",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "tracked": { "type": "boolean" } } } } }
+          },
+          "400": { "description": "Validation error (token_required or invalid_event)" }
+        }
+      }
+    },
+    "/api/outreach/status": {
+      "get": {
+        "summary": "Get outreach funnel metrics",
+        "description": "Query conversion funnel data. Used by AIDI/Dash for reporting.",
+        "tags": ["Outreach"],
+        "operationId": "getOutreachStatus",
+        "security": [{ "firebaseAuth": [] }],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "schema": { "type": "string" }, "description": "Filter by campaign" },
+          { "name": "appId", "in": "query", "schema": { "type": "string" }, "description": "Filter by appId" },
+          { "name": "dateFrom", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter from date" },
+          { "name": "dateTo", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter to date" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Funnel metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "campaignId": { "type": "string" },
+                    "funnel": {
+                      "type": "object",
+                      "properties": {
+                        "links_generated": { "type": "integer" },
+                        "links_clicked": { "type": "integer" },
+                        "auth_completed": { "type": "integer" },
+                        "forms_opened": { "type": "integer" },
+                        "applications_submitted": { "type": "integer" },
+                        "onboarding_complete": { "type": "integer" }
+                      }
+                    },
+                    "tokens": { "type": "array", "items": { "type": "object", "properties": { "tokenId": { "type": "string" }, "orgName": { "type": "string" }, "status": { "type": "string" }, "events": { "type": "array", "items": { "type": "string" } }, "completedAt": { "type": "string", "format": "date-time", "nullable": true } } } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
     }
   },
   "components": {
@@ -4511,6 +4722,12 @@
         "in": "query",
         "name": "code",
         "description": "Azure Functions key. Pass as ?code=<key> query parameter or x-functions-key header"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Service-to-service API key for outreach endpoints"
       }
     }
   }
