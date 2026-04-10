@@ -1,4 +1,13 @@
-# Guild Playbook
+# calendar-be-af — Project Documentation
+
+> **NOTE:** This file is project documentation, NOT a persona identity file.
+> Persona identity is set at launch via `--append-system-prompt-file ~/.claude/personas/{name}.md`.
+> If you are reading this from your launch directory or any parent chain, your
+> identity is still set by your launch flag, not by this file. Read the rest of
+> this file as project documentation.
+> Fulton's identity is at `~/.claude/personas/fulton.md`.
+
+## Guild Playbook
 
 Generated on: 2025-10-05T20:04:02.753Z
 
@@ -16,11 +25,11 @@ Generated on: 2025-10-05T20:04:02.753Z
 
 **When frontend changes are needed:**
 1. Document the API contract or changes
-2. Send message to Sarah/Cord/Dash via agent-messages
+2. Send message to Sarah/Cord/Dash via hub (`send` tool) or CollabMsg
 3. Let them update their own code
 
 **When cross-project coordination is needed:**
-1. Send message to Quinn (coordinator) or the relevant agent
+1. Send message to Quinn or the relevant agent via hub (`send` tool)
 2. Let them make changes in their own domain
 
 ---
@@ -206,14 +215,18 @@ END OF FILE: SESSION-ENVIRONMENT.md
 START OF FILE: YBOTBOT-DEF.md
 ================================================================================
 
-# WHO YOU ARE
+# Fulton's Domain (project documentation)
 
-You are an AI-GUILD agent of the YBOTBOT product.
-**Your name is Fulton** (also known as Fulton Laptop / Douazle). You are the Azure Functions Developer for calendar-be-af.
+> **NOTE:** This section was previously an identity preamble that
+> asserted Fulton's identity in first-person voice. Per Phase 1 (identity fix 2026-04-09), persona
+> identity is set at launch via `--append-system-prompt-file ~/.claude/personas/fulton.md`,
+> not by this file. The Fulton-specific project info below is preserved as
+> documentation, not as identity assertion.
 
-Your job is to follow the user's instructions by receiving their commands. You will in turn, select the appropriate roles (with its responsibilities), follow handoff of roles, and follow all the YBOTBOT guidelines and documentation.
-
-The user's name is **Ybotman** (also ybotAF). You will interact with this user with a high level of collaboration with clear focus and goals. You ask your user for instructions whenever confused.
+- **Persona file**: `~/.claude/personas/fulton.md` (authoritative identity)
+- **Role**: Azure Functions Developer for calendar-be-af
+- **Repository**: calendar-be-af
+- **User context**: Ybotman (also ybotAF) is the user. Collaborate with high focus and ask for instructions when confused.
 
 ## Team Members (for messaging)
 
@@ -236,78 +249,29 @@ While you are to get vision and are to follow the users instructions, you are de
 
 | Command | Type | Action |
 |---------|------|--------|
-| **INBOX** | Startup | Read lessons + local handoffs (fast) |
-| **INBOX2** | Startup | git pull Collab + lessons + handoffs + inbox (full sync) |
-| **SHOFF** | End | Write to `~/.claude/local/handoffs/fulton/` (local) |
+| **INBOX** | Startup | Read lessons + local handoffs + `check_messages` (fast) |
+| **INBOX2** | Startup | git pull Collab + lessons + handoffs (full sync) |
+| **SHOFF** | End | Write to `~/MyDocs/local/handoffs/fulton/` (local) |
 | **SHOFF2** | End | Write to `Collab/handoffs/fulton/` + git push |
-| **MSG {to}** | Message | Write to `Collab/inbox/{to}/` + git push |
 
-## Collab Messaging System
+## Messaging (Hub-First)
 
-**Repo**: https://github.com/ybotman/Collab
-**Local Path**: `/Users/tobybalsley/MyDocs/Collab`
-**Your Inbox**: `/Users/tobybalsley/MyDocs/Collab/inbox/fulton/`
+**Primary: Persona Hub (real-time via MCP tools)**
 
-## INBOX (session start - local, fast)
-```bash
-# Read lessons (cached)
-cat /Users/tobybalsley/MyDocs/Collab/lessons.md
-# Read local handoff
-LATEST=$(ls -t ~/.claude/local/handoffs/fulton/*.md 2>/dev/null | head -1)
-[ -n "$LATEST" ] && cat "$LATEST"
-```
+You have MCP tools for instant messaging. **ALWAYS use these first:**
+- **`send`** — Send message: `to: ["recipient"], body: "message"` (or `to: ["broadcast"]` for all)
+- **`reply`** — Quick reply to a persona
+- **`hub_status`** — Check who's online
+- **`check_messages`** — Poll for queued messages (**MUST call regularly** — push is unreliable)
 
-## INBOX2 (session start - full sync)
-```bash
-cd /Users/tobybalsley/MyDocs/Collab && git pull
-# Read lessons (fresh from pull)
-cat /Users/tobybalsley/MyDocs/Collab/lessons.md
-# Read handoffs + inbox
-LATEST=$(ls -t /Users/tobybalsley/MyDocs/Collab/handoffs/fulton/*.md 2>/dev/null | head -1)
-[ -n "$LATEST" ] && cat "$LATEST"
-ls -lt /Users/tobybalsley/MyDocs/Collab/inbox/fulton/*.json 2>/dev/null | head -5
-ls -lt /Users/tobybalsley/MyDocs/Collab/inbox/broadcast/*.json 2>/dev/null | head -3
-```
+**IMPORTANT:** Call `check_messages`:
+- At session start (after reading handoffs)
+- Before starting any new task
+- Every few minutes if idle
 
-## SHOFF (local self-handoff)
-```bash
-mkdir -p ~/.claude/local/handoffs/fulton
-cat > ~/.claude/local/handoffs/fulton/session_$(date +%Y-%m-%dT%H-%M).md <<'HANDOFF'
-# Session Handoff: Fulton @ {timestamp}
+**Fallback: CollabMsg (persistent, async)**
 
-## Current Status
-{ONE_LINE_STATUS}
-
-## Active Ticket
-- **Ticket**: {JIRA_KEY or "None"}
-- **Status**: {in_progress|blocked|completed}
-
-## What I Did This Session
-- {BULLET_POINTS}
-
-## Next Session Should
-1. Run INBOX or INBOX2
-2. {NEXT_STEP}
-
-## Key Context
-{IMPORTANT_CONTEXT}
-HANDOFF
-```
-
-## SHOFF2 (git self-handoff)
-```bash
-cat > /Users/tobybalsley/MyDocs/Collab/handoffs/fulton/session_$(date +%Y-%m-%dT%H-%M).md <<'HANDOFF'
-# Session Handoff: Fulton @ {timestamp}
-{same content as SHOFF}
-HANDOFF
-
-cd /Users/tobybalsley/MyDocs/Collab
-git add handoffs/
-git commit -m "SHOFF2: fulton @ $(date +%Y-%m-%d)"
-git push origin main
-```
-
-## MSG {to} (send cross-persona message)
+If hub delivery fails or recipient is offline, fall back to git-based Collab message:
 ```bash
 cat > /Users/tobybalsley/MyDocs/Collab/inbox/RECIPIENT/msg_$(date +%Y%m%d_%H%M%S)_fulton_001.json <<'EOF'
 {
@@ -321,16 +285,18 @@ EOF
 
 cd /Users/tobybalsley/MyDocs/Collab
 git add inbox/
-git commit -m "MSG: fulton -> RECIPIENT"
+git commit -m "CollabMsg: fulton -> RECIPIENT"
 git push origin main
 ```
 
-## Your Common Recipients
+**Rule:** Hub first. CollabMsg only when hub unavailable or for decisions that need persistence.
+
+### Your Common Recipients
 - **quinn**: Cross-project coordinator
 - **sarah**: TangoTiempo frontend (appId=1)
 - **cord**: HarmonyJunction frontend (appId=2)
 - **dash**: CalOps dashboard
-- **broadcast**: All agents 
+- **broadcast**: All agents
 
 
 # YOUR FIRST INSTRUCTIONS
@@ -516,7 +482,7 @@ START OF FILE: YBOTBOT-COMMANDS.md
   List all the directives (this list) to the user with a mini descr. Compressed list but all directives
 
 - **SHOFF** (Self-Handoff)
-  Trigger the self-handoff protocol. Write a handoff file for your future self documenting: current status, what was done, next steps, key decisions, and important context. Commit and push to agent-messages repo.
+  Trigger the self-handoff protocol. Write a handoff file for your future self documenting: current status, what was done, next steps, key decisions, and important context. Save to `~/MyDocs/local/handoffs/fulton/` (local) or `Collab/handoffs/fulton/` (git).
 
 - **Restrospective** or **Self-Diagnose** 
 This trigger s the 🔬 Self-Introspective Analysis Mod— *Session Review & Learning* mode. The 🔬 Retrospective Mode (also called Self-Introspective Analysis
