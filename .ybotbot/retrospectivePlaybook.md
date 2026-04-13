@@ -118,7 +118,7 @@ const db = mongoClient.db(); // Uses database from connection string
 ```
 
 **Database Naming Convention:**
-- `TangoTiempo` = TEST database
+- `TangoTiempoTest` = DEV database (renamed from TangoTiempo, 2026-04-13)
 - `TangoTiempoProd` = PROD database (one word, no underscore)
 
 #### Investigation Process
@@ -550,6 +550,29 @@ Also implemented bot detection in `Geo_GoogleGeolocate.js`:
 - [x] Document in retrospectivePlaybook.md
 - [ ] Update GitHub workflow for PROD2 (future automation)
 - [ ] Delete old `calendarbeaf-prod-2` (lowercase)
+
+---
+
+## Session: 2026-04-13 - Wrong JIRA Instance URL
+
+### What Happened
+Created CALBEAF-96 ticket but first attempt hit `ybotman.atlassian.net` (does not exist / page unavailable). Had to retry on correct instance `hdtsllc.atlassian.net`.
+
+### Root Cause
+Constructed the JIRA API URL from memory/assumption rather than reading the retrospective playbook's documented auth pattern first. The correct URL (`hdtsllc.atlassian.net`) is already documented in this very file (line 29) and in the JIRA CLI scripts.
+
+### Lesson Learned
+**ALWAYS read the retrospective auth pattern BEFORE making JIRA API calls.** Don't construct URLs from memory — the correct base URL is not intuitive (`hdtsllc.atlassian.net`, not `ybotman.atlassian.net`).
+
+This is already rule #2 in the CRITICAL RULES section above, but I violated it anyway. The fix is behavioral: **no JIRA call without reading the auth block first.**
+
+### What Worked Well
+- Quick recovery — saved ticket spec locally, then retried on correct instance
+- CALBEAF-96 created successfully on second attempt
+
+### Action Items
+- [x] Add retrospective entry
+- [x] Save memory for future sessions
 
 ---
 

@@ -124,9 +124,10 @@ No manual export needed! The jira-config.sh script automatically:
 
 | Database | Environment | Usage |
 |----------|-------------|-------|
-| `TangoTiempo` | **TEST** | Testing/staging |
+| `TangoTiempoTest` | **TEST** | Testing/staging (Azure CalendarBEAF-TEST + local dev) |
 | `TangoTiempoProd` | **PROD** | Production |
-| `TangoTiempoTest` | Legacy | Do not use |
+| `TangoTiempoSandbox` | **SANDBOX** | VM dangerous team (disposable) |
+| `TangoTiempo` | **RETIRING** | Old unmarked DB — drop after validation |
 | `TangoTiempoIntg` | Integration | Rarely used |
 
 **Connection**: Same cluster, different database name in URI.
@@ -167,7 +168,7 @@ node scripts/syncProdToTest.js --include-events --events-from 2026-01-01 --event
 
 ### Environment Variables (in local.settings.json):
 - `MONGODB_URI_PROD` - TangoTiempoProd connection
-- `MONGODB_URI_TEST` - TangoTiempo connection
+- `MONGODB_URI_TEST` - TangoTiempoTest connection
 
 ## Autonomous Operation Mode
 
