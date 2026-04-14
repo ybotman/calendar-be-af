@@ -123,17 +123,16 @@ async function shortnamePatchHandler(request, context) {
 
         context.log(`[ORGANIZER SHORTNAME PATCH] OrgId: ${organizerId}, NewShortName: "${normalized}"`);
 
-        // Fire-and-forget backfeed to AIDI (§1.1.6). Do NOT await in a blocking way.
-        // We await here because Azure Functions needs the callback to run, but
-        // backfeedAidi has its own 2s timeout + never throws.
+        // Backfeed to AIDI (§1.1.6). Awaited — 2s cap inside helper caps delay;
+        // Azure Functions kills async work after response so fire-and-forget doesn't work.
         const orgToken = existing.orgToken || null;
-        backfeedAidi({
+        await backfeedAidi({
             context,
             orgId: organizerId,
             orgToken,
             shortName: normalized,
             appId: storedAppId
-        }).catch(() => { /* swallowed; already logged inside */ });
+        });
 
         return {
             status: 200,
