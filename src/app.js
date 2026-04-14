@@ -54,6 +54,10 @@ require('./functions/Venue_AgeOut_Timer');
 // Organizers API
 require('./functions/Organizers');
 require('./functions/OrganizersSASToken');
+// CALBEAF-107 — shortName endpoints
+require('./functions/OrganizerShortnameCheck');
+require('./functions/OrganizerShortnamesBulk');
+require('./functions/OrganizerShortnamePatch');
 
 // Roles API
 require('./functions/Roles');

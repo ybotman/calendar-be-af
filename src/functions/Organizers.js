@@ -3,6 +3,7 @@
 const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
+const { validateOrFail, duplicateShortNameResponse, backfeedAidi } = require('../lib/shortNameHelpers');
 
 /**
  * GET /api/organizers
@@ -349,8 +350,10 @@ async function organizersCreateHandler(request, context) {
         const db = mongoClient.db();
         const collection = db.collection('organizers');
 
-        // Normalize shortName to uppercase
-        const normalizedShortName = body.shortName.toUpperCase();
+        // CALBEAF-107 §1.2 validator (appId=1 only; pass-through for other appIds)
+        const v = validateOrFail(body.shortName, appId);
+        if (!v.ok) return v.response;
+        const normalizedShortName = v.normalized;
 
         // Check for duplicate shortName
         const existing = await collection.findOne({
@@ -359,16 +362,7 @@ async function organizersCreateHandler(request, context) {
         });
 
         if (existing) {
-            return {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: false,
-                    error: 'DuplicateError',
-                    message: `shortName '${normalizedShortName}' already exists`,
-                    timestamp: new Date().toISOString()
-                })
-            };
+            return duplicateShortNameResponse(normalizedShortName);
         }
 
         // Create organizer document
@@ -407,6 +401,15 @@ async function organizersCreateHandler(request, context) {
         newOrganizer._id = result.insertedId;
 
         context.log(`[ORGANIZER CREATE] Name: "${newOrganizer.fullName}", ShortName: "${newOrganizer.shortName}", OrganizerId: ${newOrganizer._id}`);
+
+        // CALBEAF-107 §1.1.6 — fire-and-forget backfeed to AIDI (non-blocking, never throws)
+        backfeedAidi({
+            context,
+            orgId: newOrganizer._id.toString(),
+            orgToken: body.orgToken || null,
+            shortName: normalizedShortName,
+            appId
+        }).catch(() => { /* swallowed; logged inside */ });
 
         return {
             status: 201,
@@ -472,24 +475,14 @@ async function organizersUpdateHandler(request, context) {
             };
         }
 
-        // If updating shortName, validate it
+        // If updating shortName, validate via §1.2 and check uniqueness per §1.4.2
+        let shortNameWasUpdated = false;
+        let normalizedShortNameForBackfeed = null;
         if (body.shortName) {
-            const normalizedShortName = body.shortName.toUpperCase();
+            const v = validateOrFail(body.shortName, appId);
+            if (!v.ok) return v.response;
+            const normalizedShortName = v.normalized;
 
-            if (normalizedShortName === 'CHANGE') {
-                return {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        success: false,
-                        error: 'ValidationError',
-                        message: "shortName cannot be 'CHANGE'",
-                        timestamp: new Date().toISOString()
-                    })
-                };
-            }
-
-            // Check for duplicate
             const duplicate = await collection.findOne({
                 shortName: normalizedShortName,
                 appId,
@@ -497,19 +490,12 @@ async function organizersUpdateHandler(request, context) {
             });
 
             if (duplicate) {
-                return {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        success: false,
-                        error: 'DuplicateError',
-                        message: `shortName '${normalizedShortName}' is already taken`,
-                        timestamp: new Date().toISOString()
-                    })
-                };
+                return duplicateShortNameResponse(normalizedShortName);
             }
 
             body.shortName = normalizedShortName;
+            shortNameWasUpdated = true;
+            normalizedShortNameForBackfeed = normalizedShortName;
         }
 
         // Build update object
@@ -525,6 +511,17 @@ async function organizersUpdateHandler(request, context) {
         );
 
         context.log(`[ORGANIZER UPDATE] OrganizerId: ${organizerId}, UpdatedFields: ${Object.keys(updateData).join(', ')}`);
+
+        // CALBEAF-107 §1.1.6 — backfeed only if shortName was part of the patch
+        if (shortNameWasUpdated) {
+            backfeedAidi({
+                context,
+                orgId: organizerId,
+                orgToken: existing.orgToken || null,
+                shortName: normalizedShortNameForBackfeed,
+                appId
+            }).catch(() => { /* swallowed */ });
+        }
 
         return {
             status: 200,

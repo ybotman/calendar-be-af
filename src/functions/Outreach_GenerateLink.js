@@ -6,6 +6,7 @@ const { MongoClient } = require('mongodb');
 const crypto = require('crypto');
 const { standardMiddleware } = require('../middleware');
 const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKeyAuth');
+const { validateOrFail } = require('../lib/shortNameHelpers');
 
 /**
  * POST /api/outreach/generate-link
@@ -72,6 +73,107 @@ async function outreachGenerateLinkHandler(request, context) {
         const expiryDays = Math.min(90, Math.max(1, parseInt(body.expiryDays) || 30));
         const additionalData = body.additionalData || {};
 
+        // CALBEAF-107 §1.3 — validate shortName and shortNameCandidates (if provided)
+        let normalizedShortName = null;
+        let normalizedCandidates = [];
+
+        if (body.shortName) {
+            const v = validateOrFail(body.shortName, appId);
+            if (!v.ok) return v.response;
+            normalizedShortName = v.normalized;
+        }
+
+        if (body.shortNameCandidates !== undefined) {
+            if (!Array.isArray(body.shortNameCandidates)) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'ValidationError',
+                        code: 'VALIDATION_SHORTNAME',
+                        field: 'shortNameCandidates',
+                        reason: 'invalid-pattern',
+                        message: 'shortNameCandidates must be an array',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            if (body.shortNameCandidates.length > 3) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'ValidationError',
+                        code: 'VALIDATION_SHORTNAME',
+                        field: 'shortNameCandidates',
+                        reason: 'invalid-length',
+                        message: 'shortNameCandidates must contain at most 3 entries',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            if (body.shortNameCandidates.length > 0 && !body.shortName) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: 'ValidationError',
+                        code: 'VALIDATION_SHORTNAME',
+                        field: 'shortName',
+                        reason: 'required',
+                        message: 'shortName required when shortNameCandidates provided',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            // Validate each candidate individually
+            for (const cand of body.shortNameCandidates) {
+                const cv = validateOrFail(cand, appId);
+                if (!cv.ok) return cv.response;
+                normalizedCandidates.push(cv.normalized);
+            }
+            // Candidates must be mutually distinct and not include the primary
+            const seen = new Set();
+            for (const c of normalizedCandidates) {
+                if (seen.has(c)) {
+                    return {
+                        status: 400,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            success: false,
+                            error: 'ValidationError',
+                            code: 'VALIDATION_SHORTNAME',
+                            field: 'shortNameCandidates',
+                            value: c,
+                            reason: 'invalid-pattern',
+                            message: 'shortNameCandidates must contain mutually distinct values',
+                            timestamp: new Date().toISOString()
+                        })
+                    };
+                }
+                seen.add(c);
+                if (normalizedShortName && c === normalizedShortName) {
+                    return {
+                        status: 400,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            success: false,
+                            error: 'ValidationError',
+                            code: 'VALIDATION_SHORTNAME',
+                            field: 'shortNameCandidates',
+                            value: c,
+                            reason: 'invalid-pattern',
+                            message: 'shortNameCandidates must not include the primary shortName',
+                            timestamp: new Date().toISOString()
+                        })
+                    };
+                }
+            }
+        }
+
         // Generate opaque token
         const token = crypto.randomBytes(32).toString('hex');
         const now = new Date();
@@ -94,7 +196,8 @@ async function outreachGenerateLinkHandler(request, context) {
             appId,
             // Primary pre-fill fields (flat for efficient resolve-token mapping)
             orgName: body.orgName,
-            shortName: body.shortName || null,
+            shortName: normalizedShortName,
+            shortNameCandidates: normalizedCandidates,
             contactName: body.contactName || null,
             contactEmail: body.contactEmail || body.email || null,
             organizerType: body.organizerType || null,
