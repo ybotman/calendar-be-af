@@ -58,6 +58,8 @@ require('./functions/OrganizersSASToken');
 require('./functions/OrganizerShortnameCheck');
 require('./functions/OrganizerShortnamesBulk');
 require('./functions/OrganizerShortnamePatch');
+// CALBEAF-106 — SA-gated MongoDB health endpoint (CalOps M0 Health panel)
+require('./functions/Admin_MongoHealth');
 
 // Roles API
 require('./functions/Roles');
