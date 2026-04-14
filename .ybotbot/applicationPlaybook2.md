@@ -1022,7 +1022,7 @@ npm start    # Standard mode
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "MONGODB_URI": "mongodb+srv://...",
-    "MONGODB_DB_NAME": "TangoTiempo",
+    "MONGODB_DB_NAME": "TangoTiempoTest",
     "NODE_ENV": "development"
   }
 }

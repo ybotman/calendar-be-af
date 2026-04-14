@@ -11,12 +11,12 @@
 | Database Name | Environment | Purpose |
 |---------------|-------------|---------|
 | **TangoTiempoProd** | 🔴 **PRODUCTION** | Live user data |
-| **TangoTiempo** | 🟡 **TEST** | Testing/staging |
-| **TangoTiempoTest** | ⚪ INTEGRATION | Empty/stale - needs refresh |
+| **TangoTiempoTest** | 🟡 **TEST** | Testing/staging + local dev |
+| **TangoTiempoSandbox** | 🟠 **SANDBOX** | VM dangerous team (disposable) |
 
 **Connection**: `mongodb+srv://TangoTiempoBE:***@tangotiempoprimary.qisq8.mongodb.net/{DATABASE}`
 
-**local.settings.json uses**: `TangoTiempo` (TEST) by default for local dev
+**local.settings.json uses**: `TangoTiempoTest` (TEST) by default for local dev
 
 ---
 

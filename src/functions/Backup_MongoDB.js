@@ -91,7 +91,7 @@ async function exportDatabase(uri, dbName, context) {
 /**
  * Backup_MongoDB - Daily timer that backs up MongoDB databases
  *
- * Backs up both TangoTiempo (dev/test) and TangoTiempoProd databases
+ * Backs up both TangoTiempoTest (dev) and TangoTiempoProd databases
  * to Azure Blob Storage with tiered retention.
  *
  * Schedule: Daily at 3:00 AM EST (8:00 AM UTC)
@@ -132,12 +132,12 @@ async function mongoBackupHandler(myTimer, context) {
         // Backup dev/test database
         if (devUri) {
             try {
-                const devExport = await exportDatabase(devUri, 'TangoTiempo', context);
-                const devFilename = generateBackupFilename('TangoTiempo');
+                const devExport = await exportDatabase(devUri, 'TangoTiempoTest', context);
+                const devFilename = generateBackupFilename('TangoTiempoTest');
                 const devResult = await uploadBackup(CONTAINER_NAME, devFilename, devExport, context);
 
                 results.databases.push({
-                    name: 'TangoTiempo',
+                    name: 'TangoTiempoTest',
                     filename: devFilename,
                     size: devResult.size,
                     originalSize: devResult.originalSize,
@@ -145,8 +145,8 @@ async function mongoBackupHandler(myTimer, context) {
                     totalDocuments: devExport._metadata.collections.reduce((sum, c) => sum + c.count, 0)
                 });
             } catch (error) {
-                context.error(`Backup_MongoDB: TangoTiempo backup failed: ${error.message}`);
-                results.errors.push(`TangoTiempo: ${error.message}`);
+                context.error(`Backup_MongoDB: TangoTiempoTest backup failed: ${error.message}`);
+                results.errors.push(`TangoTiempoTest: ${error.message}`);
             }
         }
 

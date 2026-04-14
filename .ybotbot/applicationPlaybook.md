@@ -105,7 +105,7 @@ MAPBOX_ACCESS_TOKEN=pk.ey... (server-side key)
 GOOGLE_API_KEY=AIza... (one key for TEST and DEV)
 
 # MongoDB
-MONGODB_URI=mongodb+srv://... (TangoTiempo for TEST)
+MONGODB_URI=mongodb+srv://... (TangoTiempoTest for DEV)
 MONGODB_URI_PROD=mongodb+srv://... (TangoTiempoProd for PROD)
 ```
 
