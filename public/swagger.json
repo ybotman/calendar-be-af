@@ -2618,7 +2618,8 @@
                     "opcounters": { "type": "object", "properties": { "windowSec": {"type": "integer"}, "insertPerSec": {"type": "number"}, "queryPerSec": {"type": "number"}, "updatePerSec": {"type": "number"}, "deletePerSec": {"type": "number"}, "getmorePerSec": {"type": "number"}, "commandPerSec": {"type": "number"}, "totalPerSec": {"type": "number"} } },
                     "replication": { "type": "object", "properties": { "primaryOptime": {"type": "string", "nullable": true}, "maxSecondaryLagSec": {"type": "integer", "nullable": true} } },
                     "perCollection": { "type": "array", "items": { "type": "object", "properties": { "name": {"type": "string"}, "sizeBytes": {"type": "integer"}, "count": {"type": "integer"}, "nindexes": {"type": "integer"} } } },
-                    "slowOps": { "type": "object", "properties": { "p50Ms": {"type": "number"}, "p95Ms": {"type": "number"}, "p99Ms": {"type": "number"}, "countAbove200_5min": {"type": "integer"}, "countAbove200_1hr": {"type": "integer"}, "countAbove200_24hr": {"type": "integer"} } }
+                    "slowOps": { "type": "object", "properties": { "p50Ms": {"type": "number"}, "p95Ms": {"type": "number"}, "p99Ms": {"type": "number"}, "countAbove200_5min": {"type": "integer"}, "countAbove200_1hr": {"type": "integer"}, "countAbove200_24hr": {"type": "integer"} } },
+                    "notes": { "type": "array", "items": { "type": "object", "properties": { "block": {"type": "string", "description": "Which data block this note applies to (connections, opcounters, replication, slowOps)"}, "status": {"type": "string", "enum": ["unavailable", "stubbed"], "description": "Why the block's data is missing"}, "reason": {"type": "string", "description": "Stable machine-readable code (e.g. atlas-m0-no-admin, appinsights-not-wired)"}, "detail": {"type": "string", "description": "Human-readable explanation"} } } }
                   }
                 }
               }

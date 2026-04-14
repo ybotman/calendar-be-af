@@ -96,7 +96,18 @@ async function collectSnapshot(mongoClient) {
         }
         prevStatus = { ts: nowTs, opcounters: { ...opCountersRaw } };
     } catch (e) {
-        notes.push('serverStatus unavailable (Atlas M0 free tier or insufficient privileges) — connections + opcounters returned as zeros');
+        notes.push({
+            block: 'connections',
+            status: 'unavailable',
+            reason: 'atlas-m0-no-admin',
+            detail: 'serverStatus denied to non-admin Mongo user'
+        });
+        notes.push({
+            block: 'opcounters',
+            status: 'unavailable',
+            reason: 'atlas-m0-no-admin',
+            detail: 'serverStatus denied to non-admin Mongo user'
+        });
     }
 
     // 4. Replication — rs.status() if replica set, else primaryOptime null
@@ -124,8 +135,14 @@ async function collectSnapshot(mongoClient) {
             replication.maxSecondaryLagSec = secondaries.length > 0 ? maxLag : null;
         }
     } catch (e) {
-        // Not a replica set, or permission issue — report nulls
+        // Not a replica set, or permission issue — report nulls + add a structured note
         replication = { primaryOptime: null, maxSecondaryLagSec: null };
+        notes.push({
+            block: 'replication',
+            status: 'unavailable',
+            reason: 'atlas-m0-no-admin',
+            detail: 'replSetGetStatus denied to non-admin Mongo user'
+        });
     }
 
     // 5. perCollection — top 10 by size
@@ -160,7 +177,12 @@ async function collectSnapshot(mongoClient) {
         countAbove200_1hr: 0,
         countAbove200_24hr: 0
     };
-    notes.push('slowOps stubbed at zeros — App Insights query integration pending APPINSIGHTS_API_KEY provisioning');
+    notes.push({
+        block: 'slowOps',
+        status: 'stubbed',
+        reason: 'appinsights-not-wired',
+        detail: 'App Insights query integration pending APPINSIGHTS_API_KEY provisioning'
+    });
 
     return {
         capturedAt,
