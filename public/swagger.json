@@ -3157,6 +3157,7 @@
                 "properties": {
                   "appId": { "type": "integer", "default": 1, "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
                   "orgName": { "type": "string", "description": "Organization name" },
+                  "shortName": { "type": "string", "description": "Pre-generated short name candidate (UPPERCASE, unique per appId) — prefills apply form" },
                   "contactName": { "type": "string", "description": "Contact person name (optional)" },
                   "contactEmail": { "type": "string", "description": "Contact email for pre-fill" },
                   "organizerType": { "type": "string", "example": "isEventOrganizer", "description": "Organizer type" },
@@ -3230,6 +3231,7 @@
                       "type": "object",
                       "properties": {
                         "orgName": { "type": "string" },
+                        "shortName": { "type": "string", "description": "Pre-generated short name candidate (UPPERCASE, 3-12 chars, unique per appId) — prefilled into apply form, editable by organizer" },
                         "contactName": { "type": "string" },
                         "contactEmail": { "type": "string" },
                         "organizerType": { "type": "string" },

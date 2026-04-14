@@ -16,6 +16,7 @@ const { apiKeyAuth, apiKeyUnauthorizedResponse } = require('../middleware/apiKey
  *
  * @body {string} orgName - Organization name (required)
  * @body {string} contactEmail - Contact email for pre-fill
+ * @body {string} shortName - Pre-generated short name candidate (UPPERCASE, unique per appId) — prefills apply form, organizer may edit before accept
  * @body {string} organizerType - e.g. "isEventOrganizer"
  * @body {string} region - Region display name
  * @body {string} regionId - Mastered region ID (optional)
@@ -93,6 +94,7 @@ async function outreachGenerateLinkHandler(request, context) {
             appId,
             // Primary pre-fill fields (flat for efficient resolve-token mapping)
             orgName: body.orgName,
+            shortName: body.shortName || null,
             contactName: body.contactName || null,
             contactEmail: body.contactEmail || body.email || null,
             organizerType: body.organizerType || null,

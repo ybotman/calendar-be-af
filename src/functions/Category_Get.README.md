@@ -97,7 +97,7 @@ GET /api/categories?appId=1&select=categoryName,categoryCode
 
 ## Environment Variables
 - `MONGODB_URI`: MongoDB connection string (required)
-- `MONGODB_DB_NAME`: Database name (default: "TangoTiempo")
+- `MONGODB_DB_NAME`: Database name (default: "TangoTiempoTest")
 - `NODE_ENV`: Environment mode (development shows detailed errors)
 
 ## Testing
