@@ -402,14 +402,17 @@ async function organizersCreateHandler(request, context) {
 
         context.log(`[ORGANIZER CREATE] Name: "${newOrganizer.fullName}", ShortName: "${newOrganizer.shortName}", OrganizerId: ${newOrganizer._id}`);
 
-        // CALBEAF-107 §1.1.6 — fire-and-forget backfeed to AIDI (non-blocking, never throws)
-        backfeedAidi({
+        // CALBEAF-107 §1.1.6 — backfeed to AIDI. Awaited (max 2s internal timeout)
+        // because Azure Functions kills the invocation's async work after the
+        // response is sent. backfeedAidi never throws; 2s cap is the blast-radius
+        // commitment (never fail organizer create on AIDI outage).
+        await backfeedAidi({
             context,
             orgId: newOrganizer._id.toString(),
             orgToken: body.orgToken || null,
             shortName: normalizedShortName,
             appId
-        }).catch(() => { /* swallowed; logged inside */ });
+        });
 
         return {
             status: 201,
@@ -512,15 +515,16 @@ async function organizersUpdateHandler(request, context) {
 
         context.log(`[ORGANIZER UPDATE] OrganizerId: ${organizerId}, UpdatedFields: ${Object.keys(updateData).join(', ')}`);
 
-        // CALBEAF-107 §1.1.6 — backfeed only if shortName was part of the patch
+        // CALBEAF-107 §1.1.6 — backfeed only if shortName was part of the patch.
+        // Awaited (2s cap inside helper) per Azure Functions async lifecycle.
         if (shortNameWasUpdated) {
-            backfeedAidi({
+            await backfeedAidi({
                 context,
                 orgId: organizerId,
                 orgToken: existing.orgToken || null,
                 shortName: normalizedShortNameForBackfeed,
                 appId
-            }).catch(() => { /* swallowed */ });
+            });
         }
 
         return {
