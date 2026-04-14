@@ -2598,6 +2598,38 @@
         }
       }
     },
+    "/api/ops/mongo-health": {
+      "get": {
+        "summary": "MongoDB health snapshot (CALBEAF-106)",
+        "description": "SA-gated endpoint for CalOps M0 Health panel. Returns 6 data blocks: dbStats, connections, opcounters (per-second rates over a rolling window), replication lag, per-collection top-10 by size, and App Insights slow-op percentiles. 10-second server-side cache.",
+        "tags": ["Admin"],
+        "operationId": "adminMongoHealth",
+        "responses": {
+          "200": {
+            "description": "Health snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capturedAt": { "type": "string", "format": "date-time" },
+                    "dbStats": { "type": "object", "properties": { "dataSize": {"type": "integer"}, "storageSize": {"type": "integer"}, "indexSize": {"type": "integer"}, "objects": {"type": "integer"} } },
+                    "connections": { "type": "object", "properties": { "current": {"type": "integer"}, "available": {"type": "integer"}, "totalCreated": {"type": "integer"} } },
+                    "opcounters": { "type": "object", "properties": { "windowSec": {"type": "integer"}, "insertPerSec": {"type": "number"}, "queryPerSec": {"type": "number"}, "updatePerSec": {"type": "number"}, "deletePerSec": {"type": "number"}, "getmorePerSec": {"type": "number"}, "commandPerSec": {"type": "number"}, "totalPerSec": {"type": "number"} } },
+                    "replication": { "type": "object", "properties": { "primaryOptime": {"type": "string", "nullable": true}, "maxSecondaryLagSec": {"type": "integer", "nullable": true} } },
+                    "perCollection": { "type": "array", "items": { "type": "object", "properties": { "name": {"type": "string"}, "sizeBytes": {"type": "integer"}, "count": {"type": "integer"}, "nindexes": {"type": "integer"} } } },
+                    "slowOps": { "type": "object", "properties": { "p50Ms": {"type": "number"}, "p95Ms": {"type": "number"}, "p99Ms": {"type": "number"}, "countAbove200_5min": {"type": "integer"}, "countAbove200_1hr": {"type": "integer"}, "countAbove200_24hr": {"type": "integer"} } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Firebase authentication required" },
+          "403": { "description": "SystemAdmin (SA) role required" },
+          "500": { "description": "Snapshot collection failed" }
+        }
+      }
+    },
     "/api/organizers/{id}/shortname": {
       "patch": {
         "summary": "Update organizer shortName (CALBEAF-107)",
