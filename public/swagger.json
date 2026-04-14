@@ -2535,6 +2535,102 @@
         }
       }
     },
+    "/api/organizers/shortname-check": {
+      "get": {
+        "summary": "Check shortName availability (CALBEAF-107)",
+        "description": "Live dedup/collision probe for organizer shortName. appId=1 enforces §1.2 length/pattern/reserved rules; other appIds only check uniqueness. Case-insensitive via UPPERCASE normalization. <100ms p95. Anonymous auth.",
+        "tags": ["Organizers"],
+        "operationId": "shortnameCheck",
+        "parameters": [
+          { "name": "appId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "candidate", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Raw candidate; normalized to UPPERCASE server-side" },
+          { "name": "excludeId", "in": "query", "required": false, "schema": { "type": "string" }, "description": "ObjectId to exclude from uniqueness check (self-edit flow)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability probe result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": { "type": "boolean" },
+                    "normalizedShortName": { "type": "string" },
+                    "reason": { "type": "string", "enum": ["taken", "reserved", "invalid-length", "invalid-pattern", null], "nullable": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "ValidationError — missing/invalid params" }
+        }
+      }
+    },
+    "/api/organizers/shortnames": {
+      "get": {
+        "summary": "Bulk read of organizer shortNames (CALBEAF-107)",
+        "description": "Returns all organizer shortNames for an appId — for AIDI generator cache-warm. API-key required (service-to-service). 60-second server-side in-memory cache.",
+        "tags": ["Organizers"],
+        "operationId": "shortnamesBulk",
+        "parameters": [
+          { "name": "appId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "x-api-key", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "All shortNames for appId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "appId": { "type": "string" },
+                    "count": { "type": "integer" },
+                    "shortNames": { "type": "array", "items": { "type": "string" } },
+                    "generatedAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "ValidationError — appId required" },
+          "401": { "description": "Invalid or missing API key" }
+        }
+      }
+    },
+    "/api/organizers/{id}/shortname": {
+      "patch": {
+        "summary": "Update organizer shortName (CALBEAF-107)",
+        "description": "Sarah's edit-later sub-resource. Firebase-authed; organizer (firebaseUserId match) or regionalAdmin only. Applies §1.2 validator (appId=1). Triggers §1.1.6 backfeed to AIDI.",
+        "tags": ["Organizers"],
+        "operationId": "patchOrganizerShortname",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Organizer ObjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["shortName"],
+                "properties": {
+                  "shortName": { "type": "string", "description": "Raw; normalized UPPERCASE server-side. Charset: /^[A-Z]{3}(?:-?[A-Z0-9])*$/ length 3-12" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Update successful" },
+          "400": { "description": "ValidationError per §1.4.1" },
+          "401": { "description": "Firebase auth required" },
+          "403": { "description": "Not the organizer or regionalAdmin" },
+          "404": { "description": "Organizer not found" },
+          "409": { "description": "DuplicateError per §1.4.2" }
+        }
+      }
+    },
     "/api/organizers/{id}/connect-user": {
       "patch": {
         "summary": "Connect user to organizer",

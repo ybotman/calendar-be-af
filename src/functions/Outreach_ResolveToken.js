@@ -146,6 +146,7 @@ async function outreachResolveTokenHandler(request, context) {
                 prefill: {
                     orgName: tokenDoc.orgName || prefillData.orgName || firestoreData.name || null,
                     shortName: tokenDoc.shortName || prefillData.shortName || firestoreData.shortName || null,
+                    shortNameCandidates: Array.isArray(tokenDoc.shortNameCandidates) ? tokenDoc.shortNameCandidates : [],
                     contactName: tokenDoc.contactName || prefillData.contactName || null,
                     contactEmail: tokenDoc.contactEmail || prefillData.contactEmail || firestoreData.email || null,
                     organizerType: tokenDoc.organizerType || prefillData.organizerType || firestoreData.hostType || null,
