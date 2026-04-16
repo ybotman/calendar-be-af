@@ -726,6 +726,18 @@
             "in": "query",
             "description": "Page number (default: 1)",
             "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "travelWorthy",
+            "in": "query",
+            "description": "Filter by travel-worthy classification (true/false). CALBEAF-109.",
+            "schema": { "type": "string", "enum": ["true", "false"] }
+          },
+          {
+            "name": "beginnerFriendly",
+            "in": "query",
+            "description": "Filter by beginner-friendly classification (true/false). CALBEAF-109.",
+            "schema": { "type": "string", "enum": ["true", "false"] }
           }
         ],
         "responses": {
@@ -752,7 +764,13 @@
                           "venueID": { "type": "string" },
                           "venueTimezone": { "type": "string", "description": "Timezone from venue" },
                           "isActive": { "type": "boolean" },
-                          "isAllDay": { "type": "boolean" }
+                          "isAllDay": { "type": "boolean" },
+                          "travelWorthy": { "type": "boolean", "description": "Computed: duration > 24h AND category not Class/Milonga/Practica (CALBEAF-109)" },
+                          "beginnerFriendly": { "type": "boolean", "description": "Organizer-set or scraper-computed beginner friendly flag (CALBEAF-109)" },
+                          "travelWorthyOverride": { "type": ["boolean", "null"], "description": "Organizer override for travelWorthy (null = use computed)" },
+                          "beginnerFriendlyOverride": { "type": ["boolean", "null"], "description": "Organizer override for beginnerFriendly (null = use computed)" },
+                          "masteredCountryId": { "type": "string", "description": "Denormalized country ObjectId from region chain (CALBEAF-109)" },
+                          "masteredCountryName": { "type": "string", "description": "Denormalized country name from region chain (CALBEAF-109)" }
                         }
                       }
                     },
