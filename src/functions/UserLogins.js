@@ -374,6 +374,8 @@ async function userLoginsCreateHandler(request, context) {
             appId,
             roleIds,
             ...otherFields,
+            // CALBEAF-109: UX mode preference (beginner|local|explore), default local
+            preferredMode: otherFields.preferredMode || 'local',
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -439,7 +441,7 @@ async function userLoginsUpdateUserInfoHandler(request, context) {
 
     try {
         const body = await request.json();
-        const { firebaseUserId, appId = '1', localUserInfo, regionalOrganizerInfo, localAdminInfo, roleIds, firebaseUserInfo } = body;
+        const { firebaseUserId, appId = '1', localUserInfo, regionalOrganizerInfo, localAdminInfo, roleIds, firebaseUserInfo, preferredMode } = body;
 
         if (!firebaseUserId) {
             return {
@@ -472,6 +474,13 @@ async function userLoginsUpdateUserInfoHandler(request, context) {
         if (regionalOrganizerInfo !== undefined) updateFields.regionalOrganizerInfo = regionalOrganizerInfo;
         if (localAdminInfo !== undefined) updateFields.localAdminInfo = localAdminInfo;
         if (firebaseUserInfo !== undefined) updateFields.firebaseUserInfo = firebaseUserInfo;
+        // CALBEAF-109: UX mode preference
+        if (preferredMode !== undefined) {
+            const validModes = ['beginner', 'local', 'explore'];
+            if (validModes.includes(preferredMode)) {
+                updateFields.preferredMode = preferredMode;
+            }
+        }
 
         // Convert roleIds strings to ObjectIds if provided
         if (roleIds !== undefined) {

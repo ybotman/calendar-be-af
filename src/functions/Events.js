@@ -6,6 +6,7 @@ const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = require('../utils/activityLog');
+const { classifyAndEnrichEvent } = require('../utils/eventClassification');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -79,6 +80,8 @@ function convertIdFields(data) {
  * - radius: Search radius with unit (default: "50km", supports km/m/mi)
  * - useCity: Use masteredCityGeolocation instead of venueGeolocation ("true"/"false")
  * - sortByDistance: Sort results by distance from lat/lng ("true"/"false")
+ * - travelWorthy: Filter by travelWorthy classification ("true"/"false") — CALBEAF-109
+ * - beginnerFriendly: Filter by beginnerFriendly classification ("true"/"false") — CALBEAF-109
  *
  * Default Date Behavior (if no dates provided):
  * - start: First day of current month
@@ -104,6 +107,10 @@ async function eventsGetHandler(request, context) {
     const canceled = request.query.get('canceled');
     const discovered = request.query.get('discovered');
     const includeAiGenerated = request.query.get('includeAiGenerated');
+
+    // CALBEAF-109: Classification filters
+    const travelWorthy = request.query.get('travelWorthy');
+    const beginnerFriendly = request.query.get('beginnerFriendly');
 
     // Location name filters
     const masteredRegionName = request.query.get('masteredRegionName');
@@ -148,7 +155,9 @@ async function eventsGetHandler(request, context) {
         useGeoSearch,
         lat,
         lng,
-        sortByDistance
+        sortByDistance,
+        travelWorthy,
+        beginnerFriendly
     });
 
     // Validate required parameters
@@ -250,6 +259,14 @@ async function eventsGetHandler(request, context) {
         // by default unless explicitly included.
         if (includeAiGenerated !== 'true') {
             baseFilter.isAiGenerated = { $ne: true };
+        }
+
+        // CALBEAF-109: Classification filters
+        if (travelWorthy) {
+            baseFilter.travelWorthy = travelWorthy === 'true';
+        }
+        if (beginnerFriendly) {
+            baseFilter.beginnerFriendly = beginnerFriendly === 'true';
         }
 
         // Collection for $and conditions (like calendar-be's andConditions array)
@@ -901,6 +918,9 @@ async function eventsCreateHandler(request, context) {
             newEvent.recurrenceRule = null;
         }
 
+        // CALBEAF-109: Classify event (travel_worthy, beginner_friendly, country)
+        await classifyAndEnrichEvent(db, newEvent, requestBody.appId);
+
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
 
@@ -1092,6 +1112,24 @@ async function eventsUpdateHandler(request, context) {
                 updateDoc.$set.recurrenceRule = null;
             }
         }
+
+        // CALBEAF-109: Recompute classification fields on update
+        // Build merged view: existing event + incoming updates
+        const mergedForClassification = {
+            ...eventBefore,
+            ...updateDoc.$set,
+            startDate: updateDoc.$set.startDate || eventBefore.startDate,
+            endDate: updateDoc.$set.endDate || eventBefore.endDate,
+            categoryFirstId: updateDoc.$set.categoryFirstId || eventBefore.categoryFirstId,
+            masteredRegionId: updateDoc.$set.masteredRegionId || eventBefore.masteredRegionId
+        };
+        await classifyAndEnrichEvent(db, mergedForClassification, eventBefore.appId);
+        updateDoc.$set.travelWorthy = mergedForClassification.travelWorthy;
+        updateDoc.$set.beginnerFriendly = mergedForClassification.beginnerFriendly;
+        updateDoc.$set.travelWorthyOverride = mergedForClassification.travelWorthyOverride;
+        updateDoc.$set.beginnerFriendlyOverride = mergedForClassification.beginnerFriendlyOverride;
+        updateDoc.$set.masteredCountryId = mergedForClassification.masteredCountryId;
+        updateDoc.$set.masteredCountryName = mergedForClassification.masteredCountryName;
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(
