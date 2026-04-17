@@ -322,6 +322,18 @@ async function syncProdToTest() {
     // Recreate essential indexes on synced collections
     // The sync renames old collections (with indexes) to backups and creates fresh ones
     // without indexes. Geo indexes are critical for location queries.
+    //
+    // Canonical geo field inventory (verified 2026-04-17):
+    //   locations.geolocation            (GeoJSON Point)
+    //   events.venueGeolocation          (denormalized from venue)
+    //   events.masteredCityGeolocation   (denormalized from mastered city)
+    //   masteredcities.location          (GeoJSON Point)
+    //   venues.geolocation               (GeoJSON Point — NOT venueGeolocation)
+    //   calculatedcities.location        (GeoJSON Point)
+    //
+    // WARNING: venues uses 'geolocation', but events uses 'venueGeolocation'.
+    // Do not conflate. Getting this wrong silently creates an index on a
+    // non-existent field (was the root cause of Porter's $geoNear failure).
     if (!dryRun) {
       logger.info('\n--- Recreating essential indexes ---');
       try {
