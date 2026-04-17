@@ -330,8 +330,8 @@ async function syncProdToTest() {
           logger.info('  ✅ masteredcities.location (2dsphere)');
         }
         if (collectionsToSync.includes('venues')) {
-          await testDb.collection('venues').createIndex({ venueGeolocation: '2dsphere' });
-          logger.info('  ✅ venues.venueGeolocation (2dsphere)');
+          await testDb.collection('venues').createIndex({ geolocation: '2dsphere' });
+          logger.info('  ✅ venues.geolocation (2dsphere)');
         }
         if (collectionsToSync.includes('events')) {
           await testDb.collection('events').createIndex({ venueGeolocation: '2dsphere' });
