@@ -111,6 +111,7 @@ async function eventsGetHandler(request, context) {
     // CALBEAF-109: Classification filters
     const travelWorthy = request.query.get('travelWorthy');
     const beginnerFriendly = request.query.get('beginnerFriendly');
+    const forBeginners = request.query.get('forBeginners');
 
     // Location name filters
     const masteredRegionName = request.query.get('masteredRegionName');
@@ -157,7 +158,8 @@ async function eventsGetHandler(request, context) {
         lng,
         sortByDistance,
         travelWorthy,
-        beginnerFriendly
+        beginnerFriendly,
+        forBeginners
     });
 
     // Validate required parameters
@@ -267,6 +269,9 @@ async function eventsGetHandler(request, context) {
         }
         if (beginnerFriendly) {
             baseFilter.beginnerFriendly = beginnerFriendly === 'true';
+        }
+        if (forBeginners) {
+            baseFilter.forBeginners = forBeginners === 'true';
         }
 
         // Collection for $and conditions (like calendar-be's andConditions array)
@@ -1126,8 +1131,10 @@ async function eventsUpdateHandler(request, context) {
         await classifyAndEnrichEvent(db, mergedForClassification, eventBefore.appId);
         updateDoc.$set.travelWorthy = mergedForClassification.travelWorthy;
         updateDoc.$set.beginnerFriendly = mergedForClassification.beginnerFriendly;
+        updateDoc.$set.forBeginners = mergedForClassification.forBeginners;
         updateDoc.$set.travelWorthyOverride = mergedForClassification.travelWorthyOverride;
         updateDoc.$set.beginnerFriendlyOverride = mergedForClassification.beginnerFriendlyOverride;
+        updateDoc.$set.forBeginnersOverride = mergedForClassification.forBeginnersOverride;
         updateDoc.$set.masteredCountryId = mergedForClassification.masteredCountryId;
         updateDoc.$set.masteredCountryName = mergedForClassification.masteredCountryName;
 

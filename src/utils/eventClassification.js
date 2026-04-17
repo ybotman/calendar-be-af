@@ -169,7 +169,8 @@ async function classifyAndEnrichEvent(db, eventDoc, appId) {
         eventDoc.travelWorthyOverride
     );
 
-    // beginnerFriendly: passthrough from request body (organizer-set)
+    // beginnerFriendly: event welcomes beginners (organizer-set or inferred)
+    // forBeginners: event IS a beginner class (organizer-set or inferred)
     // If not provided, default to false
     if (eventDoc.beginnerFriendly === undefined) {
         eventDoc.beginnerFriendly = false;
@@ -179,12 +180,23 @@ async function classifyAndEnrichEvent(db, eventDoc, appId) {
         eventDoc.beginnerFriendlyOverride
     );
 
+    if (eventDoc.forBeginners === undefined) {
+        eventDoc.forBeginners = false;
+    }
+    eventDoc.forBeginners = applyOverride(
+        eventDoc.forBeginners,
+        eventDoc.forBeginnersOverride
+    );
+
     // Initialize override fields if not present
     if (eventDoc.travelWorthyOverride === undefined) {
         eventDoc.travelWorthyOverride = null;
     }
     if (eventDoc.beginnerFriendlyOverride === undefined) {
         eventDoc.beginnerFriendlyOverride = null;
+    }
+    if (eventDoc.forBeginnersOverride === undefined) {
+        eventDoc.forBeginnersOverride = null;
     }
 
     // Denormalize country from region chain
