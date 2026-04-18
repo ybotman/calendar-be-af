@@ -137,13 +137,27 @@ describe('runDataQualityPipeline — category gate', () => {
         expect(event.forBeginners).toBe(true);
     });
 
-    test('Festival category → classifier runs (Beginner Festival case)', async () => {
+    test('Festival category → forBeg hard-false (Toby 2026-04-18 rule: Festival ineligible)', async () => {
+        // Even "Free Beginner Tango Festival" returns forBeg=false under new rule.
+        // friendly can still be true if an explicit friendly-only pattern matches (e.g. "All Levels")
+        // but a plain "Beginner" title is not a friendly-only signal → friendly=false here.
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const { event } = await runDataQualityPipeline(
             baseEvent({ categoryFirstId: FESTIVAL_ID, title: 'Free Beginner Tango Festival' }),
             standardDb()
         );
-        expect(event.forBeginners).toBe(true);
+        expect(event.forBeginners).toBe(false);  // category gate
+        expect(event.beginnerFriendly).toBe(false);  // strict-threshold: "Beginner" alone isn't friendly-only
+    });
+
+    test('Festival with explicit All-Levels in title → friendly=true (strict threshold hit)', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const { event } = await runDataQualityPipeline(
+            baseEvent({ categoryFirstId: FESTIVAL_ID, title: 'Boston Tango Festival — All Levels Welcome' }),
+            standardDb()
+        );
+        expect(event.forBeginners).toBe(false);
+        expect(event.beginnerFriendly).toBe(true);  // "All Levels" is §1b friendly-only signal
     });
 
     test('Practica category → forced false (category gate)', async () => {
@@ -231,14 +245,17 @@ describe('runDataQualityPipeline — country denorm', () => {
         expect(report.actions.find(a => a.field === 'masteredCountryId')).toBeDefined();
     });
 
-    test('already-set masteredCountryId → preserved (skipped)', async () => {
+    test('already-set masteredCountryId → always recomputed under Option A (Toby 2026-04-18)', async () => {
+        // Option A preserve-gate: pipeline always recomputes. Stale/wrong pre-existing values
+        // get refreshed. Organizer intent is protected via override fields (none for country).
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const customCountryId = new ObjectId();
         const event = baseEvent({ masteredCountryId: customCountryId, masteredCountryName: 'Custom' });
         const { event: enriched, report } = await runDataQualityPipeline(event, standardDb());
-        expect(enriched.masteredCountryId.toString()).toBe(customCountryId.toString());
-        expect(enriched.masteredCountryName).toBe('Custom');
-        expect(report.skipped.find(s => s.field === 'masteredCountryId' && s.reason === 'already set')).toBeDefined();
+        // Recomputed from masteredRegionId chain — overwrites the "Custom" pre-existing value
+        expect(enriched.masteredCountryId.toString()).toBe(COUNTRY_ID.toString());
+        expect(enriched.masteredCountryName).toBe('United States');
+        expect(report.actions.find(a => a.field === 'masteredCountryId' && a.source === 'computed')).toBeDefined();
     });
 
     test('no masteredRegionId → skipped with reason', async () => {

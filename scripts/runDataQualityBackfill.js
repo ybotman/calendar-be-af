@@ -23,11 +23,12 @@ const path = require('path');
 const { runDataQualityPipeline } = require('../src/utils/enrichment');
 
 function parseArgs() {
-    const args = { dryRun: true, knowProd: false, sampleSize: 30, output: null, appId: '1' };
+    const args = { dryRun: true, knowProd: false, sampleSize: 30, output: null, appId: '1', forceRecompute: false };
     for (const arg of process.argv.slice(2)) {
         if (arg === '--apply') args.dryRun = false;
         else if (arg === '--dry-run') args.dryRun = true;
         else if (arg === '--i-know-prod') args.knowProd = true;
+        else if (arg === '--force-recompute') args.forceRecompute = true;
         else if (arg.startsWith('--sample-size=')) args.sampleSize = parseInt(arg.split('=')[1], 10);
         else if (arg.startsWith('--output=')) args.output = arg.split('=')[1];
         else if (arg.startsWith('--appid=')) args.appId = arg.split('=')[1];
@@ -124,7 +125,7 @@ async function main() {
         try {
             const before = snapshot(event);
             const eventCopy = JSON.parse(JSON.stringify(event));
-            const { event: updated } = await runDataQualityPipeline(eventCopy, db, { appId: args.appId });
+            const { event: updated } = await runDataQualityPipeline(eventCopy, db, { appId: args.appId, forceRecompute: args.forceRecompute });
             const after = snapshot(updated);
             const changes = diff(before, after);
 

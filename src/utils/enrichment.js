@@ -15,7 +15,10 @@ const { ObjectId } = require('mongodb');
 const { resolveCountry, computeTravelWorthy, applyOverride, loadCategoryCache } = require('./eventClassification');
 
 const TANGO_APP_IDS = new Set(['1']);
-const BEGINNER_ELIGIBLE_CATEGORIES = new Set(['Class', 'Workshop', 'DayWorkshop', 'Festival']);
+// Categories where the forBeginners classifier can return TRUE. All other categories
+// force forBeginners=false via category gate. (Toby 2026-04-18 rule refinement:
+// Festival/Marathon/Encuentro joined Practica/Milonga/etc. as forBeginners=false hard-gate.)
+const BEGINNER_ELIGIBLE_CATEGORIES = new Set(['Class', 'Workshop', 'DayWorkshop']);
 
 // ============================================
 // classifyBeginner — pure text inference
@@ -116,6 +119,17 @@ function normalizeText(s) {
         .trim();
 }
 
+// matchesFriendlyOnlyStrict — for category-gated events (Practica/Milonga/Festival/etc.),
+// only explicit friendly-only signals count. Does NOT return true for positive-beginner
+// signals; those need the eligible-category classifier path.
+function matchesFriendlyOnlyStrict(title, description) {
+    const t = normalizeText(title);
+    const d = normalizeText(description).toLowerCase();
+    if (TITLE_FRIENDLY_ONLY.some(r => r.test(t))) return true;
+    if (DESC_FRIENDLY_ONLY.some(r => r.test(d))) return true;
+    return false;
+}
+
 function classifyBeginner(title, description) {
     const t = normalizeText(title);
     const d = normalizeText(description).toLowerCase();
@@ -183,22 +197,26 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     // Niche guard — classifier rules are Tango-tuned. Other niches: skip text classification only.
     const classifierEligible = TANGO_APP_IDS.has(appId);
 
-    // --- Country denorm ---
-    if (forceRecompute || eventDoc.masteredCountryId === undefined || eventDoc.masteredCountryId === null) {
-        if (eventDoc.masteredRegionId) {
-            const { masteredCountryId, masteredCountryName } = await resolveCountry(db, eventDoc.masteredRegionId);
-            eventDoc.masteredCountryId = masteredCountryId;
-            eventDoc.masteredCountryName = masteredCountryName;
-            report.actions.push({ field: 'masteredCountryId', source: 'computed', value: masteredCountryId });
-        } else {
-            report.skipped.push({ field: 'masteredCountryId', reason: 'no masteredRegionId' });
-        }
+    // Option A preserve-gate (Toby 2026-04-18): always recompute; `*Override` fields
+    // protect organizer intent via Stage 5. Preserves nothing else — actual-field
+    // preservation was over-protective and created stale-value bugs (e.g. Practilonga
+    // Caminito superset violation from earlier runs).
+
+    // --- Country denorm (always recompute; idempotent if masteredRegionId unchanged) ---
+    if (eventDoc.masteredRegionId) {
+        const { masteredCountryId, masteredCountryName } = await resolveCountry(db, eventDoc.masteredRegionId);
+        eventDoc.masteredCountryId = masteredCountryId;
+        eventDoc.masteredCountryName = masteredCountryName;
+        report.actions.push({ field: 'masteredCountryId', source: 'computed', value: masteredCountryId });
     } else {
-        report.skipped.push({ field: 'masteredCountryId', reason: 'already set' });
+        // No region → explicit null (don't leave stale value if the event lost its region)
+        eventDoc.masteredCountryId = null;
+        eventDoc.masteredCountryName = null;
+        report.skipped.push({ field: 'masteredCountryId', reason: 'no masteredRegionId' });
     }
 
-    // --- travelWorthy ---
-    if (forceRecompute || eventDoc.travelWorthy === undefined || eventDoc.travelWorthy === null) {
+    // --- travelWorthy (always recompute; override wins) ---
+    {
         const { excludedIds } = await loadCategoryCache(db, appId);
         const computed = computeTravelWorthy({
             startDate: eventDoc.startDate,
@@ -208,49 +226,42 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
         });
         eventDoc.travelWorthy = applyOverride(computed, eventDoc.travelWorthyOverride);
         report.actions.push({ field: 'travelWorthy', source: 'computed', value: eventDoc.travelWorthy });
-    } else {
-        report.skipped.push({ field: 'travelWorthy', reason: 'already set' });
     }
 
-    // --- Beginner classification ---
-    // Skip entirely if niche not eligible OR category not in eligible set.
+    // --- Beginner classification (Toby 2026-04-18 rule refinement + Option A) ---
     const categoryName = await resolveCategoryName(db, eventDoc.categoryFirstId, appId);
     const categoryAllowed = categoryName && eligibleBeginnerCategories.has(categoryName);
 
     if (!classifierEligible) {
         report.skipped.push({ field: 'forBeginners/beginnerFriendly', reason: `appId=${appId} outside Tango niche` });
     } else if (!categoryAllowed) {
-        // Force false for non-eligible categories — Practica/Milonga/etc. cannot be beginner classes.
-        if (eventDoc.forBeginners !== false) {
-            eventDoc.forBeginners = false;
-            report.actions.push({ field: 'forBeginners', source: 'category-gate', value: false, reason: `category=${categoryName}` });
+        // Ineligible category: forBeg hard-false; friendly via strict-threshold (own-text
+        // explicit friendly-only signals only — NOT the positive-beginner path or superset).
+        // "not beginner even if there is a class beforehand; milonga has to be clear-clear-clear
+        // on its own text" — Toby 2026-04-18.
+        const strictFriendly = matchesFriendlyOnlyStrict(eventDoc.title, eventDoc.description);
+        const finalForBeg = applyOverride(false, eventDoc.forBeginnersOverride);
+        const finalFriendly = applyOverride(strictFriendly, eventDoc.beginnerFriendlyOverride);
+        if (eventDoc.forBeginners !== finalForBeg) {
+            eventDoc.forBeginners = finalForBeg;
+            report.actions.push({ field: 'forBeginners', source: 'category-gate', value: finalForBeg, reason: `category=${categoryName}` });
         }
-        if (eventDoc.beginnerFriendly !== false) {
-            eventDoc.beginnerFriendly = false;
-            report.actions.push({ field: 'beginnerFriendly', source: 'category-gate', value: false, reason: `category=${categoryName}` });
+        if (eventDoc.beginnerFriendly !== finalFriendly) {
+            eventDoc.beginnerFriendly = finalFriendly;
+            report.actions.push({ field: 'beginnerFriendly', source: 'strict-friendly', value: finalFriendly, reason: `category=${categoryName}` });
         }
     } else {
-        // Eligible: only compute if undefined OR forceRecompute. Override always wins.
-        const needsCompute = forceRecompute
-            || eventDoc.forBeginners === undefined
-            || eventDoc.forBeginners === null
-            || eventDoc.beginnerFriendly === undefined
-            || eventDoc.beginnerFriendly === null;
-
-        if (needsCompute) {
-            const computed = classifyBeginner(eventDoc.title, eventDoc.description);
-            const finalForBeg = applyOverride(computed.forBeginners, eventDoc.forBeginnersOverride);
-            const finalFriendly = applyOverride(computed.beginnerFriendly || finalForBeg, eventDoc.beginnerFriendlyOverride);
-            if (eventDoc.forBeginners !== finalForBeg) {
-                eventDoc.forBeginners = finalForBeg;
-                report.actions.push({ field: 'forBeginners', source: 'classifier', value: finalForBeg });
-            }
-            if (eventDoc.beginnerFriendly !== finalFriendly) {
-                eventDoc.beginnerFriendly = finalFriendly;
-                report.actions.push({ field: 'beginnerFriendly', source: 'classifier', value: finalFriendly });
-            }
-        } else {
-            report.skipped.push({ field: 'forBeginners/beginnerFriendly', reason: 'already set' });
+        // Eligible (Class / Workshop / DayWorkshop): full classifier, always recompute
+        const computed = classifyBeginner(eventDoc.title, eventDoc.description);
+        const finalForBeg = applyOverride(computed.forBeginners, eventDoc.forBeginnersOverride);
+        const finalFriendly = applyOverride(computed.beginnerFriendly || finalForBeg, eventDoc.beginnerFriendlyOverride);
+        if (eventDoc.forBeginners !== finalForBeg) {
+            eventDoc.forBeginners = finalForBeg;
+            report.actions.push({ field: 'forBeginners', source: 'classifier', value: finalForBeg });
+        }
+        if (eventDoc.beginnerFriendly !== finalFriendly) {
+            eventDoc.beginnerFriendly = finalFriendly;
+            report.actions.push({ field: 'beginnerFriendly', source: 'classifier', value: finalFriendly });
         }
     }
 
@@ -332,6 +343,7 @@ async function resolveCategoryName(db, categoryFirstId, appId) {
 
 module.exports = {
     classifyBeginner,
+    matchesFriendlyOnlyStrict,
     runDataQualityPipeline,
     normalizeText,
     TANGO_APP_IDS,
