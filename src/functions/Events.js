@@ -6,7 +6,9 @@ const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = require('../utils/activityLog');
-const { classifyAndEnrichEvent } = require('../utils/eventClassification');
+// CALBEAF-110: classifyAndEnrichEvent superseded by runDataQualityPipeline (Phase 6 wiring).
+// Old import retained as no-op reference until eventClassification.js is fully retired.
+const { runDataQualityPipeline } = require('../utils/enrichment');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -923,8 +925,18 @@ async function eventsCreateHandler(request, context) {
             newEvent.recurrenceRule = null;
         }
 
-        // CALBEAF-109: Classify event (travel_worthy, beginner_friendly, country)
-        await classifyAndEnrichEvent(db, newEvent, requestBody.appId);
+        // CALBEAF-110: Run full data quality pipeline (classification + travelWorthy +
+        // country denorm + venue resolution + warn-only DQ checks). Mutates newEvent in place.
+        const { report: dqReport } = await runDataQualityPipeline(newEvent, db, { appId: requestBody.appId });
+        // Surface WARN-only DQ findings to logs (not blocking)
+        for (const s of dqReport.skipped) {
+            if (s.reason && s.reason.startsWith('WARN:')) {
+                context.log(`Events_Create DQ warn: ${s.field} — ${s.reason}`);
+            }
+        }
+        // Set enrichmentStatus based on whether any required-field warns fired
+        const hasFailedWarn = dqReport.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
+        newEvent.enrichmentStatus = hasFailedWarn ? 'failed' : 'complete';
 
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
@@ -1128,7 +1140,15 @@ async function eventsUpdateHandler(request, context) {
             categoryFirstId: updateDoc.$set.categoryFirstId || eventBefore.categoryFirstId,
             masteredRegionId: updateDoc.$set.masteredRegionId || eventBefore.masteredRegionId
         };
-        await classifyAndEnrichEvent(db, mergedForClassification, eventBefore.appId);
+        // CALBEAF-110: Run full data quality pipeline (classification + travelWorthy +
+        // country denorm + venue resolution + warn-only DQ checks).
+        const { report: dqReport } = await runDataQualityPipeline(mergedForClassification, db, { appId: eventBefore.appId });
+        for (const s of dqReport.skipped) {
+            if (s.reason && s.reason.startsWith('WARN:')) {
+                context.log(`Events_Update DQ warn: ${s.field} — ${s.reason}`);
+            }
+        }
+        const hasFailedWarn = dqReport.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
         updateDoc.$set.travelWorthy = mergedForClassification.travelWorthy;
         updateDoc.$set.beginnerFriendly = mergedForClassification.beginnerFriendly;
         updateDoc.$set.forBeginners = mergedForClassification.forBeginners;
@@ -1137,6 +1157,11 @@ async function eventsUpdateHandler(request, context) {
         updateDoc.$set.forBeginnersOverride = mergedForClassification.forBeginnersOverride;
         updateDoc.$set.masteredCountryId = mergedForClassification.masteredCountryId;
         updateDoc.$set.masteredCountryName = mergedForClassification.masteredCountryName;
+        // New venue-resolution fields (only set if pipeline computed them — preserves existing if already set)
+        if (mergedForClassification.venueGeolocation) updateDoc.$set.venueGeolocation = mergedForClassification.venueGeolocation;
+        if (mergedForClassification.venueCityName) updateDoc.$set.venueCityName = mergedForClassification.venueCityName;
+        if (mergedForClassification.venueTimezone) updateDoc.$set.venueTimezone = mergedForClassification.venueTimezone;
+        updateDoc.$set.enrichmentStatus = hasFailedWarn ? 'failed' : 'complete';
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(
