@@ -79,6 +79,9 @@ require('./functions/Events_InstanceOverrides');
 // Events Spotlights - Any approved organizer can add/remove spotlights on any event
 require('./functions/Events_Spotlights');
 
+// CALBEAF-110 — Bulk-enrich endpoint (Option D enrichment architecture, TEST-only)
+require('./functions/Events_BulkEnrich');
+
 // Events Summary + Image Upload
 require('./functions/EventsSummary');
 require('./functions/EventsImageUpload');
