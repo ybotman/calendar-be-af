@@ -2,37 +2,30 @@
 // scripts/runSeriesAsSingletonsPatch.js
 // CALBEAF-112 / SAS-FTPNTD Phase 2: Series-as-Singletons 1x patch tool.
 //
-// Per-organizer: detects non-recurring same-title events that form a weekly
-// cadence, proposes a recurring master with inferred RRULE, flags outliers
-// and ambiguous cases as REVIEW (never-invent-RRULE rule), and optionally
-// applies the conversion.
+// Imports shared detection heuristic from ai-discovered/packages/series-detection
+// via `file:` npm install (Quinn 2026-04-18 arbitration).
 //
-// --dry-run: default. Reports proposed masters + flagged REVIEW cases. No writes.
-// --apply: write changes (requires Toby per-org reauth).
+// On top of the package's detectPotentialSeries, this tool implements AIDI's
+// Refinement 2 (principled sub-group re-detection): when a group returns REVIEW,
+// the tool tries single-weekday subsets to find a CLEAN core pattern; the
+// remaining events become outlier singletons. Deterministic, no hand-curation.
 //
-// PROD STAY-OUT guard: refuses PROD URI unless --i-know-prod (never granted
-// for this initiative per Toby 2026-04-18 hard rail).
+// MUST be run with `node --experimental-strip-types` (package is .ts ESM).
 //
-// Current status: scaffold. Inline cadence detection. Once Harvey extracts
-// ai-discovered/packages/series-detection/, this tool will switch to:
-//   const { detectPotentialSeries } = require('series-detection');
-// via `file:../../ai-discovered/packages/series-detection` npm install per Quinn
-// 2026-04-18 arbitration.
+// --dry-run: default. --apply: requires Toby per-org reauth.
+// PROD URI guard: refuses unless --i-know-prod (never granted for this initiative).
 //
 // Usage:
-//   node scripts/runSeriesAsSingletonsPatch.js --org=UT --dry-run
-//   node scripts/runSeriesAsSingletonsPatch.js --org-id=680d9a06e0cc7a532a560556 --dry-run
-//   node scripts/runSeriesAsSingletonsPatch.js --org-id=<id> --apply       # requires Toby reauth
+//   node --experimental-strip-types scripts/runSeriesAsSingletonsPatch.js --org=UT --dry-run
+//   node --experimental-strip-types scripts/runSeriesAsSingletonsPatch.js --org-id=<id> --dry-run --output=/tmp/sas-ut.json
 
 const { MongoClient, ObjectId } = require('mongodb');
 const fs = require('fs');
 
-// TODO(harvey-extraction): replace inline inference with:
-// const { detectPotentialSeries, SERIES_DETECTION_SPEC_VERSION } = require('series-detection');
-const SERIES_DETECTION_SPEC_VERSION = 'fulton-inline-0.1';
+const WEEKDAY_NAMES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
 function parseArgs() {
-    const args = { dryRun: true, knowProd: false, org: null, orgId: null, output: null, minCount: 3 };
+    const args = { dryRun: true, knowProd: false, org: null, orgId: null, output: null, minCount: 3, threshold: 0.25 };
     for (const a of process.argv.slice(2)) {
         if (a === '--apply') args.dryRun = false;
         else if (a === '--dry-run') args.dryRun = true;
@@ -41,6 +34,7 @@ function parseArgs() {
         else if (a.startsWith('--org-id=')) args.orgId = a.split('=')[1];
         else if (a.startsWith('--min-count=')) args.minCount = parseInt(a.split('=')[1], 10);
         else if (a.startsWith('--output=')) args.output = a.split('=')[1];
+        else if (a.startsWith('--threshold=')) args.threshold = parseFloat(a.split('=')[1]);
     }
     return args;
 }
@@ -52,105 +46,45 @@ function loadUri() {
     return uri;
 }
 
-const WEEKDAY_NAMES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
-
-// Inline series-detection — UT-safe heuristic.
-// - groupingKey: (ownerOrganizerID, title)
-// - require count >= minCount
-// - compute weekday distribution, time distribution, gap stats
-// - CLEAN if: single dominant weekday (>=80% of events) OR multiple weekdays but consistent pattern; consistent time (>=80%); gap variance small
-// - REVIEW if: multiple weekdays without clear pattern, or time variance high, or outliers
-// - NO-OP if: span < 7 days (not a recurring series)
-function inferSeries(events) {
-    if (events.length < 2) return { action: 'NO-OP', reason: 'insufficient count' };
-
-    const dates = events.map(e => new Date(e.startDate)).sort((a, b) => a - b);
-    const spanDays = (dates[dates.length - 1] - dates[0]) / 86400000;
-    if (spanDays < 7) {
-        return { action: 'NO-OP', reason: `span ${spanDays.toFixed(1)}d < 7d — workshop/weekend, not series` };
+/**
+ * AIDI Refinement 2 — principled sub-group re-detection.
+ * Input: a REVIEW group. Try filtering to each single weekday; if any subset
+ * produces a clean cadence (WEEKLY/BIWEEKLY/etc.) AND covers >=60% of events,
+ * return { coreEvents, outlierEvents, coreCadence }. Otherwise null (stays REVIEW).
+ */
+async function trySubgroupReDetection(detectPotentialSeries, members, groupingKeyFn, dateFieldFn, threshold, minGroup) {
+    // Find weekdays present
+    const byWeekday = {};
+    for (const m of members) {
+        const d = new Date(dateFieldFn(m));
+        const wd = d.getUTCDay();
+        if (!byWeekday[wd]) byWeekday[wd] = [];
+        byWeekday[wd].push(m);
     }
-
-    // Weekday distribution
-    const wdCount = {};
-    dates.forEach(d => { const w = d.getUTCDay(); wdCount[w] = (wdCount[w] || 0) + 1; });
-    const wdEntries = Object.entries(wdCount).map(([w, c]) => ({ w: parseInt(w, 10), c })).sort((a, b) => b.c - a.c);
-    const dominantWds = wdEntries.filter(e => e.c / dates.length >= 0.2);  // weekdays with ≥20% of events
-    const dominantWdPct = dominantWds.reduce((s, e) => s + e.c, 0) / dates.length;
-
-    // Time distribution (UTC HH:MM)
-    const timeCount = {};
-    dates.forEach(d => { const t = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2, '0'); timeCount[t] = (timeCount[t] || 0) + 1; });
-    const dominantTime = Object.entries(timeCount).sort((a, b) => b[1] - a[1])[0];
-    const dominantTimePct = dominantTime[1] / dates.length;
-
-    // Gap stats
-    const gaps = [];
-    for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / 86400000);
-    const medianGap = gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
-
-    // CLEAN criteria: dominant weekday set accounts for >=80% of events, dominant time >=80%
-    if (dominantWdPct >= 0.8 && dominantTimePct >= 0.8) {
-        const byday = dominantWds.map(e => WEEKDAY_NAMES[e.w]).join(',');
-        const [hh, mm] = dominantTime[0].split(':');
-        const dtstart = new Date(dates[0]);
-        dtstart.setUTCHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
-        const until = new Date(dates[dates.length - 1]);
-        until.setUTCHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
-        const rrule = `FREQ=WEEKLY;BYDAY=${byday}`;
-
-        // AIDI Refinement 2 (2026-04-18): principled core-vs-outlier partition.
-        // When CONVERT fires but some events don't match the inferred pattern
-        // (different weekday OR different time), separate them so the master
-        // covers ONLY pattern-matching events; outliers stay as singletons.
-        const dominantWdSet = new Set(dominantWds.map(e => e.w));
-        const coreEvents = [];
-        const outlierEvents = [];
-        for (const ev of events) {
-            const d = new Date(ev.startDate);
-            const wd = d.getUTCDay();
-            const time = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2, '0');
-            if (dominantWdSet.has(wd) && time === dominantTime[0]) {
-                coreEvents.push(ev);
-            } else {
-                outlierEvents.push(ev);
+    const weekdaysSortedByCount = Object.entries(byWeekday).sort((a, b) => b[1].length - a[1].length);
+    // Try the most-common weekday first
+    for (const [wdStr, subset] of weekdaysSortedByCount) {
+        if (subset.length < minGroup) continue;
+        const subResult = detectPotentialSeries({
+            events: subset,
+            groupingKeyFn,
+            dateFieldFn,
+            threshold,
+            minGroup,
+        });
+        if (subResult.matchedGroups === 1) {
+            const sub = subResult.groups[0];
+            if (sub.cadence.cadence !== 'REVIEW' && subset.length / members.length >= 0.6) {
+                const outliers = members.filter(m => !subset.includes(m));
+                return {
+                    coreEvents: subset,
+                    outlierEvents: outliers,
+                    coreCadence: sub.cadence,
+                };
             }
         }
-
-        return {
-            action: outlierEvents.length > 0 ? 'CONVERT_PARTIAL' : 'CONVERT',
-            confidence: 'HIGH',
-            rrule,
-            dtstart: dtstart.toISOString(),
-            until: until.toISOString(),
-            byday,
-            time: dominantTime[0],
-            eventCount: events.length,
-            coreEventCount: coreEvents.length,
-            outlierEventCount: outlierEvents.length,
-            coreEventIds: coreEvents.map(e => e._id.toString()),
-            outlierEventIds: outlierEvents.map(e => e._id.toString()),
-            spanDays: Math.round(spanDays),
-            medianGap: Math.round(medianGap),
-        };
     }
-
-    // REVIEW: mixed weekdays or times but majority pattern visible
-    if (dominantWdPct >= 0.6 && dominantTimePct >= 0.6) {
-        return {
-            action: 'REVIEW',
-            reason: `majority pattern visible (wd=${(dominantWdPct * 100).toFixed(0)}%, time=${(dominantTimePct * 100).toFixed(0)}%) but outliers present. Human review required — do not auto-convert.`,
-            wdDistribution: wdCount,
-            timeDistribution: timeCount,
-            dominantWd: dominantWds.map(e => WEEKDAY_NAMES[e.w] + ':' + e.c).join(','),
-            dominantTime: dominantTime[0] + ':' + dominantTime[1],
-            spanDays: Math.round(spanDays),
-        };
-    }
-
-    return {
-        action: 'NO-OP',
-        reason: `no clear cadence (wd=${(dominantWdPct * 100).toFixed(0)}%, time=${(dominantTimePct * 100).toFixed(0)}%)`,
-    };
+    return null;
 }
 
 async function main() {
@@ -166,10 +100,15 @@ async function main() {
         process.exit(1);
     }
 
+    // Dynamic import of the ESM/TS package
+    const pkg = await import('series-detection');
+    const { detectPotentialSeries, SERIES_DETECTION_SPEC_VERSION, normalizeTitle } = pkg;
+
     console.log('=== SAS-FTPNTD Phase 2 Patch Tool ===');
     console.log('Spec version:', SERIES_DETECTION_SPEC_VERSION);
     console.log('Mode:', args.dryRun ? 'DRY-RUN' : 'APPLY (requires Toby reauth)');
     console.log('Min count for series candidate:', args.minCount);
+    console.log('Gap-CV threshold:', args.threshold);
     console.log('URI host:', new URL(uri).host);
     console.log();
 
@@ -191,40 +130,146 @@ async function main() {
     }
     console.log(`Target organizer: ${orgName}  (_id: ${orgId})`);
 
-    // Find candidate series
-    const groups = await db.collection('events').aggregate([
-        { $match: { appId: '1', ownerOrganizerID: orgId, isRepeating: { $ne: true } } },
-        { $group: {
-            _id: '$title',
-            count: { $sum: 1 },
-            events: { $push: { _id: '$_id', startDate: '$startDate', categoryFirst: '$categoryFirst', venueID: '$venueID' } }
-        } },
-        { $match: { count: { $gte: args.minCount } } },
-        { $sort: { count: -1 } }
-    ]).toArray();
+    // Pull all non-recurring events for this org
+    const events = await db.collection('events').find({
+        appId: '1',
+        ownerOrganizerID: orgId,
+        isRepeating: { $ne: true },
+    }).project({ _id: 1, title: 1, startDate: 1, categoryFirst: 1, venueID: 1 }).toArray();
 
-    console.log(`Found ${groups.length} title-groups with count >= ${args.minCount}\n`);
+    console.log(`Found ${events.length} non-recurring events for ${orgName}\n`);
 
+    // Event shape for the package — pass ISO string
+    const groupingKeyFn = e => `${e.ownerOrganizerID}|${normalizeTitle(e.title || '')}`;
+    const dateFieldFn = e => e.start_date_iso || e.startDate?.toISOString?.() || e.start_date;
+
+    // Prepare events for the package
+    const pkgEvents = events.map(e => ({
+        _id: e._id,
+        title: e.title,
+        ownerOrganizerID: orgId.toString(),
+        start_date_iso: e.startDate.toISOString(),
+        categoryFirst: e.categoryFirst,
+        venueID: e.venueID,
+    }));
+
+    // Initial detection
+    const result = detectPotentialSeries({
+        events: pkgEvents,
+        groupingKeyFn,
+        dateFieldFn,
+        threshold: args.threshold,
+        minGroup: args.minCount,
+    });
+
+    console.log(`Package detectPotentialSeries → ${result.totalGroups} groups (${result.matchedGroups} matched, ${result.reviewGroups} review)`);
+    console.log();
+
+    // Post-process: translate package output to tool-level actions,
+    // apply sub-group re-detection on REVIEW groups per AIDI Refinement 2.
     const proposals = [];
-    for (const g of groups) {
-        const inference = inferSeries(g.events);
-        proposals.push({ title: g._id, count: g.count, inference, events: g.events });
+    for (const group of result.groups) {
+        const title = (group.members[0] && group.members[0].title) || '(no title)';
+        const count = group.members.length;
 
-        console.log('--- "' + (g._id || '').substring(0, 70) + '" ---');
-        console.log('  count:', g.count, ' action:', inference.action, inference.confidence ? `(${inference.confidence})` : '');
-        if (inference.action === 'CONVERT' || inference.action === 'CONVERT_PARTIAL') {
-            console.log('  RRULE:', inference.rrule);
-            console.log('  DTSTART:', inference.dtstart, ' UNTIL:', inference.until);
-            if (inference.action === 'CONVERT_PARTIAL') {
-                console.log('  core (included in master):', inference.coreEventCount, ' outliers (stay singletons):', inference.outlierEventCount);
-            }
+        if (group.cadence.cadence !== 'REVIEW') {
+            // Clean cadence — all members convert to one master
+            proposals.push({
+                title,
+                count,
+                action: 'CONVERT',
+                confidence: 'HIGH',
+                cadence: group.cadence.cadence,
+                rrule: group.cadence.rrule,
+                gapCv: group.cadence.gapCv,
+                sameDayDuplicates: group.sameDayDuplicates,
+                coreCount: group.uniqueMembers.length,
+                outlierCount: 0,
+                coreEventIds: group.uniqueMembers.map(m => m._id.toString()),
+                outlierEventIds: [],
+                // DTSTART / UNTIL = observed bounds (AIDI Refinement 1: never fabricate)
+                dtstart: group.uniqueMembers[0].start_date_iso,
+                until: group.uniqueMembers[group.uniqueMembers.length - 1].start_date_iso,
+            });
         } else {
-            console.log('  reason:', inference.reason);
+            // REVIEW — try sub-group re-detection
+            const sub = await trySubgroupReDetection(
+                detectPotentialSeries,
+                group.members,
+                groupingKeyFn,
+                dateFieldFn,
+                args.threshold,
+                args.minCount
+            );
+            if (sub) {
+                const coreSorted = [...sub.coreEvents].sort((a, b) => new Date(a.start_date_iso) - new Date(b.start_date_iso));
+                proposals.push({
+                    title,
+                    count,
+                    action: 'CONVERT_PARTIAL',
+                    confidence: 'HIGH',
+                    cadence: sub.coreCadence.cadence,
+                    rrule: sub.coreCadence.rrule,
+                    gapCv: sub.coreCadence.gapCv,
+                    sameDayDuplicates: group.sameDayDuplicates,
+                    coreCount: sub.coreEvents.length,
+                    outlierCount: sub.outlierEvents.length,
+                    coreEventIds: sub.coreEvents.map(m => m._id.toString()),
+                    outlierEventIds: sub.outlierEvents.map(m => m._id.toString()),
+                    dtstart: coreSorted[0].start_date_iso,
+                    until: coreSorted[coreSorted.length - 1].start_date_iso,
+                    reviewReason: `Original group REVIEW (${group.cadence.reviewReason}); sub-group re-detection found core subset.`,
+                });
+            } else {
+                // Stays REVIEW — algorithm cannot determine cadence; human review required
+                proposals.push({
+                    title,
+                    count,
+                    action: 'REVIEW',
+                    reviewReason: group.cadence.reviewReason,
+                    gapCv: group.cadence.gapCv,
+                    coreCount: 0,
+                    outlierCount: count,
+                    eventIds: group.members.map(m => m._id.toString()),
+                });
+            }
+        }
+    }
+
+    // NO-OP flip for REVIEW groups whose events span < 7 days (workshop, not series).
+    // Keep genuine REVIEW cases (long span but ambiguous cadence) intact.
+    for (const p of proposals) {
+        if (p.action === 'REVIEW') {
+            const ids = new Set(p.eventIds);
+            const dateObjs = events.filter(e => ids.has(e._id.toString())).map(e => e.startDate);
+            dateObjs.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+            if (dateObjs.length >= 2) {
+                const spanDays = (new Date(dateObjs[dateObjs.length - 1]).getTime() - new Date(dateObjs[0]).getTime()) / 86400000;
+                if (spanDays < 7) {
+                    p.action = 'NO-OP';
+                    p.reviewReason = `span ${spanDays.toFixed(1)}d < 7d — workshop/weekend, not recurring series`;
+                } else {
+                    p.spanDays = Math.round(spanDays);
+                }
+            }
+        }
+    }
+
+    // Summary output
+    for (const p of proposals) {
+        console.log('--- "' + (p.title || '').substring(0, 70) + '" ---');
+        console.log('  count:', p.count, ' action:', p.action, p.confidence ? `(${p.confidence})` : '');
+        if (p.action === 'CONVERT' || p.action === 'CONVERT_PARTIAL') {
+            console.log('  cadence:', p.cadence, ' RRULE:', p.rrule);
+            console.log('  DTSTART:', p.dtstart, ' UNTIL:', p.until);
+            console.log('  core (in master):', p.coreCount, ' outliers (singletons):', p.outlierCount, ' same-day-dups absorbed:', p.sameDayDuplicates || 0);
+            if (p.action === 'CONVERT_PARTIAL' && p.reviewReason) console.log('  note:', p.reviewReason);
+        } else {
+            console.log('  reason:', p.reviewReason);
         }
         console.log();
     }
 
-    // Summary
     const summary = {
         meta: {
             mode: args.dryRun ? 'DRY-RUN' : 'APPLY',
@@ -232,24 +277,25 @@ async function main() {
             organizer: orgName,
             orgId: orgId.toString(),
             timestamp: new Date().toISOString(),
+            threshold: args.threshold,
+            minGroup: args.minCount,
+            packageImport: true,
         },
         counts: {
-            groupsFound: groups.length,
-            convertHigh: proposals.filter(p => p.inference.action === 'CONVERT' && p.inference.confidence === 'HIGH').length,
-            convertPartial: proposals.filter(p => p.inference.action === 'CONVERT_PARTIAL').length,
-            review: proposals.filter(p => p.inference.action === 'REVIEW').length,
-            noOp: proposals.filter(p => p.inference.action === 'NO-OP').length,
-            eventsToConvert: proposals.filter(p => p.inference.action === 'CONVERT' || p.inference.action === 'CONVERT_PARTIAL').reduce((s, p) => s + (p.inference.coreEventCount || p.count), 0),
-            outlierSingletons: proposals.filter(p => p.inference.action === 'CONVERT_PARTIAL').reduce((s, p) => s + (p.inference.outlierEventCount || 0), 0),
-            eventsInReview: proposals.filter(p => p.inference.action === 'REVIEW').reduce((s, p) => s + p.count, 0),
-            eventsLeftAsSingles: proposals.filter(p => p.inference.action === 'NO-OP').reduce((s, p) => s + p.count, 0),
+            eventsScanned: events.length,
+            groupsDetected: result.totalGroups,
+            matchedGroupsPackage: result.matchedGroups,
+            reviewGroupsPackage: result.reviewGroups,
+            convert: proposals.filter(p => p.action === 'CONVERT').length,
+            convertPartial: proposals.filter(p => p.action === 'CONVERT_PARTIAL').length,
+            reviewRemaining: proposals.filter(p => p.action === 'REVIEW').length,
+            noOp: proposals.filter(p => p.action === 'NO-OP').length,
+            eventsToConvert: proposals.filter(p => p.action === 'CONVERT' || p.action === 'CONVERT_PARTIAL').reduce((s, p) => s + (p.coreCount || 0), 0),
+            outlierSingletons: proposals.filter(p => p.action === 'CONVERT_PARTIAL').reduce((s, p) => s + (p.outlierCount || 0), 0),
+            eventsInReview: proposals.filter(p => p.action === 'REVIEW').reduce((s, p) => s + p.count, 0),
+            eventsNoOp: proposals.filter(p => p.action === 'NO-OP').reduce((s, p) => s + p.count, 0),
         },
-        proposals: proposals.map(p => ({
-            title: p.title,
-            count: p.count,
-            inference: p.inference,
-            eventIds: p.events.map(e => e._id.toString()),
-        })),
+        proposals,
     };
 
     console.log('=== SUMMARY ===');
@@ -257,14 +303,13 @@ async function main() {
 
     if (args.output) {
         fs.writeFileSync(args.output, JSON.stringify(summary, null, 2));
-        console.log(`\nFull proposal written to: ${args.output}`);
+        console.log(`\nFull artifact written to: ${args.output}`);
     }
 
     if (args.dryRun) {
-        console.log('\nDRY-RUN — no writes. Re-run with --apply after Toby reauth.');
+        console.log('\nDRY-RUN — no writes. Re-run with --apply after AIDI Q1=C + Toby reauth.');
     } else {
-        // --apply path: implementation intentionally stubbed until AIDI approves the conversion + Toby reauths.
-        console.error('\nAPPLY path not yet implemented (awaiting AIDI+Toby governance sign-off on proposal structure).');
+        console.error('\nAPPLY path not yet implemented (stubbed awaiting AIDI + Toby sign-off on dry-run artifact).');
         process.exit(3);
     }
 
