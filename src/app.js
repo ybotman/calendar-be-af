@@ -81,6 +81,8 @@ require('./functions/Events_Spotlights');
 
 // CALBEAF-110 — Bulk-enrich endpoint (Option D enrichment architecture, TEST-only)
 require('./functions/Events_BulkEnrich');
+// CALBEAF-110 — Tier-2 DQ periodic checker (every 30 min, TEST-only)
+require('./functions/DQ_PeriodicChecker');
 
 // Events Summary + Image Upload
 require('./functions/EventsSummary');
