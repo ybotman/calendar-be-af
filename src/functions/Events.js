@@ -10,6 +10,33 @@ const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = requi
 // Old import retained as no-op reference until eventClassification.js is fully retired.
 const { runDataQualityPipeline } = require('../utils/enrichment');
 
+// CALBEAF-112: Series-as-singletons FTPNTD Layer 2 heuristic.
+// Detect if an organizer is submitting a same-title non-recurring event after
+// ≥2 past non-recurring events of the same title in the last 30 days.
+// Returns a seriesHint object when pattern matches; null otherwise.
+// Non-blocking — creation proceeds; hint surfaces in response for FE to prompt user.
+async function detectSeriesAsSingletons(db, appId, ownerOrganizerID, title, isRepeating) {
+    if (!ownerOrganizerID || !title) return null;
+    if (isRepeating) return null;  // already recurring — no hint needed
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const ownerId = typeof ownerOrganizerID === 'string' ? new ObjectId(ownerOrganizerID) : ownerOrganizerID;
+    const pastCount = await db.collection('events').countDocuments({
+        appId,
+        ownerOrganizerID: ownerId,
+        title: title,  // exact match (title is usually identical for series-as-singletons)
+        isRepeating: { $ne: true },
+        startDate: { $gte: thirtyDaysAgo },
+    });
+    if (pastCount >= 2) {
+        return {
+            pattern: 'series-as-singletons',
+            message: `This organizer has ${pastCount} prior non-recurring events with this exact title in the last 30 days. Consider publishing this as a recurring event instead (use isRepeating=true with a recurrenceRule).`,
+            pastCount,
+        };
+    }
+    return null;
+}
+
 // ============================================
 // HELPER: Convert string IDs to ObjectId
 // ============================================
@@ -938,6 +965,12 @@ async function eventsCreateHandler(request, context) {
         // do NOT flip status (spec §4: warn-only). Pipeline exceptions bubble up as 5xx.
         newEvent.enrichmentStatus = 'complete';
 
+        // CALBEAF-112: Series-as-singletons heuristic (Layer 2, non-blocking)
+        const seriesHint = await detectSeriesAsSingletons(db, requestBody.appId, newEvent.ownerOrganizerID, newEvent.title, newEvent.isRepeating);
+        if (seriesHint) {
+            context.log(`Events_Create SAS-hint: ${seriesHint.message}`);
+        }
+
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
 
@@ -1000,6 +1033,7 @@ async function eventsCreateHandler(request, context) {
                     _id: result.insertedId,
                     ...newEvent
                 },
+                hints: seriesHint ? [seriesHint] : undefined,
                 timestamp: new Date().toISOString()
             })
         };
