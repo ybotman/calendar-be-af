@@ -934,9 +934,9 @@ async function eventsCreateHandler(request, context) {
                 context.log(`Events_Create DQ warn: ${s.field} — ${s.reason}`);
             }
         }
-        // Set enrichmentStatus based on whether any required-field warns fired
-        const hasFailedWarn = dqReport.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
-        newEvent.enrichmentStatus = hasFailedWarn ? 'failed' : 'complete';
+        // enrichmentStatus = 'complete' when pipeline runs to end. Required-field WARNs
+        // do NOT flip status (spec §4: warn-only). Pipeline exceptions bubble up as 5xx.
+        newEvent.enrichmentStatus = 'complete';
 
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
@@ -1148,7 +1148,6 @@ async function eventsUpdateHandler(request, context) {
                 context.log(`Events_Update DQ warn: ${s.field} — ${s.reason}`);
             }
         }
-        const hasFailedWarn = dqReport.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
         updateDoc.$set.travelWorthy = mergedForClassification.travelWorthy;
         updateDoc.$set.beginnerFriendly = mergedForClassification.beginnerFriendly;
         updateDoc.$set.forBeginners = mergedForClassification.forBeginners;
@@ -1161,7 +1160,9 @@ async function eventsUpdateHandler(request, context) {
         if (mergedForClassification.venueGeolocation) updateDoc.$set.venueGeolocation = mergedForClassification.venueGeolocation;
         if (mergedForClassification.venueCityName) updateDoc.$set.venueCityName = mergedForClassification.venueCityName;
         if (mergedForClassification.venueTimezone) updateDoc.$set.venueTimezone = mergedForClassification.venueTimezone;
-        updateDoc.$set.enrichmentStatus = hasFailedWarn ? 'failed' : 'complete';
+        // enrichmentStatus = 'complete' when pipeline runs to end. Required-field WARNs
+        // do NOT flip status (spec §4: warn-only). Pipeline exceptions bubble up as 5xx.
+        updateDoc.$set.enrichmentStatus = 'complete';
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(

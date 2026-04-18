@@ -281,7 +281,15 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
             report.skipped.push({ field: 'venueResolution', reason: `error: ${err.message}` });
         }
     } else if (!eventDoc.venueID) {
-        report.skipped.push({ field: 'venueResolution', reason: 'no venueID' });
+        // Diagnostic: include the observed value + its type so callers can distinguish
+        // legitimate no-match (per AIDI never-guess-venue) from payload bugs (empty string,
+        // serialization mismatch, typo'd key like venueId).
+        const valStr = eventDoc.venueID === undefined ? 'undefined'
+            : eventDoc.venueID === null ? 'null'
+            : eventDoc.venueID === '' ? 'empty-string'
+            : `value=${JSON.stringify(eventDoc.venueID)}`;
+        const alsoCheckedKey = eventDoc.venueId !== undefined ? ' (NOTE: eventDoc.venueId IS set — key-case mismatch? expected venueID)' : '';
+        report.skipped.push({ field: 'venueResolution', reason: `no venueID (${valStr})${alsoCheckedKey}` });
     }
 
     // --- Date sanity (warn-only, never reject) ---
