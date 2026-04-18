@@ -69,10 +69,18 @@ const args = process.argv.slice(2);
 const includeTransactional = args.includes('--include-transactional');
 const dryRun = args.includes('--dry-run');
 
-// New event-specific flags
-const includeEvents = args.includes('--include-events') || includeTransactional;
-const includeUsers = args.includes('--include-users') || includeTransactional;
-const eventsAll = args.includes('--events-all');
+// CALBEAF-110 FTPNTD fix (Toby 2026-04-18): events + users default ON.
+// Prior behavior (opt-in via --include-events) led to silent TEST gaps where dimensional
+// data was synced but real events were missing — operators thought "I did a full pull"
+// but the test mirror excluded events. Use --skip-events / --skip-users to opt out.
+const skipEvents = args.includes('--skip-events');
+const skipUsers = args.includes('--skip-users');
+const includeEvents = !skipEvents || args.includes('--include-events') || includeTransactional;
+const includeUsers = !skipUsers || args.includes('--include-users') || includeTransactional;
+
+// Events filtering — if not specified, default to --events-all (full-history mirror).
+// Prior default was a narrow window that further contributed to silent gaps.
+const eventsAll = args.includes('--events-all') || (includeEvents && !args.some(a => a === '--events-future' || a.startsWith('--events-from') || a.startsWith('--events-to') || a.startsWith('--events-days')));
 const eventsFuture = args.includes('--events-future');
 
 // Date range parsing
@@ -364,6 +372,31 @@ async function syncProdToTest() {
     const summary = dryRun ? 'DRY RUN COMPLETED' : 'SYNC COMPLETED';
     logger.info(`\n${summary}`);
     logger.info('Summary:', operationLog.summary);
+
+    // CALBEAF-110 FTPNTD (Toby 2026-04-18): post-sync sanity check fails LOUD if TEST
+    // event count is suspiciously low vs PROD for known-active organizers. Addresses
+    // the "I thought I did a full pull" false-confidence scenario.
+    if (!dryRun && includeEvents) {
+      try {
+        const prodDb = prodClient.db('TangoTiempoProd');
+        const testDb = testClient.db('TangoTiempoTest');
+        const prodCount = await prodDb.collection('events').countDocuments({ appId: '1' });
+        const testCount = await testDb.collection('events').countDocuments({ appId: '1' });
+        const ratio = prodCount > 0 ? testCount / prodCount : 1;
+        logger.info(`\n--- Post-sync sanity check ---`);
+        logger.info(`  PROD events (appId=1): ${prodCount}`);
+        logger.info(`  TEST events (appId=1): ${testCount}`);
+        logger.info(`  Ratio (TEST/PROD): ${(ratio * 100).toFixed(1)}%`);
+        if (ratio < 0.5) {
+          logger.error(`SANITY CHECK FAILED: TEST event count (${testCount}) is less than 50% of PROD (${prodCount}). This usually means events were NOT synced. Re-run with explicit --include-events --events-all flag, or investigate filter logic.`);
+          process.exitCode = 3;
+        } else {
+          logger.info(`  ✓ Sanity check passed.`);
+        }
+      } catch (err) {
+        logger.warn(`Sanity check threw: ${err.message}`);
+      }
+    }
 
   } catch (error) {
     logger.error('Fatal error during sync:', error);

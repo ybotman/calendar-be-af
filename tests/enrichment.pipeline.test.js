@@ -258,11 +258,27 @@ describe('runDataQualityPipeline — country denorm', () => {
         expect(report.actions.find(a => a.field === 'masteredCountryId' && a.source === 'computed')).toBeDefined();
     });
 
-    test('no masteredRegionId → skipped with reason', async () => {
+    test('no masteredRegionId → skipped with existing-preserved reason (AIDI blocker 2 fix)', async () => {
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const event = baseEvent({ masteredRegionId: null, masteredCountryId: null });
         const { report } = await runDataQualityPipeline(event, standardDb());
-        expect(report.skipped.find(s => s.field === 'masteredCountryId' && s.reason === 'no masteredRegionId')).toBeDefined();
+        const entry = report.skipped.find(s => s.field === 'masteredCountryId');
+        expect(entry).toBeDefined();
+        expect(entry.reason).toMatch(/no masteredRegionId/);
+    });
+
+    test('no masteredRegionId but existing country — preserved, not nulled (AIDI blocker 2)', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const preservedId = new ObjectId();
+        const event = baseEvent({
+            masteredRegionId: null,
+            masteredCountryId: preservedId,
+            masteredCountryName: 'PreservedCountry'
+        });
+        const { event: enriched } = await runDataQualityPipeline(event, standardDb());
+        // Preserved — don't destroy valid upstream data when we can't recompute
+        expect(enriched.masteredCountryId.toString()).toBe(preservedId.toString());
+        expect(enriched.masteredCountryName).toBe('PreservedCountry');
     });
 });
 

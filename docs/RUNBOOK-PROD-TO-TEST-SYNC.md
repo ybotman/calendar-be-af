@@ -1,248 +1,144 @@
-# Runbook: PROD → TEST Data Sync + Classification
+# Runbook: PROD → TEST Sync + Classification Refresh
 
 **Owner:** Fulton (calendar-be-af)
-**Last Updated:** 2026-04-17
-**When to use:** Refreshing TEST with fresh PROD data (e.g., before QA cycles, after major PROD data changes, periodic refresh)
+**Last updated:** 2026-04-18 (CALBEAF-110)
+**When to use:** refresh TEST Mongo from PROD before QA cycles, periodic refresh, or after major PROD changes.
 
 ---
 
-## Overview
+## Overview (3 steps, ~3-5 min total)
 
-This is a 3-step operational procedure:
-1. Copy PROD MongoDB data to TEST (with backups)
-2. Re-run event classification backfill (travelWorthy, country denormalization)
-3. Re-run beginner keyword scan (beginnerFriendly, forBeginners)
+1. Sync PROD → TEST (`syncProdToTest.js`)
+2. Run post-sync sanity check (auto, baked into sync script as of 2026-04-18)
+3. Re-run classifier / DQ backfill (`runDataQualityBackfill.js`)
 
-Steps 2 and 3 are required because PROD events don't have the CALBEAF-109 classification fields yet (until PROD backfill is approved). Even after PROD backfill, step 3 (keyword scan) is not in the automated pipeline — it's an operational pass.
-
-**Total time:** ~2 minutes for typical dataset sizes.
+**Hard rail:** PROD is read-only. PROD STAY-OUT per CALBEAF-110 initiative.
 
 ---
 
-## Prerequisites
+## Step 1 — Sync
 
-- Node.js installed
-- Working directory: `calendar-be-af/`
-- `local.settings.json` must contain:
-  - `MONGODB_URI` — TEST database connection string (TangoTiempoTest)
-  - `MONGODB_URI_PROD` — PROD database connection string (TangoTiempoProd)
-
----
-
-## Step 1: PROD → TEST Sync
-
-### Dry run (ALWAYS do this first)
+### Default (full mirror, since CALBEAF-110)
 
 ```bash
-node scripts/syncProdToTest.js --dry-run --include-events --events-future
-```
-
-Review output: check collection counts, confirm correct databases (TangoTiempoProd → TangoTiempoTest).
-
-### Apply
-
-```bash
-# Dimensional + master data + future events
-node scripts/syncProdToTest.js --include-events --events-future
-```
-
-**What happens:**
-- Existing TEST collections renamed to `{name}_backup_{timestamp}` (not deleted)
-- PROD data copied to fresh TEST collections
-- 2dsphere geo indexes automatically recreated on masteredcities, venues, and events (added after 503 incident 2026-04-17)
-- Collections synced: categories, masteredcities, masteredcountries, mastereddivisions, masteredregions, organizers, roles, venues, events
-
-**Other options:**
-
-```bash
-# Dimensional data only (no events)
 node scripts/syncProdToTest.js
-
-# All events (historical + future)
-node scripts/syncProdToTest.js --include-events --events-all
-
-# Events + users
-node scripts/syncProdToTest.js --include-transactional
-
-# Date range
-node scripts/syncProdToTest.js --include-events --events-from 2026-01-01 --events-to 2026-12-31
 ```
 
-### Verify
+**Synced by default (as of 2026-04-18):**
+- Dimensional: categories, mastered* (cities/countries/divisions/regions), organizers, venues, roles
+- Events (all-history, all appIds) — **default changed from opt-in to opt-out**
+- Userlogins — **default changed from opt-in to opt-out**
+
+### Opt-out flags
+
+- `--skip-events` — skip events sync (dimensional-only refresh)
+- `--skip-users` — skip userlogins sync
+
+### Legacy opt-in flags (still work, now redundant)
+
+- `--include-events`, `--include-users`, `--include-transactional`
+
+### Date filters on events (optional)
+
+- `--events-all` (default when events included)
+- `--events-future` / `--events-days N` / `--events-from YYYY-MM-DD` / `--events-to YYYY-MM-DD`
+
+### Dry-run (no writes)
 
 ```bash
-curl -s "https://calendarbeaf-test.azurewebsites.net/api/events?appId=1&limit=1" | node -e "
-const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-console.log('Events on TEST:', d.pagination.total);
-"
+node scripts/syncProdToTest.js --dry-run
 ```
+
+### Backup behavior
+
+Existing TEST collections are RENAMED with timestamp before overwrite:
+- Example: `events` → `events_backup_2026-04-18T19-23-41-013Z`
+- Rollback: rename backup back over current (manual)
+- Backups accumulate — clean up periodically (see Housekeeping below)
 
 ---
 
-## Step 2: Classification Backfill (travelWorthy + country)
+## Step 2 — Post-sync sanity check (automatic as of 2026-04-18)
 
-After syncing PROD data, events won't have classification fields. Run the backfill.
+Script runs this check automatically after events sync:
 
-### Dry run
-
-```bash
-node scripts/backfill-classification.js --env=test
+```
+PROD events (appId=1): <count>
+TEST events (appId=1): <count>
+Ratio (TEST/PROD):     <%>
 ```
 
-### Apply
-
-```bash
-node scripts/backfill-classification.js --env=test --apply --skip-indexes
-```
-
-Use `--skip-indexes` if indexes already exist from a prior run. Omit it on first-ever run to create the 3 required indexes.
-
-**What it does:**
-- Computes `travelWorthy` per rule: `(duration > 24h) AND (category NOT IN [Class, Milonga, Practica])`
-- Defaults `beginnerFriendly` to `false` (keyword scan in step 3 overrides)
-- Denormalizes `masteredCountryId` + `masteredCountryName` from region chain
-- Sets override fields to `null`
+**If `ratio < 50%`**: script exits with code `3` and loud ERROR log. This catches the "I did a full pull but events didn't sync" silent failure mode.
 
 ---
 
-## Step 3: Beginner Keyword Scan (beginnerFriendly + forBeginners)
+## Step 3 — Classifier / DQ refresh
 
-This scans event titles and descriptions for beginner-related keywords and sets two flags:
+Sync replaces event docs but does NOT re-run the enrichment pipeline (classification, country, venue resolution, travelWorthy). Follow up:
 
-- **beginnerFriendly** = event welcomes beginners
-- **forBeginners** = event IS a beginner class
-
-### Run
+### Dry-run preview (safe, always run first)
 
 ```bash
-node -e "
-const { MongoClient } = require('mongodb');
-const settings = require('./local.settings.json');
-const uri = settings.Values.MONGODB_URI;
-
-const FRIENDLY_PATTERNS = [
-    /beginners?\s*welcome/i,
-    /no\s*experience\s*(needed|necessary|required)/i,
-    /open\s*to\s*all\s*levels?/i,
-    /all\s*levels?\s*welcome/i,
-    /beginner\s*friendly/i,
-    /first\s*time\s*(dancers?|welcome)/i,
-    /never\s*danced/i,
-    /new\s*to\s*tango/i
-];
-
-const FOR_BEGINNERS_PATTERNS = [
-    /beginner\s*class/i,
-    /beginner\s*workshop/i,
-    /intro\s*to\s*tango/i,
-    /introduction\s*to\s*tango/i,
-    /fundamentals/i,
-    /level\s*1\b/i,
-    /absolute\s*beginners?/i,
-    /beginner.?intermediate/i,
-    /\bbeg\b.*\bint\b/i
-];
-
-function matchesAny(text, patterns) {
-    if (!text) return false;
-    return patterns.some(p => p.test(text));
-}
-
-(async () => {
-    const client = new MongoClient(uri);
-    await client.connect();
-    const db = client.db();
-    const events = db.collection('events');
-    const allEvents = await events.find({ appId: '1' }).project({ _id: 1, title: 1, description: 1 }).toArray();
-
-    let friendlyIds = [], forBegIds = [], bothIds = [];
-    for (const e of allEvents) {
-        const text = (e.title || '') + ' ' + (e.description || '');
-        const isFriendly = matchesAny(text, FRIENDLY_PATTERNS);
-        const isForBeg = matchesAny(text, FOR_BEGINNERS_PATTERNS);
-        if (isFriendly && isForBeg) bothIds.push(e._id);
-        else if (isFriendly) friendlyIds.push(e._id);
-        else if (isForBeg) forBegIds.push(e._id);
-    }
-
-    if (friendlyIds.length > 0) await events.updateMany({ _id: { \\\$in: friendlyIds } }, { \\\$set: { beginnerFriendly: true } });
-    if (forBegIds.length > 0) await events.updateMany({ _id: { \\\$in: forBegIds } }, { \\\$set: { forBeginners: true } });
-    if (bothIds.length > 0) await events.updateMany({ _id: { \\\$in: bothIds } }, { \\\$set: { beginnerFriendly: true, forBeginners: true } });
-
-    const bfTrue = await events.countDocuments({ appId: '1', beginnerFriendly: true });
-    const fbTrue = await events.countDocuments({ appId: '1', forBeginners: true });
-    console.log('Scanned:', allEvents.length);
-    console.log('beginnerFriendly=true:', bfTrue);
-    console.log('forBeginners=true:', fbTrue);
-    await client.close();
-})();
-"
+node scripts/runDataQualityBackfill.js --force-recompute --dry-run
 ```
 
-**Keyword split (Toby directive 2026-04-17):**
+Output: per-field change counts, per-category breakdown, sample diffs. Saved to `/tmp/` if `--output=<path>` given.
 
-| beginnerFriendly (welcomes beginners) | forBeginners (IS a beginner class) | NOT used (separate concept) |
+### Apply (requires AIDI Q1=C review gate + Toby personal authorization)
+
+```bash
+node scripts/runDataQualityBackfill.js --force-recompute --apply
+```
+
+**Governance reminder:** `--apply` is gated. Do NOT run without:
+1. AIDI review of dry-run output
+2. Toby personal go via Number2 relay
+3. Quinn clearance
+
+### `--force-recompute` semantics
+
+Per Option A preserve-gate (Toby 2026-04-18): always recompute classifier fields; `*Override` fields (forBeginnersOverride etc.) protect organizer intent. Self-heals stale values that earlier code runs may have written incorrectly.
+
+---
+
+## Common pitfalls
+
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| beginners welcome | beginner class | no partner needed |
-| no experience needed | beginner workshop | no partner necessary |
-| open to all levels | intro to tango | no partner required |
-| all levels welcome | fundamentals | |
-| beginner friendly | level 1 | |
-| first time dancers | absolute beginners | |
-| never danced | beginner/intermediate | |
-| new to tango | | |
+| "I thought I did a full pull, events are missing" | Running old version of sync script (pre-2026-04-18) that required `--include-events` | Pull latest; events default-ON |
+| TEST event count far below PROD | Date-filter flag stuck from a prior command | Remove filters; re-run with defaults |
+| Organizers exist but no events | `--skip-events` left in command | Remove flag; re-run |
+| Backup collections accumulating | Periodic cleanup skipped | See Housekeeping below |
+| Sanity check exits with `3` | Events didn't sync despite intent | Investigate; re-run explicitly |
 
 ---
 
-## Step 4: Verify
+## Housekeeping — drop stale backup collections
+
+Backups accumulate forever unless pruned. To list and drop:
 
 ```bash
-# Check travelWorthy filter
-curl -s "https://calendarbeaf-test.azurewebsites.net/api/events?appId=1&travelWorthy=true&limit=3" | \
-  node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
-  console.log('travelWorthy=true:', d.pagination.total); \
-  d.events.slice(0,3).forEach(e => console.log(' ', e.title, '|', e.travelWorthy));"
+# List all backup collections
+mongosh "$MONGODB_URI_TEST" --eval 'db.listCollections().toArray().filter(c=>c.name.includes("_backup_")).map(c=>c.name)'
 
-# Check beginnerFriendly filter
-curl -s "https://calendarbeaf-test.azurewebsites.net/api/events?appId=1&beginnerFriendly=true&limit=3" | \
-  node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
-  console.log('beginnerFriendly=true:', d.pagination.total);"
-
-# Check forBeginners filter
-curl -s "https://calendarbeaf-test.azurewebsites.net/api/events?appId=1&forBeginners=true&limit=3" | \
-  node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
-  console.log('forBeginners=true:', d.pagination.total);"
+# Drop a specific backup (careful — destructive)
+mongosh "$MONGODB_URI_TEST" --eval 'db.getCollection("events_backup_2026-04-18T19-23-41-013Z").drop()'
 ```
+
+Keep at least the most recent backup per collection for quick rollback. Drop anything older than 30 days routinely.
 
 ---
 
-## Cleanup (optional)
+## Hard rails
 
-Backup collections accumulate over time. To clean up old backups:
-
-```bash
-# List backup collections in TEST
-node -e "
-const { MongoClient } = require('mongodb');
-const s = require('./local.settings.json');
-(async () => {
-    const c = new MongoClient(s.Values.MONGODB_URI);
-    await c.connect();
-    const cols = await c.db().listCollections().toArray();
-    cols.filter(c => c.name.includes('_backup_')).forEach(c => console.log(c.name));
-    await c.close();
-})();
-"
-
-# Drop a specific backup (manual, one at a time)
-# mongosh "MONGODB_URI" --eval "db.events_backup_2026-04-17T03-46-11-353Z.drop()"
-```
+- PROD is READ-ONLY for this script
+- No PROD writes under any flag combination
+- PROD STAY-OUT per CALBEAF-110 Toby authorization posture (standing rule)
+- Sanity check alerts but does NOT roll back — writes have already happened when it runs
 
 ---
 
-## Notes
+## Change history
 
-- This procedure does NOT push code — it only syncs MongoDB data
-- TEST Azure Functions deployment is separate (GitHub Actions auto-deploys on push to TEST branch)
-- PROD backfill of classification fields is a separate decision requiring Toby approval
-- The keyword scan (step 3) is an operational pass, not automated in the API — new events get classification on create/update but NOT keyword scanning (that's organizer-set via checkbox)
+- **2026-04-18 (CALBEAF-110):** Events + userlogins default ON; `--skip-events`/`--skip-users` opt-out flags; post-sync sanity check; strict-threshold beginnerFriendly for ineligible categories; Option A preserve-gate (always recompute; override wins).
+- **2026-04-17:** Initial 3-step procedure.

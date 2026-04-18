@@ -61,9 +61,21 @@ const TRACKED_FIELDS = [
 ];
 
 function snapshot(event) {
+    // Only call toString() on non-primitive objects (ObjectId, Date, Buffer).
+    // Calling toString on booleans/strings/numbers corrupts the diff (e.g. bool true → "true").
+    // AIDI blocker 1 (2026-04-18): previous implementation caused false diffs on booleans + strings.
     const s = {};
     for (const f of TRACKED_FIELDS) {
-        s[f] = event[f] === undefined ? null : (event[f] && event[f].toString ? event[f].toString() : event[f]);
+        const v = event[f];
+        if (v === undefined || v === null) {
+            s[f] = null;
+        } else if (typeof v === 'object' && v.constructor && v.constructor.name === 'ObjectId') {
+            s[f] = v.toString();
+        } else if (v instanceof Date) {
+            s[f] = v.toISOString();
+        } else {
+            s[f] = v;  // primitives + nested objects (geolocation, etc.) compared via JSON.stringify downstream
+        }
     }
     return s;
 }

@@ -202,17 +202,21 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     // preservation was over-protective and created stale-value bugs (e.g. Practilonga
     // Caminito superset violation from earlier runs).
 
-    // --- Country denorm (always recompute; idempotent if masteredRegionId unchanged) ---
+    // --- Country denorm (AIDI blocker 2 fix 2026-04-18) ---
+    // Always recompute WHEN POSSIBLE (masteredRegionId present). When not possible
+    // (no region), preserve whatever pre-existing value exists — synced data from PROD
+    // may have valid country without a local region reference. Only initialize null when
+    // the field doesn't exist at all.
     if (eventDoc.masteredRegionId) {
         const { masteredCountryId, masteredCountryName } = await resolveCountry(db, eventDoc.masteredRegionId);
         eventDoc.masteredCountryId = masteredCountryId;
         eventDoc.masteredCountryName = masteredCountryName;
         report.actions.push({ field: 'masteredCountryId', source: 'computed', value: masteredCountryId });
     } else {
-        // No region → explicit null (don't leave stale value if the event lost its region)
-        eventDoc.masteredCountryId = null;
-        eventDoc.masteredCountryName = null;
-        report.skipped.push({ field: 'masteredCountryId', reason: 'no masteredRegionId' });
+        // No region — preserve existing country (don't destroy valid data from upstream sources)
+        if (eventDoc.masteredCountryId === undefined) eventDoc.masteredCountryId = null;
+        if (eventDoc.masteredCountryName === undefined) eventDoc.masteredCountryName = null;
+        report.skipped.push({ field: 'masteredCountryId', reason: 'no masteredRegionId (existing preserved)' });
     }
 
     // --- travelWorthy (always recompute; override wins) ---
@@ -331,6 +335,12 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
             eventDoc[f] = null;
         }
     }
+
+    // --- enrichmentStatus — pipeline ran to completion ---
+    // AIDI blocker 3 (2026-04-18): status wasn't being set by pipeline, so backfill saw
+    // 0 status changes. Now the pipeline explicitly marks 'complete' at successful end.
+    // Callers (Events_BulkEnrich.js) catch pipeline exceptions and set 'failed' externally.
+    eventDoc.enrichmentStatus = 'complete';
 
     return { event: eventDoc, report };
 }
