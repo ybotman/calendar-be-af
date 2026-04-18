@@ -263,11 +263,22 @@ describe('runDataQualityPipeline — venue resolution', () => {
         expect(report.actions.find(a => a.field === 'venueTimezone')).toBeDefined();
     });
 
-    test('no venueID → skipped', async () => {
+    test('no venueID → skipped with diagnostic value', async () => {
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const event = baseEvent({ venueID: null });
         const { report } = await runDataQualityPipeline(event, standardDb());
-        expect(report.skipped.find(s => s.field === 'venueResolution' && s.reason === 'no venueID')).toBeDefined();
+        const entry = report.skipped.find(s => s.field === 'venueResolution' && s.reason.startsWith('no venueID'));
+        expect(entry).toBeDefined();
+        expect(entry.reason).toContain('null');  // diagnostic — shows observed value
+    });
+
+    test('key-case typo (venueId vs venueID) → diagnostic note in skipped reason', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const event = baseEvent({ venueID: null });
+        event.venueId = new ObjectId().toString();  // typo: lowercase-d
+        const { report } = await runDataQualityPipeline(event, standardDb());
+        const entry = report.skipped.find(s => s.field === 'venueResolution');
+        expect(entry.reason).toMatch(/key-case mismatch/);
     });
 
     test('venueID does not match → skipped with reason', async () => {

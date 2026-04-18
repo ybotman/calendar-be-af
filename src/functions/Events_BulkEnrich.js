@@ -115,23 +115,16 @@ async function eventsBulkEnrichHandler(request, context) {
                     }
                 );
 
-                // Determine status
-                const hasFailedWarn = report.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
-                const status = hasFailedWarn ? 'needs_review' : 'enriched';
-                if (status === 'enriched') {
-                    enrichedCount++;
-                } else {
-                    failedCount++;
-                }
-
+                // Status = enriched when the pipeline completed successfully.
+                // Required-field WARN entries in report.skipped are informational per spec §4
+                // ("warn-only, never reject") — they do NOT flip status to needs_review.
+                // needs_review is reserved for pipeline exceptions (caught below).
+                enrichedCount++;
                 results.push({
                     index: i,
-                    status,
+                    status: 'enriched',
                     event: enriched,
                     report,
-                    ...(status === 'needs_review' && {
-                        error: 'validation: missing required field(s) — see report.skipped'
-                    })
                 });
             } catch (err) {
                 failedCount++;

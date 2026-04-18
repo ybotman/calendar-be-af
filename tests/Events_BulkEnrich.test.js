@@ -173,22 +173,27 @@ describe('Events_BulkEnrich endpoint', () => {
         expect(body.events[0].report.actions.length).toBeGreaterThan(0);
     });
 
-    test('partial failure — one valid, one missing required field → 200 with mixed status', async () => {
+    test('required-field WARN does NOT flip status (spec §4 warn-only, Quinn 2026-04-18 bugfix)', async () => {
+        // Per spec §4 + Quinn's investigation of Porter's danceus 100%-needs_review issue:
+        // missing required-field entries in report.skipped are informational WARNs.
+        // They do NOT trigger needs_review. needs_review is reserved for pipeline exceptions.
         const validEvent = baseEvent();
-        const invalidEvent = baseEvent();
-        delete invalidEvent.ownerOrganizerID;  // triggers required-field warn → needs_review
+        const warnEvent = baseEvent();
+        delete warnEvent.ownerOrganizerID;  // emits WARN in report.skipped, but status stays enriched
 
         const res = await handler(
-            mockRequest({ batchId: 'b2', events: [validEvent, invalidEvent] }),
+            mockRequest({ batchId: 'b2', events: [validEvent, warnEvent] }),
             mockContext()
         );
         expect(res.status).toBe(200);
         const body = JSON.parse(res.body);
-        expect(body.enrichedCount).toBe(1);
-        expect(body.failedCount).toBe(1);
+        expect(body.enrichedCount).toBe(2);  // both enriched — WARN doesn't demote
+        expect(body.failedCount).toBe(0);
         expect(body.events[0].status).toBe('enriched');
-        expect(body.events[1].status).toBe('needs_review');
-        expect(body.events[1].error).toMatch(/missing required field/);
+        expect(body.events[1].status).toBe('enriched');
+        // But the WARN is still surfaced in report.skipped for observability
+        const warnEntries = body.events[1].report.skipped.filter(s => (s.reason || '').startsWith('WARN: missing required field'));
+        expect(warnEntries.length).toBeGreaterThan(0);
     });
 
     test('dryRun option echoes back', async () => {
