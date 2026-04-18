@@ -15,6 +15,49 @@
 // --dry-run: default. --apply: requires Toby per-org reauth.
 // PROD URI guard: refuses unless --i-know-prod (never granted for this initiative).
 //
+// ─ MASTER DOC FIELD-SOURCING CONTRACT (AIDI Ask 1 + Quinn 2026-04-18 refinement) ──
+//
+// When a CONVERT or CONVERT_PARTIAL group becomes a master, the master doc's
+// fields derive deterministically from the core events (the subset that matched
+// the cadence, not outliers):
+//
+//   master.title              = most-common title among coreEvents; fallback = first-core if tied.
+//                               (Safest for partial-match groups; handles e.g. "WK1 - Foo"/"WK2 - Foo"
+//                                that normalize to same title but preserve raw diversity.)
+//   master.ownerOrganizerID   = assert-all-equal + inherit from first-core. Guaranteed by grouping-key
+//                               construction for user-authored events; assertion catches any bug.
+//   master.venueID            = require ALL core events share the same venueID.
+//                               If not — ABORT that group with explicit error; surfaces to AIDI/Quinn.
+//                               Do NOT silently split or pick one. (Quinn refinement: "don't silently split.")
+//   master.categoryFirstId    = most-common among coreEvents; fallback = first-core. Same handling as title.
+//   master.appId              = first-core (will be same across all core by grouping).
+//   master.isRepeating        = true.
+//   master.recurrenceRule     = inferred RRULE from cadence detection (from package).
+//   master.startDate          = DTSTART = earliest core startDate (from package output).
+//   master.endDate            = startDate + inherited duration. Duration = most-common
+//                               (endDate - startDate) among coreEvents; fallback = first-core's duration.
+//   master.isActive           = true (newly-created master defaults to active).
+//   master.isCanceled         = false (cancelled events stay as outliers, not folded into master).
+//   master.description/images/other content fields → inherited from most-recent core event
+//                               (handles field drift across the series; AIDI can override per-case).
+//   master.discoveredComments = "Created by SAS patch (Toby 2026-04-18); seriesDetectionSpec=<version>;
+//                                replaces <N> singletons"
+//
+// Each core event gets $set: { replacedByMaster: <master._id> }. Audit trail. No deletions.
+//
+// Outlier events (from CONVERT_PARTIAL) remain UNCHANGED — neither folded into master
+// nor flagged. They stay as independent singletons; Toby/AIDI may choose separate
+// handling later.
+//
+// ─ SAMPLE $SET OP SHAPE (AIDI Pre-Apply Ask 2) ────────────────────────────
+//
+// On the first --apply invocation, the tool logs the first generated update-op
+// before the bulkWrite fires, so AIDI can verify the audit-trail flag lands as
+// specified. Example output:
+//   [SAMPLE-SET-OP]
+//     filter:  { _id: ObjectId("684651c7df99a7ff192e3f3b") }
+//     update:  { $set: { replacedByMaster: ObjectId("<masterId>") } }
+//
 // Usage:
 //   node --experimental-strip-types scripts/runSeriesAsSingletonsPatch.js --org=UT --dry-run
 //   node --experimental-strip-types scripts/runSeriesAsSingletonsPatch.js --org-id=<id> --dry-run --output=/tmp/sas-ut.json
@@ -174,6 +217,7 @@ async function main() {
 
         if (group.cadence.cadence !== 'REVIEW') {
             // Clean cadence — all members convert to one master
+            const coreIds = group.uniqueMembers.map(m => m._id.toString());
             proposals.push({
                 title,
                 count,
@@ -185,11 +229,16 @@ async function main() {
                 sameDayDuplicates: group.sameDayDuplicates,
                 coreCount: group.uniqueMembers.length,
                 outlierCount: 0,
-                coreEventIds: group.uniqueMembers.map(m => m._id.toString()),
+                coreEventIds: coreIds,
                 outlierEventIds: [],
                 // DTSTART / UNTIL = observed bounds (AIDI Refinement 1: never fabricate)
                 dtstart: group.uniqueMembers[0].start_date_iso,
                 until: group.uniqueMembers[group.uniqueMembers.length - 1].start_date_iso,
+                // AIDI Pre-Apply Ask 2: sample $set op shape for audit-trail verification
+                sampleSingletonUpdate: {
+                    filter: { _id: `ObjectId("${coreIds[0]}")` },
+                    update: { $set: { replacedByMaster: `ObjectId("<newMasterId>")` } },
+                },
             });
         } else {
             // REVIEW — try sub-group re-detection
@@ -203,6 +252,7 @@ async function main() {
             );
             if (sub) {
                 const coreSorted = [...sub.coreEvents].sort((a, b) => new Date(a.start_date_iso) - new Date(b.start_date_iso));
+                const coreIds = sub.coreEvents.map(m => m._id.toString());
                 proposals.push({
                     title,
                     count,
@@ -214,11 +264,15 @@ async function main() {
                     sameDayDuplicates: group.sameDayDuplicates,
                     coreCount: sub.coreEvents.length,
                     outlierCount: sub.outlierEvents.length,
-                    coreEventIds: sub.coreEvents.map(m => m._id.toString()),
+                    coreEventIds: coreIds,
                     outlierEventIds: sub.outlierEvents.map(m => m._id.toString()),
                     dtstart: coreSorted[0].start_date_iso,
                     until: coreSorted[coreSorted.length - 1].start_date_iso,
                     reviewReason: `Original group REVIEW (${group.cadence.reviewReason}); sub-group re-detection found core subset.`,
+                    sampleSingletonUpdate: {
+                        filter: { _id: `ObjectId("${coreIds[0]}")` },
+                        update: { $set: { replacedByMaster: `ObjectId("<newMasterId>")` } },
+                    },
                 });
             } else {
                 // Stays REVIEW — algorithm cannot determine cadence; human review required
