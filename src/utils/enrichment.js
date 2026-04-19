@@ -18,7 +18,7 @@ const { resolveCountry, computeTravelWorthy, applyOverride, loadCategoryCache } 
 // threshold, country derivation chain, DQ warning scope, etc.). Pairs with
 // SERIES_DETECTION_SPEC_VERSION from series-detection package — lets operators
 // grep logs + artifact metadata to detect drift between tool runs.
-const ENRICHMENT_SPEC_VERSION = '1.2.0';  // 1.2.0: event.masteredCityId denorm from venue-chain (CALBEAF-117) | 1.1.0: country venue-chain fallback (CALBEAF-113)
+const ENRICHMENT_SPEC_VERSION = '1.3.0';  // 1.3.0: division-carries-country bypass for continent-regions (CALBEAF-118) | 1.2.0: event.masteredCityId denorm from venue-chain (CALBEAF-117) | 1.1.0: country venue-chain fallback (CALBEAF-113)
 
 const TANGO_APP_IDS = new Set(['1']);
 // Categories where the forBeginners classifier can return TRUE. All other categories
@@ -465,9 +465,35 @@ async function chainFromCity(db, cityId) {
     const cityObjId = typeof cityId === 'string' ? new ObjectId(cityId) : cityId;
     const city = await db.collection('masteredcities').findOne({ _id: cityObjId }, { projection: { masteredDivisionId: 1 } });
     if (!city || !city.masteredDivisionId) return { masteredCountryId: null, masteredCountryName: null };
-    const division = await db.collection('mastereddivisions').findOne({ _id: city.masteredDivisionId }, { projection: { masteredRegionId: 1 } });
-    if (!division || !division.masteredRegionId) return { masteredCountryId: null, masteredCountryName: null };
-    return await resolveCountry(db, division.masteredRegionId);
+    const division = await db.collection('mastereddivisions').findOne(
+        { _id: city.masteredDivisionId },
+        { projection: { masteredRegionId: 1, masteredCountryId: 1 } }
+    );
+    if (!division) return { masteredCountryId: null, masteredCountryName: null };
+
+    // Try region→country chain first (US hierarchy pattern)
+    if (division.masteredRegionId) {
+        const result = await resolveCountry(db, division.masteredRegionId);
+        if (result.masteredCountryId) return result;
+    }
+
+    // CALBEAF-118 (A1 option d): division-carries-country bypass. Fires when
+    // region→country chain yielded null (continent-level region like "Europe").
+    // No fallback — division.masteredCountryId is an explicit reference.
+    if (division.masteredCountryId) {
+        const country = await db.collection('masteredcountries').findOne(
+            { _id: division.masteredCountryId },
+            { projection: { countryName: 1 } }
+        );
+        if (country) {
+            return {
+                masteredCountryId: division.masteredCountryId,
+                masteredCountryName: country.countryName || null,
+            };
+        }
+    }
+
+    return { masteredCountryId: null, masteredCountryName: null };
 }
 
 module.exports = {

@@ -168,4 +168,81 @@ describe('resolveMasteredCity — contract tests', () => {
         const result = await resolveMasteredCity({ db, geolocation: { type: 'Point', coordinates: [-71, 42] }, cityText: null });
         expect(result.fields.masteringTextConflict).toBe(false);
     });
+
+    test('CALBEAF-118 — division-carries-country bypass fires when region has no country', async () => {
+        // Continent-region case: region exists but has no masteredCountryId (e.g., "Europe").
+        // Division DOES have masteredCountryId set directly (e.g., Italy → Italy country).
+        // Bypass should pick up country from division and write full chain.
+        const db = makeMockDb({
+            nearest: { _id: 'rome-oid', cityName: 'Rome', distance: 7_962 },  // 7.96km AUTO_HIGH
+            city: { _id: 'rome-oid', cityName: 'Rome', masteredDivisionId: 'italy-div-oid' },
+            division: {
+                _id: 'italy-div-oid', divisionName: 'Italy',
+                masteredRegionId: 'europe-region-oid',
+                masteredCountryId: 'italy-country-oid',  // ← the bypass source
+            },
+            region: { _id: 'europe-region-oid', regionName: 'Europe' /* NO masteredCountryId */ },
+            country: { _id: 'italy-country-oid', countryName: 'Italy' },
+        });
+        const result = await resolveMasteredCity({
+            db,
+            geolocation: { type: 'Point', coordinates: [12.4, 41.9] },
+            cityText: 'Rome',
+        });
+
+        expect(result.bucket).toBe('AUTO_HIGH');
+        expect(result.fields.masteredCityName).toBe('Rome');
+        expect(result.fields.masteredDivisionName).toBe('Italy');
+        expect(result.fields.masteredRegionName).toBe('Europe');
+        // Bypass path delivers country from division despite region having no country link
+        expect(result.fields.masteredCountryId).toBe('italy-country-oid');
+        expect(result.fields.masteredCountryName).toBe('Italy');
+    });
+
+    test('CALBEAF-118 — region-has-country takes precedence over division-has-country', async () => {
+        // US hierarchy case: region.masteredCountryId exists AND division also has it.
+        // Region takes precedence (preserves existing US behavior; bypass only fills gaps).
+        const db = makeMockDb({
+            nearest: { _id: 'boston-oid', cityName: 'Boston', distance: 3_000 },
+            city: { _id: 'boston-oid', cityName: 'Boston', masteredDivisionId: 'ma-div-oid' },
+            division: {
+                _id: 'ma-div-oid', divisionName: 'MA',
+                masteredRegionId: 'ne-region-oid',
+                masteredCountryId: 'should-not-use-oid', // ignored because region carries country
+            },
+            region: {
+                _id: 'ne-region-oid', regionName: 'Northeast',
+                masteredCountryId: 'usa-country-oid', // canonical path wins
+            },
+            country: { _id: 'usa-country-oid', countryName: 'United States' },
+        });
+        const result = await resolveMasteredCity({
+            db,
+            geolocation: { type: 'Point', coordinates: [-71, 42] },
+            cityText: 'Boston',
+        });
+        expect(result.fields.masteredCountryId).toBe('usa-country-oid');
+        expect(result.fields.masteredCountryName).toBe('United States');
+    });
+
+    test('CALBEAF-118 — no country resolves when neither region nor division carry country', async () => {
+        // Edge case: region and division BOTH lack masteredCountryId. Chain correctly terminates
+        // with null country per no-fallback rule (do not fabricate).
+        const db = makeMockDb({
+            nearest: { _id: 'unknown-city-oid', cityName: 'SomeCity', distance: 10_000 },
+            city: { _id: 'unknown-city-oid', cityName: 'SomeCity', masteredDivisionId: 'orphan-div-oid' },
+            division: { _id: 'orphan-div-oid', divisionName: 'SomewhereDivision', masteredRegionId: 'orphan-region-oid' },
+            region: { _id: 'orphan-region-oid', regionName: 'SomewhereRegion' /* no country */ },
+            country: null,
+        });
+        const result = await resolveMasteredCity({
+            db,
+            geolocation: { type: 'Point', coordinates: [0, 0] },
+            cityText: null,
+        });
+        expect(result.bucket).toBe('AUTO_HIGH');
+        expect(result.fields.masteredCityName).toBe('SomeCity');
+        expect(result.fields.masteredCountryId).toBeUndefined();
+        expect(result.fields.masteredCountryName).toBeUndefined();
+    });
 });
