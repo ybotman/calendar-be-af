@@ -14,6 +14,12 @@
 const { ObjectId } = require('mongodb');
 const { resolveCountry, computeTravelWorthy, applyOverride, loadCategoryCache } = require('./eventClassification');
 
+// Semantic-rule version for the pipeline. Bumped on any rule change (classifier
+// threshold, country derivation chain, DQ warning scope, etc.). Pairs with
+// SERIES_DETECTION_SPEC_VERSION from series-detection package — lets operators
+// grep logs + artifact metadata to detect drift between tool runs.
+const ENRICHMENT_SPEC_VERSION = '1.1.0';  // 1.1.0: added country venue-chain fallback (CALBEAF-113)
+
 const TANGO_APP_IDS = new Set(['1']);
 // Categories where the forBeginners classifier can return TRUE. All other categories
 // force forBeginners=false via category gate. (Toby 2026-04-18 rule refinement:
@@ -202,21 +208,39 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     // preservation was over-protective and created stale-value bugs (e.g. Practilonga
     // Caminito superset violation from earlier runs).
 
-    // --- Country denorm (AIDI blocker 2 fix 2026-04-18) ---
-    // Always recompute WHEN POSSIBLE (masteredRegionId present). When not possible
-    // (no region), preserve whatever pre-existing value exists — synced data from PROD
-    // may have valid country without a local region reference. Only initialize null when
-    // the field doesn't exist at all.
-    if (eventDoc.masteredRegionId) {
+    // --- Country denorm — 5-priority derivation chain (CALBEAF-113 Layer 2) ---
+    // Chain:
+    //   1. masteredCountryId already set on event → preserve (never overwrite correct data)
+    //   2. masteredRegionId set → region → country chain (existing, standard case)
+    //   3. masteredCityId set → city → division → region → country chain
+    //   4. venueID set → venue.masteredCityId → city → ... → country chain (99% fallback for discovered events)
+    //   5. None → null (no source data)
+    //
+    // This only RAISES coverage — a correctly-set country at priority 1 is always preserved.
+    // New fallback (priority 4) addresses the 83% of discovered events that have venueID
+    // but no masteredRegionId, per Toby FTP-then-FTData directive 2026-04-19 00:18Z.
+    if (eventDoc.masteredCountryId) {
+        // Priority 1: already set, preserve
+        report.skipped.push({ field: 'masteredCountryId', reason: 'already set' });
+    } else if (eventDoc.masteredRegionId) {
+        // Priority 2: derive from region
         const { masteredCountryId, masteredCountryName } = await resolveCountry(db, eventDoc.masteredRegionId);
         eventDoc.masteredCountryId = masteredCountryId;
         eventDoc.masteredCountryName = masteredCountryName;
-        report.actions.push({ field: 'masteredCountryId', source: 'computed', value: masteredCountryId });
+        report.actions.push({ field: 'masteredCountryId', source: 'region-chain', value: masteredCountryId });
     } else {
-        // No region — preserve existing country (don't destroy valid data from upstream sources)
-        if (eventDoc.masteredCountryId === undefined) eventDoc.masteredCountryId = null;
-        if (eventDoc.masteredCountryName === undefined) eventDoc.masteredCountryName = null;
-        report.skipped.push({ field: 'masteredCountryId', reason: 'no masteredRegionId (existing preserved)' });
+        // Priority 3/4: try city chain or venue chain
+        const chainResult = await resolveCountryViaChain(db, eventDoc);
+        if (chainResult.masteredCountryId) {
+            eventDoc.masteredCountryId = chainResult.masteredCountryId;
+            eventDoc.masteredCountryName = chainResult.masteredCountryName;
+            report.actions.push({ field: 'masteredCountryId', source: chainResult.source, value: chainResult.masteredCountryId });
+        } else {
+            // Priority 5: preserve existing (shouldn't exist since we're in the !masteredCountryId branch)
+            if (eventDoc.masteredCountryId === undefined) eventDoc.masteredCountryId = null;
+            if (eventDoc.masteredCountryName === undefined) eventDoc.masteredCountryName = null;
+            report.skipped.push({ field: 'masteredCountryId', reason: `no derivation source (${chainResult.reason})` });
+        }
     }
 
     // --- travelWorthy (always recompute; override wins) ---
@@ -351,13 +375,64 @@ async function resolveCategoryName(db, categoryFirstId, appId) {
     return idToName.get(categoryFirstId.toString()) || null;
 }
 
+/**
+ * Country-derivation fallback chain (CALBEAF-113 Layer 2).
+ * Tries to resolve masteredCountryId/Name when the event has no masteredRegionId.
+ * Priority:
+ *   3. eventDoc.masteredCityId → city.masteredDivisionId → division.masteredRegionId → region.masteredCountryId
+ *   4. eventDoc.venueID → venue.masteredCityId → same chain as #3
+ *
+ * Returns { masteredCountryId, masteredCountryName, source, reason }.
+ * source: 'city-chain' | 'venue-chain' | null
+ * reason: present when no country could be derived.
+ */
+async function resolveCountryViaChain(db, eventDoc) {
+    // Priority 3: event has masteredCityId
+    if (eventDoc.masteredCityId) {
+        const result = await chainFromCity(db, eventDoc.masteredCityId);
+        if (result.masteredCountryId) return { ...result, source: 'city-chain' };
+    }
+
+    // Priority 4: event has venueID
+    if (eventDoc.venueID) {
+        try {
+            const venueObjId = typeof eventDoc.venueID === 'string' ? new ObjectId(eventDoc.venueID) : eventDoc.venueID;
+            const venue = await db.collection('venues').findOne(
+                { _id: venueObjId },
+                { projection: { masteredCityId: 1 } }
+            );
+            if (venue && venue.masteredCityId) {
+                const result = await chainFromCity(db, venue.masteredCityId);
+                if (result.masteredCountryId) return { ...result, source: 'venue-chain' };
+                return { masteredCountryId: null, masteredCountryName: null, source: null, reason: 'venue->city resolved but city chain broken' };
+            }
+            return { masteredCountryId: null, masteredCountryName: null, source: null, reason: venue ? 'venue has no masteredCityId' : 'venueID not found in venues' };
+        } catch (err) {
+            return { masteredCountryId: null, masteredCountryName: null, source: null, reason: `venue lookup error: ${err.message}` };
+        }
+    }
+
+    return { masteredCountryId: null, masteredCountryName: null, source: null, reason: 'no masteredCityId and no venueID' };
+}
+
+async function chainFromCity(db, cityId) {
+    const cityObjId = typeof cityId === 'string' ? new ObjectId(cityId) : cityId;
+    const city = await db.collection('masteredcities').findOne({ _id: cityObjId }, { projection: { masteredDivisionId: 1 } });
+    if (!city || !city.masteredDivisionId) return { masteredCountryId: null, masteredCountryName: null };
+    const division = await db.collection('mastereddivisions').findOne({ _id: city.masteredDivisionId }, { projection: { masteredRegionId: 1 } });
+    if (!division || !division.masteredRegionId) return { masteredCountryId: null, masteredCountryName: null };
+    return await resolveCountry(db, division.masteredRegionId);
+}
+
 module.exports = {
     classifyBeginner,
     matchesFriendlyOnlyStrict,
     runDataQualityPipeline,
+    resolveCountryViaChain,
     normalizeText,
     TANGO_APP_IDS,
     BEGINNER_ELIGIBLE_CATEGORIES,
+    ENRICHMENT_SPEC_VERSION,
     // Re-export for tests
     TITLE_NEG, TITLE_FRIENDLY_ONLY, TITLE_POS_SPECIFIC, TITLE_MIXED_PATTERNS, DESC_FOR_BEG, DESC_FRIENDLY_ONLY,
 };
