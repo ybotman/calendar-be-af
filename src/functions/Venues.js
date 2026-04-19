@@ -2,6 +2,7 @@ const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { getTimezoneForVenue } = require('../utils/timezoneMapping');
+const { resolveMasteredCity } = require('../utils/venuesAutoMaster');
 
 /**
  * GET /api/venues
@@ -420,6 +421,29 @@ async function venuesCreateHandler(request, context) {
         }
 
         // Create venue document
+        const geolocation = {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+        };
+
+        // CALBEAF-116 Phase 1b — inline Venues_AutoMaster hook.
+        // If FE pre-enriched masteredCityId, respect that (FE-wins contract).
+        // If masteredCityId is null AND geolocation is valid, auto-resolve via shared helper.
+        // Result: contract is "either FE pre-enriches OR BE auto-resolves — never persist
+        // mastered-null when geo is valid."
+        let autoMasterFields = {};
+        if (!body.masteredCityId) {
+            try {
+                const result = await resolveMasteredCity({ db, geolocation, cityText: body.city });
+                if (result) {
+                    autoMasterFields = { ...result.fields, masteringAppliedAt: new Date() };
+                    context.log(`[VENUE CREATE] auto-mastered bucket=${result.bucket} distance=${result.log.distanceKm}km nearest="${result.log.nearestCityName}"`);
+                }
+            } catch (err) {
+                context.log(`[VENUE CREATE] auto-master error (non-fatal): ${err.message}`);
+            }
+        }
+
         const newVenue = {
             appId,
             name: body.name,
@@ -434,14 +458,20 @@ async function venuesCreateHandler(request, context) {
             comments: body.comments || '',
             latitude,
             longitude,
-            geolocation: {
-                type: 'Point',
-                coordinates: [longitude, latitude]
-            },
-            masteredCityId: body.masteredCityId ? new ObjectId(body.masteredCityId) : null,
-            masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : null,
-            masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : null,
-            masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : null,
+            geolocation,
+            masteredCityId: body.masteredCityId ? new ObjectId(body.masteredCityId) : (autoMasterFields.masteredCityId || null),
+            masteredCityName: body.masteredCityId ? null : (autoMasterFields.masteredCityName || null),
+            masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : (autoMasterFields.masteredDivisionId || null),
+            masteredDivisionName: body.masteredDivisionId ? null : (autoMasterFields.masteredDivisionName || null),
+            masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : (autoMasterFields.masteredRegionId || null),
+            masteredRegionName: body.masteredRegionId ? null : (autoMasterFields.masteredRegionName || null),
+            masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : (autoMasterFields.masteredCountryId || null),
+            masteredCountryName: body.masteredCountryId ? null : (autoMasterFields.masteredCountryName || null),
+            // Audit fields from auto-master (if helper ran)
+            masteringDistanceKm: autoMasterFields.masteringDistanceKm !== undefined ? autoMasterFields.masteringDistanceKm : null,
+            masteringTextConflict: autoMasterFields.masteringTextConflict || false,
+            masteringStatus: autoMasterFields.masteringStatus || null,
+            masteringAppliedAt: autoMasterFields.masteringAppliedAt || null,
             timezone: body.timezone || getTimezoneForVenue({ city: body.city, state: body.state, country: body.country || 'US' }),
             country: body.country || 'US',
             isActive: body.isActive !== undefined ? body.isActive : true,
