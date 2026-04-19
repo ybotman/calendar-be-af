@@ -121,7 +121,9 @@ describe('DQ_PeriodicChecker', () => {
         expect(op.update.$set.beginnerFriendly).toBe(true);
     });
 
-    test('candidate missing required field → enrichmentStatus=failed, still updated', async () => {
+    test('candidate missing required field → enrichmentStatus=complete (WARN-only per spec §4, Quinn 2026-04-18)', async () => {
+        // Per CALBEAF-110 bugfix: required-field WARN entries are informational.
+        // They do NOT flip status to 'failed'. status='complete' unless pipeline throws.
         const ev = candidateEvent();
         delete ev.ownerOrganizerID;
         mockDbHolder.db = makeMockDb({ events: [ev], ...standardLookups });
@@ -129,7 +131,7 @@ describe('DQ_PeriodicChecker', () => {
         await dqPeriodicCheckerHandler({ isPastDue: false }, ctx);
         expect(mockDbHolder.lastBulkOps).not.toBeNull();
         const op = mockDbHolder.lastBulkOps[0].updateOne;
-        expect(op.update.$set.enrichmentStatus).toBe('failed');
+        expect(op.update.$set.enrichmentStatus).toBe('complete');
     });
 
     test('row already complete with all fields set → no update queued', async () => {

@@ -205,23 +205,28 @@ describe('Events_BulkEnrich endpoint', () => {
         expect(body.dryRun).toBe(true);
     });
 
-    test('forceRecompute passes through to pipeline (re-enriches already-set fields)', async () => {
-        // Pre-set forBeginners on the event
+    test('Option A always-recompute — pre-existing false values get refreshed from rules (Toby 2026-04-18)', async () => {
+        // Pre-D behavior: preserve-gate kept pre-existing false values.
+        // Option A: always recompute; override fields (forBeginnersOverride) protect
+        // organizer intent. Without an override, stale values are refreshed.
         const event = baseEvent({ forBeginners: false, beginnerFriendly: false });
 
-        // Without forceRecompute — preserved
-        const res1 = await handler(
+        const res = await handler(
             mockRequest({ batchId: 'b4', events: [event] }),
             mockContext()
         );
-        expect(JSON.parse(res1.body).events[0].event.forBeginners).toBe(false);
+        // Title "Beginner Tango Series" + no override → classifier hits positive → forBeg=true
+        expect(JSON.parse(res.body).events[0].event.forBeginners).toBe(true);
+    });
 
-        // With forceRecompute — re-classified
-        const res2 = await handler(
-            mockRequest({ batchId: 'b5', events: [event], options: { forceRecompute: true } }),
+    test('forBeginnersOverride=false beats pre-existing true under Option A (organizer intent)', async () => {
+        const event = baseEvent({ forBeginners: true, beginnerFriendly: true, forBeginnersOverride: false });
+        const res = await handler(
+            mockRequest({ batchId: 'b4b', events: [event] }),
             mockContext()
         );
-        expect(JSON.parse(res2.body).events[0].event.forBeginners).toBe(true);
+        // Override wins even when rule says true
+        expect(JSON.parse(res.body).events[0].event.forBeginners).toBe(false);
     });
 
     test('response includes batchId echo for observability', async () => {

@@ -110,9 +110,10 @@ async function dqPeriodicCheckerHandler(myTimer, context) {
                     venueTimezone: updated.venueTimezone,
                 });
 
-                // Determine new status
-                const hasFailedWarn = report.skipped.some(s => s.reason && s.reason.startsWith('WARN: missing required field'));
-                const newStatus = hasFailedWarn ? 'failed' : 'complete';
+                // Per CALBEAF-110 bugfix (Quinn 2026-04-18): WARN-required-field entries are
+                // informational per spec §4 "warn-only" — they do NOT flip status to 'failed'.
+                // status='complete' unless pipeline throws (caught below).
+                const newStatus = 'complete';
 
                 if (before !== after || event.enrichmentStatus !== newStatus) {
                     bulkOps.push({

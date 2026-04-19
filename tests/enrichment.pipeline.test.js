@@ -137,13 +137,27 @@ describe('runDataQualityPipeline — category gate', () => {
         expect(event.forBeginners).toBe(true);
     });
 
-    test('Festival category → classifier runs (Beginner Festival case)', async () => {
+    test('Festival category → forBeg hard-false (Toby 2026-04-18 rule: Festival ineligible)', async () => {
+        // Even "Free Beginner Tango Festival" returns forBeg=false under new rule.
+        // friendly can still be true if an explicit friendly-only pattern matches (e.g. "All Levels")
+        // but a plain "Beginner" title is not a friendly-only signal → friendly=false here.
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const { event } = await runDataQualityPipeline(
             baseEvent({ categoryFirstId: FESTIVAL_ID, title: 'Free Beginner Tango Festival' }),
             standardDb()
         );
-        expect(event.forBeginners).toBe(true);
+        expect(event.forBeginners).toBe(false);  // category gate
+        expect(event.beginnerFriendly).toBe(false);  // strict-threshold: "Beginner" alone isn't friendly-only
+    });
+
+    test('Festival with explicit All-Levels in title → friendly=true (strict threshold hit)', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const { event } = await runDataQualityPipeline(
+            baseEvent({ categoryFirstId: FESTIVAL_ID, title: 'Boston Tango Festival — All Levels Welcome' }),
+            standardDb()
+        );
+        expect(event.forBeginners).toBe(false);
+        expect(event.beginnerFriendly).toBe(true);  // "All Levels" is §1b friendly-only signal
     });
 
     test('Practica category → forced false (category gate)', async () => {
@@ -231,7 +245,9 @@ describe('runDataQualityPipeline — country denorm', () => {
         expect(report.actions.find(a => a.field === 'masteredCountryId')).toBeDefined();
     });
 
-    test('already-set masteredCountryId → preserved (skipped)', async () => {
+    test('already-set masteredCountryId → preserved (priority 1, CALBEAF-113)', async () => {
+        // CALBEAF-113 5-priority chain: priority 1 (already-set country) preserves.
+        // Pipeline never overwrites correctly-set country data.
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const customCountryId = new ObjectId();
         const event = baseEvent({ masteredCountryId: customCountryId, masteredCountryName: 'Custom' });
@@ -241,11 +257,85 @@ describe('runDataQualityPipeline — country denorm', () => {
         expect(report.skipped.find(s => s.field === 'masteredCountryId' && s.reason === 'already set')).toBeDefined();
     });
 
-    test('no masteredRegionId → skipped with reason', async () => {
+    test('no region + no derivation source → skipped with chain-failure reason (CALBEAF-113)', async () => {
+        // With CALBEAF-113 5-priority chain, when no region AND venue chain can't resolve,
+        // the skipped reason describes why chain failed (not just "no masteredRegionId").
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
         const event = baseEvent({ masteredRegionId: null, masteredCountryId: null });
+        // Venue exists in standardDb but has no masteredCityId → chain fails at that level
         const { report } = await runDataQualityPipeline(event, standardDb());
-        expect(report.skipped.find(s => s.field === 'masteredCountryId' && s.reason === 'no masteredRegionId')).toBeDefined();
+        const entry = report.skipped.find(s => s.field === 'masteredCountryId');
+        expect(entry).toBeDefined();
+        expect(entry.reason).toMatch(/no derivation source/);
+    });
+
+    test('CALBEAF-113 Priority 4 venue-chain fallback → country resolved from venue.masteredCityId', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        // Build a db mock where the venue has masteredCityId → city has masteredDivisionId → division has masteredRegionId → region has masteredCountryId
+        const CITY_ID = new ObjectId();
+        const DIV_ID = new ObjectId();
+        const venueDocs = [{ _id: VENUE_ID, masteredCityId: CITY_ID, geolocation: { type: 'Point', coordinates: [-71.1, 42.4] }, masteredCityName: 'Cambridge', timezone: 'America/New_York' }];
+        const cityDocs = [{ _id: CITY_ID, cityName: 'Cambridge', masteredDivisionId: DIV_ID }];
+        const divDocs = [{ _id: DIV_ID, masteredRegionId: REGION_ID }];
+        const regionDocs = [{ _id: REGION_ID, masteredCountryId: COUNTRY_ID }];
+        const countryDocs = [{ _id: COUNTRY_ID, countryName: 'United States' }];
+        const chainDb = makeMockDb({
+            categories: STANDARD_CATEGORIES,
+            regions: regionDocs,
+            countries: countryDocs,
+            venues: venueDocs,
+        });
+        // Add masteredcities + mastereddivisions to db mock (not in original factory)
+        const originalCollection = chainDb.collection;
+        chainDb.collection = (name) => {
+            if (name === 'masteredcities') return { find: () => ({ toArray: async () => cityDocs, project: () => ({ toArray: async () => cityDocs }) }), findOne: async (q) => cityDocs.find(d => d._id.toString() === q._id.toString()) || null };
+            if (name === 'mastereddivisions') return { find: () => ({ toArray: async () => divDocs }), findOne: async (q) => divDocs.find(d => d._id.toString() === q._id.toString()) || null };
+            return originalCollection(name);
+        };
+        const event = baseEvent({ masteredRegionId: null, masteredCountryId: null, masteredCityId: null });
+        // venueID is present (from baseEvent); venue has masteredCityId → chain resolves
+        const { event: enriched, report } = await runDataQualityPipeline(event, chainDb);
+        expect(enriched.masteredCountryId).toBeDefined();
+        expect(enriched.masteredCountryId.toString()).toBe(COUNTRY_ID.toString());
+        expect(enriched.masteredCountryName).toBe('United States');
+        // Post-CALBEAF-117: city-denorm block sets event.masteredCityId first (from venue),
+        // then country block falls through Priority 3 (city-chain) rather than Priority 4.
+        expect(enriched.masteredCityId.toString()).toBe(CITY_ID.toString());
+        expect(enriched.masteredCityName).toBe('Cambridge');
+        expect(report.actions.find(a => a.field === 'masteredCityId' && a.source === 'venue-denorm')).toBeDefined();
+        expect(report.actions.find(a => a.field === 'masteredCountryId' && a.source === 'city-chain')).toBeDefined();
+    });
+
+    test('CALBEAF-117 city preserve-gate: event.masteredCityId already set → preserved', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const PRESET_CITY = new ObjectId();
+        const venueDocs = [{ _id: VENUE_ID, masteredCityId: new ObjectId(), geolocation: { type: 'Point', coordinates: [0, 0] } }];
+        const cityDocs = [{ _id: PRESET_CITY, cityName: 'Preset City' }];
+        const chainDb = makeMockDb({ categories: STANDARD_CATEGORIES, regions: [], countries: [], venues: venueDocs });
+        const originalCollection = chainDb.collection;
+        chainDb.collection = (name) => {
+            if (name === 'masteredcities') return { findOne: async (q) => cityDocs.find(d => d._id.toString() === q._id.toString()) || null, find: () => ({ toArray: async () => cityDocs }) };
+            if (name === 'mastereddivisions') return { find: () => ({ toArray: async () => [] }), findOne: async () => null };
+            return originalCollection(name);
+        };
+        const event = baseEvent({ masteredCityId: PRESET_CITY, masteredCityName: 'Preset City', masteredRegionId: null, masteredCountryId: null });
+        const { event: enriched, report } = await runDataQualityPipeline(event, chainDb);
+        expect(enriched.masteredCityId.toString()).toBe(PRESET_CITY.toString());
+        expect(report.skipped.find(s => s.field === 'masteredCityId' && s.reason.includes('already set'))).toBeDefined();
+    });
+
+    test('no masteredRegionId but existing country — preserved, not nulled (AIDI blocker 2)', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const preservedId = new ObjectId();
+        const event = baseEvent({
+            masteredRegionId: null,
+            masteredCountryId: preservedId,
+            masteredCountryName: 'PreservedCountry'
+        });
+        const { event: enriched } = await runDataQualityPipeline(event, standardDb());
+        // Preserved — don't destroy valid upstream data when we can't recompute
+        expect(enriched.masteredCountryId.toString()).toBe(preservedId.toString());
+        expect(enriched.masteredCountryName).toBe('PreservedCountry');
     });
 });
 
