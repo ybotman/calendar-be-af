@@ -173,12 +173,12 @@ async function main() {
     }
     console.log(`Target organizer: ${orgName}  (_id: ${orgId})`);
 
-    // Pull all non-recurring events for this org
+    // Pull all non-recurring events for this org (fields needed for master doc per AIDI contract)
     const events = await db.collection('events').find({
         appId: '1',
         ownerOrganizerID: orgId,
         isRepeating: { $ne: true },
-    }).project({ _id: 1, title: 1, startDate: 1, categoryFirst: 1, venueID: 1 }).toArray();
+    }).toArray();  // full docs — master doc inherits all fields from first-core, overwrites specific ones per contract
 
     console.log(`Found ${events.length} non-recurring events for ${orgName}\n`);
 
@@ -363,8 +363,192 @@ async function main() {
     if (args.dryRun) {
         console.log('\nDRY-RUN — no writes. Re-run with --apply after AIDI Q1=C + Toby reauth.');
     } else {
-        console.error('\nAPPLY path not yet implemented (stubbed awaiting AIDI + Toby sign-off on dry-run artifact).');
-        process.exit(3);
+        // ─── --apply path ─────────────────────────────────────────────────────────
+        // Authorized Toby 2026-04-18 23:57Z (UT-only this run). Field-sourcing per
+        // AIDI-approved contract in file header.
+
+        // Toby Series 1 override: REVIEW group with Tue/Thu drop-in title →
+        // CONVERT with FREQ=WEEKLY;BYDAY=TU,TH covering all 17 events.
+        if (orgName && /Ultimate Tango/i.test(orgName)) {
+            for (const p of proposals) {
+                if (p.action === 'REVIEW' && /Tuesday.*Thursday/i.test(p.title || '')) {
+                    const byId = new Map(events.map(e => [e._id.toString(), e]));
+                    const ids = p.eventIds;
+                    const ev = ids.map(id => byId.get(id)).filter(Boolean);
+                    const dates = ev.map(e => new Date(e.startDate)).sort((a, b) => a - b);
+                    p.action = 'CONVERT';
+                    p.confidence = 'HIGH-TOBY-OVERRIDE';
+                    p.cadence = 'WEEKLY';
+                    p.rrule = 'FREQ=WEEKLY;BYDAY=TU,TH';
+                    p.coreCount = ev.length;
+                    p.outlierCount = 0;
+                    p.coreEventIds = ids;
+                    p.outlierEventIds = [];
+                    p.dtstart = dates[0].toISOString();
+                    p.until = dates[dates.length - 1].toISOString();
+                    p.note = 'Toby 2026-04-18 23:57Z: Series 1 REVIEW resolved → option (a) one combined master BYDAY=TU,TH';
+                    console.log(`\n[TOBY OVERRIDE] Series 1 promoted REVIEW→CONVERT with BYDAY=TU,TH covering ${ev.length} events.`);
+                    break;
+                }
+            }
+        }
+
+        const byId = new Map(events.map(e => [e._id.toString(), e]));
+        const applyResults = {
+            mastersCreated: [],
+            singletonsFlaggedTotal: 0,
+            outliersPreservedTotal: 0,
+            groupsAborted: [],
+        };
+        let firstSampleOpLogged = false;
+
+        for (const p of proposals) {
+            if (p.action !== 'CONVERT' && p.action !== 'CONVERT_PARTIAL') continue;
+
+            const coreEvents = p.coreEventIds.map(id => byId.get(id)).filter(Boolean);
+            if (coreEvents.length !== p.coreEventIds.length) {
+                applyResults.groupsAborted.push({ title: p.title, error: 'core events missing from DB' });
+                continue;
+            }
+
+            // Assert venueID all-equal (AIDI field-sourcing: ABORT on mismatch)
+            const venueIds = new Set(coreEvents.map(e => e.venueID ? e.venueID.toString() : 'null'));
+            if (venueIds.size > 1) {
+                applyResults.groupsAborted.push({
+                    title: p.title,
+                    error: `venueID mismatch across core (${venueIds.size} distinct); ABORT per contract — surface to AIDI/Quinn`,
+                });
+                continue;
+            }
+
+            // Most-common title/category
+            const tc = {}; coreEvents.forEach(e => { tc[e.title] = (tc[e.title] || 0) + 1; });
+            const commonTitle = Object.entries(tc).sort((a, b) => b[1] - a[1])[0][0];
+            const cc = {}; coreEvents.forEach(e => { const k = e.categoryFirstId ? e.categoryFirstId.toString() : 'null'; cc[k] = (cc[k] || 0) + 1; });
+            const commonCatStr = Object.entries(cc).sort((a, b) => b[1] - a[1])[0][0];
+            const commonCategoryFirstId = commonCatStr !== 'null' ? new ObjectId(commonCatStr) : null;
+
+            // most-common duration for endDate
+            const durs = coreEvents.map(e => {
+                if (!e.endDate || !e.startDate) return null;
+                return new Date(e.endDate).getTime() - new Date(e.startDate).getTime();
+            }).filter(d => d !== null);
+            const dc = {}; durs.forEach(d => { dc[d] = (dc[d] || 0) + 1; });
+            const commonDur = durs.length ? parseInt(Object.entries(dc).sort((a, b) => b[1] - a[1])[0][0], 10) : 3600000;
+
+            // Most-recent core for description/images
+            const mostRecent = [...coreEvents].sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
+            const first = coreEvents[0];
+
+            const dtstartDate = new Date(p.dtstart);
+            const masterId = new ObjectId();
+            const master = {
+                _id: masterId,
+                appId: first.appId,
+                title: commonTitle,
+                ownerOrganizerID: first.ownerOrganizerID,
+                ownerOrganizerName: first.ownerOrganizerName,
+                venueID: first.venueID,
+                venueGeolocation: first.venueGeolocation,
+                venueCityName: first.venueCityName,
+                venueTimezone: first.venueTimezone,
+                categoryFirst: mostRecent.categoryFirst,
+                categoryFirstId: commonCategoryFirstId,
+                startDate: dtstartDate,
+                endDate: new Date(dtstartDate.getTime() + commonDur),
+                isActive: true,
+                isCanceled: false,
+                isRepeating: true,
+                recurrenceRule: p.rrule,
+                description: mostRecent.description,
+                eventImage: mostRecent.eventImage,
+                discoveredComments: `Created by SAS patch (Toby 2026-04-18); seriesDetectionSpec=${SERIES_DETECTION_SPEC_VERSION}; replaces ${coreEvents.length} singletons`,
+                forBeginners: mostRecent.forBeginners ?? false,
+                beginnerFriendly: mostRecent.beginnerFriendly ?? false,
+                travelWorthy: mostRecent.travelWorthy ?? false,
+                forBeginnersOverride: null,
+                beginnerFriendlyOverride: null,
+                travelWorthyOverride: null,
+                masteredRegionId: first.masteredRegionId,
+                masteredRegionName: first.masteredRegionName,
+                masteredDivisionId: first.masteredDivisionId,
+                masteredDivisionName: first.masteredDivisionName,
+                masteredCityId: first.masteredCityId,
+                masteredCityName: first.masteredCityName,
+                masteredCityGeolocation: first.masteredCityGeolocation,
+                masteredCountryId: first.masteredCountryId,
+                masteredCountryName: first.masteredCountryName,
+                enrichmentStatus: 'complete',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            };
+
+            // Sample $set op preview
+            if (!firstSampleOpLogged) {
+                console.log('\n[SAMPLE-SET-OP — first op preview before bulkWrite]');
+                console.log('  filter:', JSON.stringify({ _id: `ObjectId("${coreEvents[0]._id}")` }));
+                console.log('  update:', JSON.stringify({ $set: { replacedByMaster: `ObjectId("${masterId}")` } }));
+                console.log();
+                firstSampleOpLogged = true;
+            }
+
+            // Insert master
+            await db.collection('events').insertOne(master);
+
+            // Bulk-flag singletons with replacedByMaster
+            const singletonOps = coreEvents.map(e => ({
+                updateOne: {
+                    filter: { _id: e._id },
+                    update: { $set: { replacedByMaster: masterId, updatedAt: new Date() } }
+                }
+            }));
+            const bulkResult = await db.collection('events').bulkWrite(singletonOps, { ordered: false });
+
+            applyResults.mastersCreated.push({
+                masterId: masterId.toString(),
+                title: commonTitle.substring(0, 80),
+                rrule: p.rrule,
+                dtstart: dtstartDate.toISOString(),
+                until: p.until,
+                coreFlagged: bulkResult.modifiedCount,
+                outliersPreserved: p.outlierCount || 0,
+                toby_override: p.confidence === 'HIGH-TOBY-OVERRIDE',
+            });
+            applyResults.singletonsFlaggedTotal += bulkResult.modifiedCount;
+            applyResults.outliersPreservedTotal += p.outlierCount || 0;
+        }
+
+        console.log('\n=== APPLY RESULTS ===');
+        console.log(JSON.stringify({
+            specVersion: SERIES_DETECTION_SPEC_VERSION,
+            organizer: orgName,
+            mastersCreated: applyResults.mastersCreated.length,
+            singletonsFlaggedTotal: applyResults.singletonsFlaggedTotal,
+            outliersPreservedTotal: applyResults.outliersPreservedTotal,
+            groupsAborted: applyResults.groupsAborted.length,
+            deletions: 0,
+        }, null, 2));
+        console.log('\nPer-master:');
+        applyResults.mastersCreated.forEach(m => console.log('  -', m.masterId, '\t', m.rrule, '\t', m.coreFlagged, 'flagged', m.toby_override ? '(toby-override)' : ''));
+        if (applyResults.groupsAborted.length) {
+            console.log('\nABORTED groups:');
+            applyResults.groupsAborted.forEach(a => console.log('  *', a.title, '→', a.error));
+        }
+
+        if (args.output) {
+            const applyArtifact = {
+                meta: {
+                    ...summary.meta,
+                    mode: 'APPLY',
+                    applyTimestamp: new Date().toISOString(),
+                    specVersion: SERIES_DETECTION_SPEC_VERSION,
+                },
+                applyResults,
+                originalProposals: summary.proposals,
+            };
+            fs.writeFileSync(args.output, JSON.stringify(applyArtifact, null, 2));
+            console.log(`\nApply artifact written to: ${args.output}`);
+        }
     }
 
     await client.close();
