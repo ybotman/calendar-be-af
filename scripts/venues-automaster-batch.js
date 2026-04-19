@@ -223,9 +223,20 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
     //   AUTO_MEDIUM: write country-chain only (skip city to prevent /boston pollution) + masteringStatus='country_only_by_automaster'
     //   MANUAL:      write masteringStatus='corpus-gap-review' + masteringDistanceKm only
     //
-    // Preserve-gate: only $set fields that are currently null. Never overwrite existing mastered* values.
-    // Idempotency: skip any venue whose masteringStatus is already set (from a prior run or CALBEAF-114).
-    // Audit log: emit per-venue write record to apply-log artifact for reversibility.
+    // Preserve-gate: skip if venue has masteredCityId already set OR masteringStatus is in
+    // PRESERVED_STATUSES (terminal states that should not be overwritten).
+    //
+    // IMPORTANT: `masteringStatus: 'review'` (CALBEAF-114 artifact) is NOT preserved —
+    // that status means "flagged to review bucket, no actual data written." Overwriting
+    // those is the whole point of this run.
+
+    const PRESERVED_STATUSES = [
+        'mastered',                    // CALBEAF-114 legacy AUTO_HIGH writes (61 venues)
+        'mastered_by_automaster',       // this spec's AUTO_HIGH terminal
+        'country_only_by_automaster',   // this spec's AUTO_MEDIUM terminal (until future Tier-2 corpus-add re-eval)
+        'corpus-gap-review',            // parked; re-eval only on corpus expansion
+        'name-conflict-review',         // human-adjudication parked
+    ];
 
     const applyLog = [];
     const applyCounts = { AUTO_HIGH: 0, AUTO_MEDIUM: 0, MANUAL: 0, skipped_already_mastered: 0, errors: 0 };
@@ -235,6 +246,8 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
         console.log('');
         console.log(`=== APPLY START ${applyStartTime.toISOString()} ===`);
         console.log(`(helper spec version: ${VENUES_AUTOMASTER_SPEC_VERSION})`);
+        console.log(`(preserved statuses: ${PRESERVED_STATUSES.join(', ')})`);
+        console.log(`(stale 'review' status from CALBEAF-114 is overwritten — no data to preserve)`);
         console.log('');
 
         // Unified apply loop — fields come from the shared helper's _applyFields
@@ -248,8 +261,8 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
                         { projection: { masteringStatus: 1, masteredCityId: 1 } }
                     );
                     if (!existing) { applyCounts.errors++; continue; }
-                    // Preserve-gate: skip if already mastered (prior run, CALBEAF-114, or manual admin)
-                    if (existing.masteringStatus || existing.masteredCityId) {
+                    // Preserve-gate: skip if masteredCityId already set OR status is terminal
+                    if (existing.masteredCityId || PRESERVED_STATUSES.includes(existing.masteringStatus)) {
                         applyCounts.skipped_already_mastered++;
                         continue;
                     }
