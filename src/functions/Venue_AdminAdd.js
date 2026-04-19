@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
+const { resolveMasteredCity } = require('../utils/venuesAutoMaster');
 
 /**
  * POST /api/venues/admin
@@ -216,6 +217,27 @@ async function venueAdminAddHandler(request, context) {
         }
 
         // Step 7: Create venue document (NO proximity check)
+        const geolocation = {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+        };
+
+        // CALBEAF-116 Phase 1b — inline Venues_AutoMaster hook.
+        // FE-wins contract: if body.masteredCityId is set, respect it. Otherwise auto-resolve.
+        let autoMasterFields = {};
+        if (!body.masteredCityId) {
+            try {
+                const db = mongoClient.db();
+                const result = await resolveMasteredCity({ db, geolocation, cityText: body.city });
+                if (result) {
+                    autoMasterFields = { ...result.fields, masteringAppliedAt: new Date() };
+                    context.log(`[VENUE ADMIN CREATE] auto-mastered bucket=${result.bucket} distance=${result.log.distanceKm}km nearest="${result.log.nearestCityName}"`);
+                }
+            } catch (err) {
+                context.log(`[VENUE ADMIN CREATE] auto-master error (non-fatal): ${err.message}`);
+            }
+        }
+
         const newVenue = {
             appId,
             name: body.name,
@@ -230,14 +252,19 @@ async function venueAdminAddHandler(request, context) {
             comments: body.comments || '',
             latitude,
             longitude,
-            geolocation: {
-                type: 'Point',
-                coordinates: [longitude, latitude]
-            },
-            masteredCityId: body.masteredCityId ? new ObjectId(body.masteredCityId) : null,
-            masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : null,
-            masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : null,
-            masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : null,
+            geolocation,
+            masteredCityId: body.masteredCityId ? new ObjectId(body.masteredCityId) : (autoMasterFields.masteredCityId || null),
+            masteredCityName: body.masteredCityId ? null : (autoMasterFields.masteredCityName || null),
+            masteredDivisionId: body.masteredDivisionId ? new ObjectId(body.masteredDivisionId) : (autoMasterFields.masteredDivisionId || null),
+            masteredDivisionName: body.masteredDivisionId ? null : (autoMasterFields.masteredDivisionName || null),
+            masteredRegionId: body.masteredRegionId ? new ObjectId(body.masteredRegionId) : (autoMasterFields.masteredRegionId || null),
+            masteredRegionName: body.masteredRegionId ? null : (autoMasterFields.masteredRegionName || null),
+            masteredCountryId: body.masteredCountryId ? new ObjectId(body.masteredCountryId) : (autoMasterFields.masteredCountryId || null),
+            masteredCountryName: body.masteredCountryId ? null : (autoMasterFields.masteredCountryName || null),
+            masteringDistanceKm: autoMasterFields.masteringDistanceKm !== undefined ? autoMasterFields.masteringDistanceKm : null,
+            masteringTextConflict: autoMasterFields.masteringTextConflict || false,
+            masteringStatus: autoMasterFields.masteringStatus || null,
+            masteringAppliedAt: autoMasterFields.masteringAppliedAt || null,
             timezone: body.timezone || 'America/New_York',
             country: body.country || 'US',
             isActive: body.isActive !== undefined ? body.isActive : true,
