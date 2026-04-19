@@ -275,7 +275,7 @@ describe('runDataQualityPipeline — country denorm', () => {
         const CITY_ID = new ObjectId();
         const DIV_ID = new ObjectId();
         const venueDocs = [{ _id: VENUE_ID, masteredCityId: CITY_ID, geolocation: { type: 'Point', coordinates: [-71.1, 42.4] }, masteredCityName: 'Cambridge', timezone: 'America/New_York' }];
-        const cityDocs = [{ _id: CITY_ID, masteredDivisionId: DIV_ID }];
+        const cityDocs = [{ _id: CITY_ID, cityName: 'Cambridge', masteredDivisionId: DIV_ID }];
         const divDocs = [{ _id: DIV_ID, masteredRegionId: REGION_ID }];
         const regionDocs = [{ _id: REGION_ID, masteredCountryId: COUNTRY_ID }];
         const countryDocs = [{ _id: COUNTRY_ID, countryName: 'United States' }];
@@ -298,7 +298,30 @@ describe('runDataQualityPipeline — country denorm', () => {
         expect(enriched.masteredCountryId).toBeDefined();
         expect(enriched.masteredCountryId.toString()).toBe(COUNTRY_ID.toString());
         expect(enriched.masteredCountryName).toBe('United States');
-        expect(report.actions.find(a => a.field === 'masteredCountryId' && a.source === 'venue-chain')).toBeDefined();
+        // Post-CALBEAF-117: city-denorm block sets event.masteredCityId first (from venue),
+        // then country block falls through Priority 3 (city-chain) rather than Priority 4.
+        expect(enriched.masteredCityId.toString()).toBe(CITY_ID.toString());
+        expect(enriched.masteredCityName).toBe('Cambridge');
+        expect(report.actions.find(a => a.field === 'masteredCityId' && a.source === 'venue-denorm')).toBeDefined();
+        expect(report.actions.find(a => a.field === 'masteredCountryId' && a.source === 'city-chain')).toBeDefined();
+    });
+
+    test('CALBEAF-117 city preserve-gate: event.masteredCityId already set → preserved', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const PRESET_CITY = new ObjectId();
+        const venueDocs = [{ _id: VENUE_ID, masteredCityId: new ObjectId(), geolocation: { type: 'Point', coordinates: [0, 0] } }];
+        const cityDocs = [{ _id: PRESET_CITY, cityName: 'Preset City' }];
+        const chainDb = makeMockDb({ categories: STANDARD_CATEGORIES, regions: [], countries: [], venues: venueDocs });
+        const originalCollection = chainDb.collection;
+        chainDb.collection = (name) => {
+            if (name === 'masteredcities') return { findOne: async (q) => cityDocs.find(d => d._id.toString() === q._id.toString()) || null, find: () => ({ toArray: async () => cityDocs }) };
+            if (name === 'mastereddivisions') return { find: () => ({ toArray: async () => [] }), findOne: async () => null };
+            return originalCollection(name);
+        };
+        const event = baseEvent({ masteredCityId: PRESET_CITY, masteredCityName: 'Preset City', masteredRegionId: null, masteredCountryId: null });
+        const { event: enriched, report } = await runDataQualityPipeline(event, chainDb);
+        expect(enriched.masteredCityId.toString()).toBe(PRESET_CITY.toString());
+        expect(report.skipped.find(s => s.field === 'masteredCityId' && s.reason.includes('already set'))).toBeDefined();
     });
 
     test('no masteredRegionId but existing country — preserved, not nulled (AIDI blocker 2)', async () => {

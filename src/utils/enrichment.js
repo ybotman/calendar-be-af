@@ -18,7 +18,7 @@ const { resolveCountry, computeTravelWorthy, applyOverride, loadCategoryCache } 
 // threshold, country derivation chain, DQ warning scope, etc.). Pairs with
 // SERIES_DETECTION_SPEC_VERSION from series-detection package — lets operators
 // grep logs + artifact metadata to detect drift between tool runs.
-const ENRICHMENT_SPEC_VERSION = '1.1.0';  // 1.1.0: added country venue-chain fallback (CALBEAF-113)
+const ENRICHMENT_SPEC_VERSION = '1.2.0';  // 1.2.0: event.masteredCityId denorm from venue-chain (CALBEAF-117) | 1.1.0: country venue-chain fallback (CALBEAF-113)
 
 const TANGO_APP_IDS = new Set(['1']);
 // Categories where the forBeginners classifier can return TRUE. All other categories
@@ -207,6 +207,52 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     // protect organizer intent via Stage 5. Preserves nothing else — actual-field
     // preservation was over-protective and created stale-value bugs (e.g. Practilonga
     // Caminito superset violation from earlier runs).
+
+    // --- City denorm onto event (CALBEAF-117) ---
+    // When event.masteredCityId is null AND event.venueID resolves to a mastered venue,
+    // denormalize venue.masteredCityId + masteredcity.cityName onto the event. This lets
+    // the country chain below run naturally through Priority 3 (masteredCityId path) and
+    // prevents a second --force-recompute after CALBEAF-114 venue-mastering completes.
+    //
+    // Governance (AIDI v1.2.0 ruling):
+    //   1. Preserve-gate: event.masteredCityId already set → preserve (never overwrite).
+    //   2. Consistency: masteredCityId + masteredCityName both from same masteredcity doc.
+    //   3. Name-conflict guard: if event.masteredCityName is populated AND differs from
+    //      derivedCityName, route to REVIEW — write NEITHER ID nor name. Flag with
+    //      masteringStatus: "name-conflict-review". Human adjudicates per-row (may be
+    //      a CALBEAF-115 corpus-gap case where orphan name is more accurate than chain).
+    if (!eventDoc.masteredCityId && eventDoc.venueID) {
+        try {
+            const venue = await db.collection('venues').findOne(
+                { _id: typeof eventDoc.venueID === 'string' ? new ObjectId(eventDoc.venueID) : eventDoc.venueID },
+                { projection: { masteredCityId: 1 } }
+            );
+            if (venue && venue.masteredCityId) {
+                const city = await db.collection('masteredcities').findOne(
+                    { _id: venue.masteredCityId },
+                    { projection: { cityName: 1 } }
+                );
+                if (city) {
+                    // Name-conflict guard (AIDI 2026-04-19 14:27Z)
+                    if (eventDoc.masteredCityName && eventDoc.masteredCityName !== city.cityName) {
+                        eventDoc.masteringStatus = 'name-conflict-review';
+                        report.skipped.push({
+                            field: 'masteredCityId',
+                            reason: `name-conflict: existing="${eventDoc.masteredCityName}" vs derived="${city.cityName}" (flagged for human review)`,
+                        });
+                    } else {
+                        eventDoc.masteredCityId = venue.masteredCityId;
+                        eventDoc.masteredCityName = city.cityName;
+                        report.actions.push({ field: 'masteredCityId', source: 'venue-denorm', value: venue.masteredCityId });
+                    }
+                }
+            }
+        } catch (err) {
+            report.skipped.push({ field: 'masteredCityId', reason: `venue lookup error: ${err.message}` });
+        }
+    } else if (eventDoc.masteredCityId) {
+        report.skipped.push({ field: 'masteredCityId', reason: 'already set (preserve-gate)' });
+    }
 
     // --- Country denorm — 5-priority derivation chain (CALBEAF-113 Layer 2) ---
     // Chain:

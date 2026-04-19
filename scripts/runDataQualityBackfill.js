@@ -55,9 +55,10 @@ function loadUri() {
 
 const TRACKED_FIELDS = [
     'forBeginners', 'beginnerFriendly', 'travelWorthy',
+    'masteredCityId', 'masteredCityName',
     'masteredCountryId', 'masteredCountryName',
     'venueGeolocation', 'venueCityName', 'venueTimezone',
-    'enrichmentStatus',
+    'enrichmentStatus', 'masteringStatus',
 ];
 
 function snapshot(event) {
