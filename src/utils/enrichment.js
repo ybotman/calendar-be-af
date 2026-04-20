@@ -57,8 +57,8 @@ const TITLE_POS_SPECIFIC = [
     /\bnew\s+to\s+(?:argentine\s+)?tango\b/i,
     /\bfirst\s+steps?\b/i,
     /\bfrom\s+scratch\b/i,
-    /\btango\s+1\b(?!\s*[\.\d])/i,
-    /\b(?:level|lvl|lv)\s+1\b(?!\s*[\.\d])/i,  // includes Lv 1 / Lvl 1 abbreviations
+    /\btango\s+1\b(?!\s*[.\d])/i,
+    /\b(?:level|lvl|lv)\s+1\b(?!\s*[.\d])/i,
     /\btango\s+100[sm]?\b/i,
     /\bnivel\s+(uno|1|b[áa]sico)\b/i,
     // Foreign-language (prophylactic)
