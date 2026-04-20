@@ -1,3 +1,16 @@
+---
+date: 2026-01-15
+persona: fulton
+type: architecture
+state: live
+feature: backend-infra
+keywords: [azure, serverless]
+appid: 1
+app: "[[APP-01-TangoTiempo]]"
+audience: all
+permanence: long-term
+tags: [app/tangotiempo, type/architecture, type/architecture]
+---
 # Azure Functions Architecture
 
 **Version**: 1.0
