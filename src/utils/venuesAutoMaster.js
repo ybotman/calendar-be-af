@@ -18,7 +18,7 @@ const BUCKET_MEDIUM_MAX_KM = 200;
 
 // Version tag — bump on any rule change (threshold shift, new bucket, etc).
 // Consumers log this at invocation for grep-detectable drift signal.
-const VENUES_AUTOMASTER_SPEC_VERSION = '1.0.0';
+const VENUES_AUTOMASTER_SPEC_VERSION = '1.1.0';  // 1.1.0: CALBEAF-118 division-carries-country bypass for continent-regions | 1.0.0: initial
 
 /**
  * Compares venue.city free-form text against nearest masteredcity name.
@@ -49,6 +49,13 @@ function kmFromMeters(m) {
  * Walks the city→division→region→country chain.
  * Returns null if cityId is falsy or the city doc can't be found.
  * Partial chains (division without region, etc.) return what resolves.
+ *
+ * CALBEAF-118 (A1 option d): division-carries-country bypass for continent-regions.
+ * When a division has `masteredCountryId` set directly, use it as the country source
+ * regardless of region's country link. Enables European hierarchy (Italy/Germany/etc.
+ * as divisions under continent-level "Europe" region) to resolve real country without
+ * schema change to region docs. No fallback: `division.masteredCountryId` is an
+ * explicit reference to a real masteredcountries doc, not a substitution.
  */
 async function chainFromCity(db, cityId) {
     if (!cityId) return null;
@@ -75,6 +82,17 @@ async function chainFromCity(db, cityId) {
                             out.masteredCountryName = cn.countryName || null;
                         }
                     }
+                }
+            }
+            // CALBEAF-118: division-carries-country bypass. Only fires when region→country
+            // chain did not already yield a country (preserves US hierarchy behavior where
+            // region carries country). Division-level country is authoritative for
+            // European divisions whose region is continent-level.
+            if (!out.masteredCountryId && div.masteredCountryId) {
+                const cn = await db.collection('masteredcountries').findOne({ _id: div.masteredCountryId });
+                if (cn) {
+                    out.masteredCountryId = cn._id;
+                    out.masteredCountryName = cn.countryName || null;
                 }
             }
         }
