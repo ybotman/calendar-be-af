@@ -726,6 +726,18 @@
             "in": "query",
             "description": "Page number (default: 1)",
             "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "travelWorthy",
+            "in": "query",
+            "description": "Filter by travel-worthy classification (true/false). CALBEAF-109.",
+            "schema": { "type": "string", "enum": ["true", "false"] }
+          },
+          {
+            "name": "beginnerFriendly",
+            "in": "query",
+            "description": "Filter by beginner-friendly classification (true/false). CALBEAF-109.",
+            "schema": { "type": "string", "enum": ["true", "false"] }
           }
         ],
         "responses": {
@@ -752,7 +764,13 @@
                           "venueID": { "type": "string" },
                           "venueTimezone": { "type": "string", "description": "Timezone from venue" },
                           "isActive": { "type": "boolean" },
-                          "isAllDay": { "type": "boolean" }
+                          "isAllDay": { "type": "boolean" },
+                          "travelWorthy": { "type": "boolean", "description": "Computed: duration > 24h AND category not Class/Milonga/Practica (CALBEAF-109)" },
+                          "beginnerFriendly": { "type": "boolean", "description": "Organizer-set or scraper-computed beginner friendly flag (CALBEAF-109)" },
+                          "travelWorthyOverride": { "type": ["boolean", "null"], "description": "Organizer override for travelWorthy (null = use computed)" },
+                          "beginnerFriendlyOverride": { "type": ["boolean", "null"], "description": "Organizer override for beginnerFriendly (null = use computed)" },
+                          "masteredCountryId": { "type": "string", "description": "Denormalized country ObjectId from region chain (CALBEAF-109)" },
+                          "masteredCountryName": { "type": "string", "description": "Denormalized country name from region chain (CALBEAF-109)" }
                         }
                       }
                     },
@@ -2535,6 +2553,135 @@
         }
       }
     },
+    "/api/organizers/shortname-check": {
+      "get": {
+        "summary": "Check shortName availability (CALBEAF-107)",
+        "description": "Live dedup/collision probe for organizer shortName. appId=1 enforces §1.2 length/pattern/reserved rules; other appIds only check uniqueness. Case-insensitive via UPPERCASE normalization. <100ms p95. Anonymous auth.",
+        "tags": ["Organizers"],
+        "operationId": "shortnameCheck",
+        "parameters": [
+          { "name": "appId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "candidate", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Raw candidate; normalized to UPPERCASE server-side" },
+          { "name": "excludeId", "in": "query", "required": false, "schema": { "type": "string" }, "description": "ObjectId to exclude from uniqueness check (self-edit flow)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability probe result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": { "type": "boolean" },
+                    "normalizedShortName": { "type": "string" },
+                    "reason": { "type": "string", "enum": ["taken", "reserved", "invalid-length", "invalid-pattern", null], "nullable": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "ValidationError — missing/invalid params" }
+        }
+      }
+    },
+    "/api/organizers/shortnames": {
+      "get": {
+        "summary": "Bulk read of organizer shortNames (CALBEAF-107)",
+        "description": "Returns all organizer shortNames for an appId — for AIDI generator cache-warm. API-key required (service-to-service). 60-second server-side in-memory cache.",
+        "tags": ["Organizers"],
+        "operationId": "shortnamesBulk",
+        "parameters": [
+          { "name": "appId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "x-api-key", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "All shortNames for appId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "appId": { "type": "string" },
+                    "count": { "type": "integer" },
+                    "shortNames": { "type": "array", "items": { "type": "string" } },
+                    "generatedAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "ValidationError — appId required" },
+          "401": { "description": "Invalid or missing API key" }
+        }
+      }
+    },
+    "/api/ops/mongo-health": {
+      "get": {
+        "summary": "MongoDB health snapshot (CALBEAF-106)",
+        "description": "SA-gated endpoint for CalOps M0 Health panel. Returns 6 data blocks: dbStats, connections, opcounters (per-second rates over a rolling window), replication lag, per-collection top-10 by size, and App Insights slow-op percentiles. 10-second server-side cache.",
+        "tags": ["Admin"],
+        "operationId": "adminMongoHealth",
+        "responses": {
+          "200": {
+            "description": "Health snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capturedAt": { "type": "string", "format": "date-time" },
+                    "dbStats": { "type": "object", "properties": { "dataSize": {"type": "integer"}, "storageSize": {"type": "integer"}, "indexSize": {"type": "integer"}, "objects": {"type": "integer"} } },
+                    "connections": { "type": "object", "properties": { "current": {"type": "integer"}, "available": {"type": "integer"}, "totalCreated": {"type": "integer"} } },
+                    "opcounters": { "type": "object", "properties": { "windowSec": {"type": "integer"}, "insertPerSec": {"type": "number"}, "queryPerSec": {"type": "number"}, "updatePerSec": {"type": "number"}, "deletePerSec": {"type": "number"}, "getmorePerSec": {"type": "number"}, "commandPerSec": {"type": "number"}, "totalPerSec": {"type": "number"} } },
+                    "replication": { "type": "object", "properties": { "primaryOptime": {"type": "string", "nullable": true}, "maxSecondaryLagSec": {"type": "integer", "nullable": true} } },
+                    "perCollection": { "type": "array", "items": { "type": "object", "properties": { "name": {"type": "string"}, "sizeBytes": {"type": "integer"}, "count": {"type": "integer"}, "nindexes": {"type": "integer"} } } },
+                    "slowOps": { "type": "object", "properties": { "p50Ms": {"type": "number"}, "p95Ms": {"type": "number"}, "p99Ms": {"type": "number"}, "countAbove200_5min": {"type": "integer"}, "countAbove200_1hr": {"type": "integer"}, "countAbove200_24hr": {"type": "integer"} } },
+                    "notes": { "type": "array", "items": { "type": "object", "properties": { "block": {"type": "string", "description": "Which data block this note applies to (connections, opcounters, replication, slowOps)"}, "status": {"type": "string", "enum": ["unavailable", "stubbed"], "description": "Why the block's data is missing"}, "reason": {"type": "string", "description": "Stable machine-readable code (e.g. atlas-m0-no-admin, appinsights-not-wired)"}, "detail": {"type": "string", "description": "Human-readable explanation"} } } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Firebase authentication required" },
+          "403": { "description": "SystemAdmin (SA) role required" },
+          "500": { "description": "Snapshot collection failed" }
+        }
+      }
+    },
+    "/api/organizers/{id}/shortname": {
+      "patch": {
+        "summary": "Update organizer shortName (CALBEAF-107)",
+        "description": "Sarah's edit-later sub-resource. Firebase-authed; organizer (firebaseUserId match) or regionalAdmin only. Applies §1.2 validator (appId=1). Triggers §1.1.6 backfeed to AIDI.",
+        "tags": ["Organizers"],
+        "operationId": "patchOrganizerShortname",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Organizer ObjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["shortName"],
+                "properties": {
+                  "shortName": { "type": "string", "description": "Raw; normalized UPPERCASE server-side. Charset: /^[A-Z]{3}(?:-?[A-Z0-9])*$/ length 3-12" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Update successful" },
+          "400": { "description": "ValidationError per §1.4.1" },
+          "401": { "description": "Firebase auth required" },
+          "403": { "description": "Not the organizer or regionalAdmin" },
+          "404": { "description": "Organizer not found" },
+          "409": { "description": "DuplicateError per §1.4.2" }
+        }
+      }
+    },
     "/api/organizers/{id}/connect-user": {
       "patch": {
         "summary": "Connect user to organizer",
@@ -3157,6 +3304,7 @@
                 "properties": {
                   "appId": { "type": "integer", "default": 1, "description": "Application ID (1=TangoTiempo, 2=HarmonyJunction)" },
                   "orgName": { "type": "string", "description": "Organization name" },
+                  "shortName": { "type": "string", "description": "Pre-generated short name candidate (UPPERCASE, unique per appId) — prefills apply form" },
                   "contactName": { "type": "string", "description": "Contact person name (optional)" },
                   "contactEmail": { "type": "string", "description": "Contact email for pre-fill" },
                   "organizerType": { "type": "string", "example": "isEventOrganizer", "description": "Organizer type" },
@@ -3230,6 +3378,7 @@
                       "type": "object",
                       "properties": {
                         "orgName": { "type": "string" },
+                        "shortName": { "type": "string", "description": "Pre-generated short name candidate (UPPERCASE, 3-12 chars, unique per appId) — prefilled into apply form, editable by organizer" },
                         "contactName": { "type": "string" },
                         "contactEmail": { "type": "string" },
                         "organizerType": { "type": "string" },

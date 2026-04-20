@@ -54,6 +54,12 @@ require('./functions/Venue_AgeOut_Timer');
 // Organizers API
 require('./functions/Organizers');
 require('./functions/OrganizersSASToken');
+// CALBEAF-107 — shortName endpoints
+require('./functions/OrganizerShortnameCheck');
+require('./functions/OrganizerShortnamesBulk');
+require('./functions/OrganizerShortnamePatch');
+// CALBEAF-106 — SA-gated MongoDB health endpoint (CalOps M0 Health panel)
+require('./functions/Admin_MongoHealth');
 
 // Roles API
 require('./functions/Roles');
@@ -72,6 +78,11 @@ require('./functions/Events_InstanceOverrides');
 
 // Events Spotlights - Any approved organizer can add/remove spotlights on any event
 require('./functions/Events_Spotlights');
+
+// CALBEAF-110 — Bulk-enrich endpoint (Option D enrichment architecture, TEST-only)
+require('./functions/Events_BulkEnrich');
+// CALBEAF-110 — Tier-2 DQ periodic checker (every 30 min, TEST-only)
+require('./functions/DQ_PeriodicChecker');
 
 // Events Summary + Image Upload
 require('./functions/EventsSummary');

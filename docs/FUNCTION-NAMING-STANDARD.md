@@ -1,3 +1,15 @@
+---
+date: 2026-01-20
+persona: fulton
+type: process
+state: live
+feature: naming-convention
+keywords: [clean-code, standards]
+appid: global
+audience: all
+permanence: long-term
+tags: [app/global, type/process]
+---
 # Azure Functions - Naming Standard
 
 **Version**: 2.0

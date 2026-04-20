@@ -6,6 +6,36 @@ const { standardMiddleware } = require('../middleware');
 const { firebaseAuth, unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { enrichEventsWithTimezone } = require('../utils/timezoneService');
 const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = require('../utils/activityLog');
+// CALBEAF-110: classifyAndEnrichEvent superseded by runDataQualityPipeline (Phase 6 wiring).
+// Old import retained as no-op reference until eventClassification.js is fully retired.
+const { runDataQualityPipeline } = require('../utils/enrichment');
+
+// CALBEAF-112: Series-as-singletons FTPNTD Layer 2 heuristic.
+// Detect if an organizer is submitting a same-title non-recurring event after
+// ≥2 past non-recurring events of the same title in the last 30 days.
+// Returns a seriesHint object when pattern matches; null otherwise.
+// Non-blocking — creation proceeds; hint surfaces in response for FE to prompt user.
+async function detectSeriesAsSingletons(db, appId, ownerOrganizerID, title, isRepeating) {
+    if (!ownerOrganizerID || !title) return null;
+    if (isRepeating) return null;  // already recurring — no hint needed
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const ownerId = typeof ownerOrganizerID === 'string' ? new ObjectId(ownerOrganizerID) : ownerOrganizerID;
+    const pastCount = await db.collection('events').countDocuments({
+        appId,
+        ownerOrganizerID: ownerId,
+        title: title,  // exact match (title is usually identical for series-as-singletons)
+        isRepeating: { $ne: true },
+        startDate: { $gte: thirtyDaysAgo },
+    });
+    if (pastCount >= 2) {
+        return {
+            pattern: 'series-as-singletons',
+            message: `This organizer has ${pastCount} prior non-recurring events with this exact title in the last 30 days. Consider publishing this as a recurring event instead (use isRepeating=true with a recurrenceRule).`,
+            pastCount,
+        };
+    }
+    return null;
+}
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -79,6 +109,8 @@ function convertIdFields(data) {
  * - radius: Search radius with unit (default: "50km", supports km/m/mi)
  * - useCity: Use masteredCityGeolocation instead of venueGeolocation ("true"/"false")
  * - sortByDistance: Sort results by distance from lat/lng ("true"/"false")
+ * - travelWorthy: Filter by travelWorthy classification ("true"/"false") — CALBEAF-109
+ * - beginnerFriendly: Filter by beginnerFriendly classification ("true"/"false") — CALBEAF-109
  *
  * Default Date Behavior (if no dates provided):
  * - start: First day of current month
@@ -104,6 +136,11 @@ async function eventsGetHandler(request, context) {
     const canceled = request.query.get('canceled');
     const discovered = request.query.get('discovered');
     const includeAiGenerated = request.query.get('includeAiGenerated');
+
+    // CALBEAF-109: Classification filters
+    const travelWorthy = request.query.get('travelWorthy');
+    const beginnerFriendly = request.query.get('beginnerFriendly');
+    const forBeginners = request.query.get('forBeginners');
 
     // Location name filters
     const masteredRegionName = request.query.get('masteredRegionName');
@@ -148,7 +185,10 @@ async function eventsGetHandler(request, context) {
         useGeoSearch,
         lat,
         lng,
-        sortByDistance
+        sortByDistance,
+        travelWorthy,
+        beginnerFriendly,
+        forBeginners
     });
 
     // Validate required parameters
@@ -250,6 +290,17 @@ async function eventsGetHandler(request, context) {
         // by default unless explicitly included.
         if (includeAiGenerated !== 'true') {
             baseFilter.isAiGenerated = { $ne: true };
+        }
+
+        // CALBEAF-109: Classification filters
+        if (travelWorthy) {
+            baseFilter.travelWorthy = travelWorthy === 'true';
+        }
+        if (beginnerFriendly) {
+            baseFilter.beginnerFriendly = beginnerFriendly === 'true';
+        }
+        if (forBeginners) {
+            baseFilter.forBeginners = forBeginners === 'true';
         }
 
         // Collection for $and conditions (like calendar-be's andConditions array)
@@ -901,6 +952,25 @@ async function eventsCreateHandler(request, context) {
             newEvent.recurrenceRule = null;
         }
 
+        // CALBEAF-110: Run full data quality pipeline (classification + travelWorthy +
+        // country denorm + venue resolution + warn-only DQ checks). Mutates newEvent in place.
+        const { report: dqReport } = await runDataQualityPipeline(newEvent, db, { appId: requestBody.appId });
+        // Surface WARN-only DQ findings to logs (not blocking)
+        for (const s of dqReport.skipped) {
+            if (s.reason && s.reason.startsWith('WARN:')) {
+                context.log(`Events_Create DQ warn: ${s.field} — ${s.reason}`);
+            }
+        }
+        // enrichmentStatus = 'complete' when pipeline runs to end. Required-field WARNs
+        // do NOT flip status (spec §4: warn-only). Pipeline exceptions bubble up as 5xx.
+        newEvent.enrichmentStatus = 'complete';
+
+        // CALBEAF-112: Series-as-singletons heuristic (Layer 2, non-blocking)
+        const seriesHint = await detectSeriesAsSingletons(db, requestBody.appId, newEvent.ownerOrganizerID, newEvent.title, newEvent.isRepeating);
+        if (seriesHint) {
+            context.log(`Events_Create SAS-hint: ${seriesHint.message}`);
+        }
+
         // Insert into MongoDB
         const result = await collection.insertOne(newEvent);
 
@@ -963,6 +1033,7 @@ async function eventsCreateHandler(request, context) {
                     _id: result.insertedId,
                     ...newEvent
                 },
+                hints: seriesHint ? [seriesHint] : undefined,
                 timestamp: new Date().toISOString()
             })
         };
@@ -1092,6 +1163,40 @@ async function eventsUpdateHandler(request, context) {
                 updateDoc.$set.recurrenceRule = null;
             }
         }
+
+        // CALBEAF-109: Recompute classification fields on update
+        // Build merged view: existing event + incoming updates
+        const mergedForClassification = {
+            ...eventBefore,
+            ...updateDoc.$set,
+            startDate: updateDoc.$set.startDate || eventBefore.startDate,
+            endDate: updateDoc.$set.endDate || eventBefore.endDate,
+            categoryFirstId: updateDoc.$set.categoryFirstId || eventBefore.categoryFirstId,
+            masteredRegionId: updateDoc.$set.masteredRegionId || eventBefore.masteredRegionId
+        };
+        // CALBEAF-110: Run full data quality pipeline (classification + travelWorthy +
+        // country denorm + venue resolution + warn-only DQ checks).
+        const { report: dqReport } = await runDataQualityPipeline(mergedForClassification, db, { appId: eventBefore.appId });
+        for (const s of dqReport.skipped) {
+            if (s.reason && s.reason.startsWith('WARN:')) {
+                context.log(`Events_Update DQ warn: ${s.field} — ${s.reason}`);
+            }
+        }
+        updateDoc.$set.travelWorthy = mergedForClassification.travelWorthy;
+        updateDoc.$set.beginnerFriendly = mergedForClassification.beginnerFriendly;
+        updateDoc.$set.forBeginners = mergedForClassification.forBeginners;
+        updateDoc.$set.travelWorthyOverride = mergedForClassification.travelWorthyOverride;
+        updateDoc.$set.beginnerFriendlyOverride = mergedForClassification.beginnerFriendlyOverride;
+        updateDoc.$set.forBeginnersOverride = mergedForClassification.forBeginnersOverride;
+        updateDoc.$set.masteredCountryId = mergedForClassification.masteredCountryId;
+        updateDoc.$set.masteredCountryName = mergedForClassification.masteredCountryName;
+        // New venue-resolution fields (only set if pipeline computed them — preserves existing if already set)
+        if (mergedForClassification.venueGeolocation) updateDoc.$set.venueGeolocation = mergedForClassification.venueGeolocation;
+        if (mergedForClassification.venueCityName) updateDoc.$set.venueCityName = mergedForClassification.venueCityName;
+        if (mergedForClassification.venueTimezone) updateDoc.$set.venueTimezone = mergedForClassification.venueTimezone;
+        // enrichmentStatus = 'complete' when pipeline runs to end. Required-field WARNs
+        // do NOT flip status (spec §4: warn-only). Pipeline exceptions bubble up as 5xx.
+        updateDoc.$set.enrichmentStatus = 'complete';
 
         // Update document — MongoDB driver 6.x returns doc directly (not {value: doc})
         const updatedDoc = await collection.findOneAndUpdate(

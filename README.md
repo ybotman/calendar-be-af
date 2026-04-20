@@ -34,5 +34,5 @@ npm run lint
 ## Environment Variables
 Create a `local.settings.json` from the template:
 - `MONGODB_URI` - MongoDB connection string
-- `MONGODB_DB_NAME` - Database name (default: TangoTiempo)
+- `MONGODB_DB_NAME` - Database name (default: TangoTiempoTest)
 - `NODE_ENV` - Environment (development/test/production)

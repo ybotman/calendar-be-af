@@ -1,5 +1,15 @@
-# Backup & Restore Procedures
-
+---
+date: 2026-02-15
+persona: fulton
+type: product
+state: live
+feature: database-ops
+keywords: [backup, restore]
+appid: global
+app: "[[APP-GLOBAL]]"
+audience: all
+permanence: long-term
+tags: [app/global, product/mongodb, product/azure, type/product]
 ---
 
 ## CRITICAL: Restore Protection Notice
