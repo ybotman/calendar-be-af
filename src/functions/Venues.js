@@ -565,8 +565,32 @@ async function venuesUpdateHandler(request, context) {
                 coordinates: [longitude, latitude]
             };
 
-            // Check for duplicates if coordinates changed
+            // If geolocation changed, re-master city/country and check for duplicates.
             if (latitude !== existing.latitude || longitude !== existing.longitude) {
+                try {
+                    const result = await resolveMasteredCity({ db, geolocation: updateData.geolocation, cityText: body.city || existing.city });
+                    if (result) {
+                        // Always null-clear city/division/region — result.fields only sets what applies
+                        // for the new bucket (MANUAL/AUTO_MEDIUM omit city fields, leaving stale data).
+                        Object.assign(updateData, {
+                            masteredCityId: null,
+                            masteredCityName: null,
+                            masteredDivisionId: null,
+                            masteredDivisionName: null,
+                            masteredRegionId: null,
+                            masteredRegionName: null,
+                            masteredCountryId: null,
+                            masteredCountryName: null,
+                            ...result.fields,
+                            masteringAppliedAt: new Date(),
+                        });
+                        context.log(`[VENUE UPDATE] auto-mastered bucket=${result.bucket} distance=${result.log.distanceKm}km nearest="${result.log.nearestCityName}"`);
+                    }
+                } catch (err) {
+                    context.log(`[VENUE UPDATE] auto-master error (non-fatal): ${err.message}`);
+                }
+
+                // Check for duplicates if coordinates changed
                 const duplicateCheck = await collection.findOne({
                     appId,
                     _id: { $ne: new ObjectId(venueId) },
