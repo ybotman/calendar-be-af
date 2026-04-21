@@ -201,12 +201,30 @@ async function eventsGetHandler(request, context) {
         };
     }
 
+    // CALBEAF-132: travelWorthy scrape-guard
+    // Referer check — reject requests with no/wrong Referer when travelWorthy=true
+    if (travelWorthy === 'true') {
+        const referer = request.headers.get('referer') || request.headers.get('Referer') || '';
+        const allowed = /^https?:\/\/([a-z0-9-]+\.)*tangotiempo\.com(\/|$)/i.test(referer);
+        if (!allowed) {
+            context.log('CALBEAF-132: travelWorthy request blocked — invalid Referer', { referer });
+            return {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Forbidden' })
+            };
+        }
+    }
+
     let mongoClient;
 
     try {
         // Parse and validate pagination parameters
         const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.min(500, Math.max(1, parseInt(limit) || 100));
+        // CALBEAF-132: travelWorthy requests silently capped at 100 (scrape-guard)
+        const TRAVEL_WORTHY_LIMIT = 100;
+        const globalLimit = travelWorthy === 'true' ? TRAVEL_WORTHY_LIMIT : 500;
+        const limitNum = Math.min(globalLimit, Math.max(1, parseInt(limit) || 100));
         const skip = (pageNum - 1) * limitNum;
 
         // CALBEAF-65 v1.13.9: Match Express date calculation EXACTLY
