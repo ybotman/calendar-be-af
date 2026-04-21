@@ -34,20 +34,21 @@ const {
     VENUES_AUTOMASTER_SPEC_VERSION,
 } = require('../src/utils/venuesAutoMaster');
 
-const uri = settings.Values.MONGODB_URI_TEST;
-if (!uri) {
-    console.error('ERROR: MONGODB_URI_TEST not set in local.settings.json');
-    process.exit(1);
-}
-
 const APPLY = process.argv.includes('--apply');
 const TRACK_A_CLEARED = process.argv.includes('--track-a-cleared');
 const RECLASSIFY_MANUAL = process.argv.includes('--reclassify-manual');
+const PROD_MODE = process.argv.includes('--env=prod');
+const uri = PROD_MODE ? settings.Values.MONGODB_URI_PROD : settings.Values.MONGODB_URI_TEST;
+if (!uri) {
+    console.error(`ERROR: ${PROD_MODE ? 'MONGODB_URI_PROD' : 'MONGODB_URI_TEST'} not set in local.settings.json`);
+    process.exit(1);
+}
+
 const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
 
 (async () => {
     console.log(`=== Venues_AutoMaster batch — ${MODE} ===`);
-    console.log(`TEST only (MONGODB_URI_TEST). PROD is fenced.`);
+    console.log(`Target: ${PROD_MODE ? 'PROD (TangoTiempoProd)' : 'TEST (TangoTiempoTest)'}. PROD is fenced unless --env=prod.`);
     if (APPLY) {
         if (!TRACK_A_CLEARED && !RECLASSIFY_MANUAL) {
             console.error('');
