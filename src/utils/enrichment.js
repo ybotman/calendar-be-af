@@ -18,7 +18,21 @@ const { resolveCountry, computeTravelWorthy, applyOverride, loadCategoryCache } 
 // threshold, country derivation chain, DQ warning scope, etc.). Pairs with
 // SERIES_DETECTION_SPEC_VERSION from series-detection package — lets operators
 // grep logs + artifact metadata to detect drift between tool runs.
-const ENRICHMENT_SPEC_VERSION = '1.3.0';  // 1.3.0: division-carries-country bypass for continent-regions (CALBEAF-118) | 1.2.0: event.masteredCityId denorm from venue-chain (CALBEAF-117) | 1.1.0: country venue-chain fallback (CALBEAF-113)
+const ENRICHMENT_SPEC_VERSION = '1.4.0';  // 1.4.0: distance guard on venue→city resolution (CALBEAF-133) | 1.3.0: division-carries-country bypass for continent-regions (CALBEAF-118) | 1.2.0: event.masteredCityId denorm from venue-chain (CALBEAF-117) | 1.1.0: country venue-chain fallback (CALBEAF-113)
+
+// Max distance (km) between a venue and its assigned masteredCity before we
+// reject the assignment as a corpus-gap guess. Mirrors venuesAutoMaster BUCKET_MEDIUM_MAX_KM.
+const VENUE_CITY_MAX_KM = 200;
+
+// Haversine distance in km between two GeoJSON coordinate pairs [lng, lat].
+function haversineKm([lng1, lat1], [lng2, lat2]) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const TANGO_APP_IDS = new Set(['1']);
 // Categories where the forBeginners classifier can return TRUE. All other categories
@@ -225,25 +239,41 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
         try {
             const venue = await db.collection('venues').findOne(
                 { _id: typeof eventDoc.venueID === 'string' ? new ObjectId(eventDoc.venueID) : eventDoc.venueID },
-                { projection: { masteredCityId: 1 } }
+                { projection: { masteredCityId: 1, geolocation: 1 } }
             );
             if (venue && venue.masteredCityId) {
                 const city = await db.collection('masteredcities').findOne(
                     { _id: venue.masteredCityId },
-                    { projection: { cityName: 1 } }
+                    { projection: { cityName: 1, location: 1 } }
                 );
                 if (city) {
-                    // Name-conflict guard (AIDI 2026-04-19 14:27Z)
-                    if (eventDoc.masteredCityName && eventDoc.masteredCityName !== city.cityName) {
-                        eventDoc.masteringStatus = 'name-conflict-review';
-                        report.skipped.push({
-                            field: 'masteredCityId',
-                            reason: `name-conflict: existing="${eventDoc.masteredCityName}" vs derived="${city.cityName}" (flagged for human review)`,
-                        });
+                    // Distance guard (CALBEAF-133): reject if venue→city distance exceeds threshold.
+                    // Prevents old no-guard masteredCityId assignments (e.g. Bali→Singapore 1800km)
+                    // from propagating onto events.
+                    if (venue.geolocation?.coordinates && city.location?.coordinates) {
+                        const distKm = haversineKm(venue.geolocation.coordinates, city.location.coordinates);
+                        if (distKm > VENUE_CITY_MAX_KM) {
+                            report.skipped.push({
+                                field: 'masteredCityId',
+                                reason: `distance-guard: venue→city ${Math.round(distKm)}km > ${VENUE_CITY_MAX_KM}km — skipping (corpus-gap-review)`,
+                            });
+                        } else {
+                            // Name-conflict guard (AIDI 2026-04-19 14:27Z)
+                            if (eventDoc.masteredCityName && eventDoc.masteredCityName !== city.cityName) {
+                                eventDoc.masteringStatus = 'name-conflict-review';
+                                report.skipped.push({
+                                    field: 'masteredCityId',
+                                    reason: `name-conflict: existing="${eventDoc.masteredCityName}" vs derived="${city.cityName}" (flagged for human review)`,
+                                });
+                            } else {
+                                eventDoc.masteredCityId = venue.masteredCityId;
+                                eventDoc.masteredCityName = city.cityName;
+                                report.actions.push({ field: 'masteredCityId', source: 'venue-denorm', value: venue.masteredCityId });
+                            }
+                        }
                     } else {
-                        eventDoc.masteredCityId = venue.masteredCityId;
-                        eventDoc.masteredCityName = city.cityName;
-                        report.actions.push({ field: 'masteredCityId', source: 'venue-denorm', value: venue.masteredCityId });
+                        // No coordinates on venue or city — can't validate distance, skip safely.
+                        report.skipped.push({ field: 'masteredCityId', reason: 'distance-guard: missing geolocation on venue or city — skipping' });
                     }
                 }
             }
@@ -445,9 +475,23 @@ async function resolveCountryViaChain(db, eventDoc) {
             const venueObjId = typeof eventDoc.venueID === 'string' ? new ObjectId(eventDoc.venueID) : eventDoc.venueID;
             const venue = await db.collection('venues').findOne(
                 { _id: venueObjId },
-                { projection: { masteredCityId: 1 } }
+                { projection: { masteredCityId: 1, geolocation: 1 } }
             );
             if (venue && venue.masteredCityId) {
+                // Distance guard (CALBEAF-133): validate venue→city distance before chaining.
+                if (venue.geolocation?.coordinates) {
+                    const cityDoc = await db.collection('masteredcities').findOne(
+                        { _id: venue.masteredCityId },
+                        { projection: { location: 1 } }
+                    );
+                    if (cityDoc?.location?.coordinates) {
+                        const distKm = haversineKm(venue.geolocation.coordinates, cityDoc.location.coordinates);
+                        if (distKm > VENUE_CITY_MAX_KM) {
+                            return { masteredCountryId: null, masteredCountryName: null, source: null,
+                                reason: `venue->city distance ${Math.round(distKm)}km > ${VENUE_CITY_MAX_KM}km guard — skipping` };
+                        }
+                    }
+                }
                 const result = await chainFromCity(db, venue.masteredCityId);
                 if (result.masteredCountryId) return { ...result, source: 'venue-chain' };
                 return { masteredCountryId: null, masteredCountryName: null, source: null, reason: 'venue->city resolved but city chain broken' };
