@@ -152,7 +152,7 @@ async function userLoginGetByFirebaseIdHandler(request, context) {
             );
 
             const roles = await rolesCollection
-                .find({ _id: { $in: roleObjectIds } })
+                .find({ _id: { $in: roleObjectIds }, appId })
                 .toArray();
 
             // Replace roleIds with populated role objects
@@ -251,7 +251,7 @@ async function userLoginsGetAllHandler(request, context) {
         if (allRoleIds.size > 0) {
             const roleObjectIds = Array.from(allRoleIds).map(id => new ObjectId(id));
             const roles = await rolesCollection
-                .find({ _id: { $in: roleObjectIds } })
+                .find({ _id: { $in: roleObjectIds }, appId })
                 .toArray();
             for (const role of roles) {
                 rolesMap[role._id.toString()] = role;
