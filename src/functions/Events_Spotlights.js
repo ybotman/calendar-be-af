@@ -217,10 +217,12 @@ async function spotlightsHandler(request, context) {
             };
         }
 
-        // CALBEAF-148: validTypes aligned with FE renderer + TIEMPO-388 schema
-        // ('band' dropped — orphan, not in FE renderer, 0 events used it).
-        // 'canceled' stays out — that's event.isCanceled (organizer flow), not a spotlight entry.
-        const validTypes = ['dj', 'instructor', 'performer', 'orchestra', 'note'];
+        // CALBEAF-148/153: validTypes aligned with FE renderer + TIEMPO-388/438 schema.
+        // 'band' dropped (orphan).
+        // 'canceled' added per TIEMPO-438 SL UX rework: SL writes per-occurrence
+        // canceled into instanceOverrides (recurring) or master spotlights[] (one-off).
+        // Renderer treats canceled-spotlight OR event.isCanceled as canceled (additive).
+        const validTypes = ['dj', 'instructor', 'performer', 'orchestra', 'note', 'canceled'];
         if (!validTypes.includes(spotlight.type.toLowerCase())) {
             return {
                 status: 400,
