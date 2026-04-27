@@ -205,8 +205,10 @@ async function spotlightsHandler(request, context) {
             };
         }
 
-        // Validate spotlight type
-        const validTypes = ['dj', 'instructor', 'performer', 'band'];
+        // CALBEAF-148: validTypes aligned with FE renderer + TIEMPO-388 schema
+        // ('band' dropped — orphan, not in FE renderer, 0 events used it).
+        // 'canceled' stays out — that's event.isCanceled (organizer flow), not a spotlight entry.
+        const validTypes = ['dj', 'instructor', 'performer', 'orchestra', 'note'];
         if (!validTypes.includes(spotlight.type.toLowerCase())) {
             return {
                 status: 400,
