@@ -221,8 +221,11 @@ async function eventsGetHandler(request, context) {
     try {
         // Parse and validate pagination parameters
         const pageNum = Math.max(1, parseInt(page) || 1);
-        // CALBEAF-132: travelWorthy requests silently capped at 100 (scrape-guard)
-        const TRAVEL_WORTHY_LIMIT = 100;
+        // CALBEAF-146: travelWorthy page cap raised 100→500 to fit /explore (~308 events
+        // today, growing). Best-effort scrape deterrent only — Referer check (above) is
+        // the real guard; the cap is bypassable via pagination. Other endpoints keep their
+        // smaller limits since travelWorthy is the heaviest /explore use case.
+        const TRAVEL_WORTHY_LIMIT = 500;
         const globalLimit = travelWorthy === 'true' ? TRAVEL_WORTHY_LIMIT : 500;
         const limitNum = Math.min(globalLimit, Math.max(1, parseInt(limit) || 100));
         const skip = (pageNum - 1) * limitNum;
