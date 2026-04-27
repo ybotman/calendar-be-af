@@ -38,7 +38,8 @@ const TANGO_APP_IDS = new Set(['1']);
 // Categories where the forBeginners classifier can return TRUE. All other categories
 // force forBeginners=false via category gate. (Toby 2026-04-18 rule refinement:
 // Festival/Marathon/Encuentro joined Practica/Milonga/etc. as forBeginners=false hard-gate.)
-const BEGINNER_ELIGIBLE_CATEGORIES = new Set(['Class', 'Workshop', 'DayWorkshop']);
+// CALBEAF-154: DayWorkshop deprecated (workshops bucketed by duration, not label).
+const BEGINNER_ELIGIBLE_CATEGORIES = new Set(['Class', 'Workshop']);
 
 // ============================================
 // classifyBeginner — pure text inference
@@ -355,7 +356,7 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
             report.actions.push({ field: 'beginnerFriendly', source: 'strict-friendly', value: finalFriendly, reason: `category=${categoryName}` });
         }
     } else {
-        // Eligible (Class / Workshop / DayWorkshop): full classifier, always recompute
+        // Eligible (Class / Workshop): full classifier, always recompute (DayWorkshop deprecated CALBEAF-154)
         const computed = classifyBeginner(eventDoc.title, eventDoc.description);
         const finalForBeg = applyOverride(computed.forBeginners, eventDoc.forBeginnersOverride);
         const finalFriendly = applyOverride(computed.beginnerFriendly || finalForBeg, eventDoc.beginnerFriendlyOverride);

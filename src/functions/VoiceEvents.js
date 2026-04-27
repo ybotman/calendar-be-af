@@ -46,7 +46,7 @@ async function voiceEventsHandler(request, context) {
     // Category shortcuts mapping (appId=1 TangoTiempo)
     const CATEGORY_SHORTCUTS = {
         'social': ['66c4d370a87a956db06c49ea', '66c4d370a87a956db06c49e9'], // Practica, Milonga
-        'classes': ['66c4d370a87a956db06c49eb', '66c4d370a87a956db06c49ed', '6700258c9bde2a0fb8166f87'], // Class, Workshop, DayWorkshop
+        'classes': ['66c4d370a87a956db06c49eb', '66c4d370a87a956db06c49ed'], // Class, Workshop (CALBEAF-154: DayWorkshop deprecated)
         'practica': ['66c4d370a87a956db06c49ea'],
         'milonga': ['66c4d370a87a956db06c49e9'],
         'class': ['66c4d370a87a956db06c49eb']
