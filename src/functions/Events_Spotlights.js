@@ -50,9 +50,15 @@ async function hasSpotlighterRole(db, firebaseUID, appId) {
         return { hasRole: false, reason: 'User not found' };
     }
 
-    // Check 1: Does user have Spotlighter in roleIds?
-    const hasRoleInArray = userLogin.roleIds?.some(
-        r => r.roleName === 'Spotlighter'
+    // CALBEAF-152: roleIds in DB are ObjectIds, not populated docs.
+    // Look up Spotlighter role _id and compare ObjectId membership.
+    const spotlighterRole = await db.collection('roles').findOne({ roleName: 'Spotlighter', appId });
+    if (!spotlighterRole) {
+        return { hasRole: false, reason: 'Spotlighter role not configured for this appId' };
+    }
+
+    const hasRoleInArray = (userLogin.roleIds || []).some(
+        id => id.toString() === spotlighterRole._id.toString()
     );
 
     if (!hasRoleInArray) {
@@ -95,13 +101,17 @@ async function isApprovedOrganizer(db, firebaseUID, appId) {
         return { approved: false, reason: 'User has no associated organizer' };
     }
 
-    const organizer = await db.collection('organizers').findOne({
-        _id: organizerId,
-        "regionalOrganizerInfo.isApproved": true
-    });
+    // CALBEAF-152: approval flags live on userLogin.regionalOrganizerInfo, not on the
+    // organizer doc itself. Earlier code queried organizers for a non-existent
+    // regionalOrganizerInfo.isApproved field — always false.
+    const userOrgInfo = userLogin.regionalOrganizerInfo;
+    if (!userOrgInfo.isApproved || !userOrgInfo.isEnabled || !userOrgInfo.isActive) {
+        return { approved: false, reason: 'User organizer association is not approved/enabled/active' };
+    }
 
+    const organizer = await db.collection('organizers').findOne({ _id: organizerId });
     if (!organizer) {
-        return { approved: false, reason: 'Organizer not found or not approved' };
+        return { approved: false, reason: 'Organizer record not found' };
     }
 
     return {

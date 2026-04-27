@@ -729,8 +729,11 @@ async function organizersConnectUserHandler(request, context) {
             }
         );
 
-        // Get the RegionalOrganizer role
+        // Get the RegionalOrganizer + Spotlighter roles
+        // CALBEAF-151 policy: RO grants imply SL (lesser-rights bundled capability).
+        // Admin UpdateRoles path (UserLogins.js) is unaffected and retains exact-set semantics.
         const organizerRole = await rolesCollection.findOne({ roleName: 'RegionalOrganizer', appId });
+        const spotlighterRole = await rolesCollection.findOne({ roleName: 'Spotlighter', appId });
 
         // Update the user's regionalOrganizerInfo and add role
         const userUpdate = {
@@ -744,9 +747,10 @@ async function organizersConnectUserHandler(request, context) {
             }
         };
 
-        // Add role if it exists and user doesn't have it
-        if (organizerRole) {
-            userUpdate.$addToSet = { roleIds: organizerRole._id };
+        // Bundle RO + SL via $addToSet so existing role grants are preserved
+        const rolesToAdd = [organizerRole?._id, spotlighterRole?._id].filter(Boolean);
+        if (rolesToAdd.length > 0) {
+            userUpdate.$addToSet = { roleIds: { $each: rolesToAdd } };
         }
 
         await userLoginsCollection.updateOne(
