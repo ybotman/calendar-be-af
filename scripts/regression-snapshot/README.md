@@ -23,6 +23,10 @@ Implements **Layer 3 post-deploy verification** per `MasterCalendar/docs/PROD-DE
 | `verify.sh` | Re-runs same queries → `baselines/*-post.json` and diffs |
 | `baselines/` | Captured JSON snapshots (gitignored — contains PII) |
 
+## Note on staging changes here
+
+Top-level `.gitignore:94` broadly ignores `scripts/`. To stage updates to files in this directory you currently need `git add -f path/to/file`. Tracked here per CALBEAF-147 until that gitignore is narrowed.
+
 ## Why baselines are gitignored
 
 Baseline JSONs include real production user data (emails, firebaseUIDs, role lists, organizer associations). Even in a private repo that's PII we don't need in git history. The **scripts** are the durable artifact — re-running `capture-baseline.sh` against current PROD reproduces the baseline anytime.
