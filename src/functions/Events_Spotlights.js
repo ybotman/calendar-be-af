@@ -40,8 +40,9 @@ function getSpotlightsFromEvent(event) {
 // 2. spotlighterInfo.isEnabled = true (can be turned off by admin)
 // ============================================
 async function hasSpotlighterRole(db, firebaseUID, appId) {
+    // CALBEAF-149: actual userlogin field is firebaseUserId, not firebaseUID.
     const userLogin = await db.collection('userlogins').findOne({
-        firebaseUID: firebaseUID,
+        firebaseUserId: firebaseUID,
         appId: appId
     });
 
@@ -77,9 +78,11 @@ async function hasSpotlighterRole(db, firebaseUID, appId) {
 // HELPER: Check if user is an approved organizer
 // ============================================
 async function isApprovedOrganizer(db, firebaseUID, appId) {
-    // Look up user in userlogins to get their organizer associations
+    // CALBEAF-149: actual userlogin fields are firebaseUserId (not firebaseUID)
+    // and regionalOrganizerInfo.organizerId (not activeOrganizerId — dead field,
+    // 0 of 52 TEST userlogins had it).
     const userLogin = await db.collection('userlogins').findOne({
-        firebaseUID: firebaseUID,
+        firebaseUserId: firebaseUID,
         appId: appId
     });
 
@@ -87,14 +90,13 @@ async function isApprovedOrganizer(db, firebaseUID, appId) {
         return { approved: false, reason: 'User not found in userlogins' };
     }
 
-    // Check if user has an associated organizer that is approved
-    if (!userLogin.activeOrganizerId) {
-        return { approved: false, reason: 'User has no active organizer' };
+    const organizerId = userLogin.regionalOrganizerInfo?.organizerId;
+    if (!organizerId) {
+        return { approved: false, reason: 'User has no associated organizer' };
     }
 
-    // Note: isApproved is nested in regionalOrganizerInfo
     const organizer = await db.collection('organizers').findOne({
-        _id: userLogin.activeOrganizerId,
+        _id: organizerId,
         "regionalOrganizerInfo.isApproved": true
     });
 
