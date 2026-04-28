@@ -324,6 +324,20 @@ async function eventsGetHandler(request, context) {
             baseFilter.forBeginners = forBeginners === 'true';
         }
 
+        // CALBEAF-156: ?view=main|beginner|all visibility split
+        // - main: exclude organizer-explicit beginner-only events (forBeginners=true AND
+        //   isDiscovered !== true). AI-found beginner events stay visible in main.
+        // - beginner: include events where forBeginners=true (organizer + AI-found alike).
+        // - all (or unset): no view-based filter.
+        const view = request.query.get('view');
+        if (view === 'main') {
+            baseFilter.$nor = (baseFilter.$nor || []).concat([
+                { forBeginners: true, isDiscovered: { $ne: true } }
+            ]);
+        } else if (view === 'beginner') {
+            baseFilter.forBeginners = true;
+        }
+
         // Collection for $and conditions (like calendar-be's andConditions array)
         const andConditions = [];
 

@@ -40,8 +40,9 @@ function getSpotlightsFromEvent(event) {
 // 2. spotlighterInfo.isEnabled = true (can be turned off by admin)
 // ============================================
 async function hasSpotlighterRole(db, firebaseUID, appId) {
+    // CALBEAF-149: actual userlogin field is firebaseUserId, not firebaseUID.
     const userLogin = await db.collection('userlogins').findOne({
-        firebaseUID: firebaseUID,
+        firebaseUserId: firebaseUID,
         appId: appId
     });
 
@@ -49,9 +50,15 @@ async function hasSpotlighterRole(db, firebaseUID, appId) {
         return { hasRole: false, reason: 'User not found' };
     }
 
-    // Check 1: Does user have Spotlighter in roleIds?
-    const hasRoleInArray = userLogin.roleIds?.some(
-        r => r.roleName === 'Spotlighter'
+    // CALBEAF-152: roleIds in DB are ObjectIds, not populated docs.
+    // Look up Spotlighter role _id and compare ObjectId membership.
+    const spotlighterRole = await db.collection('roles').findOne({ roleName: 'Spotlighter', appId });
+    if (!spotlighterRole) {
+        return { hasRole: false, reason: 'Spotlighter role not configured for this appId' };
+    }
+
+    const hasRoleInArray = (userLogin.roleIds || []).some(
+        id => id.toString() === spotlighterRole._id.toString()
     );
 
     if (!hasRoleInArray) {
@@ -77,9 +84,11 @@ async function hasSpotlighterRole(db, firebaseUID, appId) {
 // HELPER: Check if user is an approved organizer
 // ============================================
 async function isApprovedOrganizer(db, firebaseUID, appId) {
-    // Look up user in userlogins to get their organizer associations
+    // CALBEAF-149: actual userlogin fields are firebaseUserId (not firebaseUID)
+    // and regionalOrganizerInfo.organizerId (not activeOrganizerId — dead field,
+    // 0 of 52 TEST userlogins had it).
     const userLogin = await db.collection('userlogins').findOne({
-        firebaseUID: firebaseUID,
+        firebaseUserId: firebaseUID,
         appId: appId
     });
 
@@ -87,19 +96,22 @@ async function isApprovedOrganizer(db, firebaseUID, appId) {
         return { approved: false, reason: 'User not found in userlogins' };
     }
 
-    // Check if user has an associated organizer that is approved
-    if (!userLogin.activeOrganizerId) {
-        return { approved: false, reason: 'User has no active organizer' };
+    const organizerId = userLogin.regionalOrganizerInfo?.organizerId;
+    if (!organizerId) {
+        return { approved: false, reason: 'User has no associated organizer' };
     }
 
-    // Note: isApproved is nested in regionalOrganizerInfo
-    const organizer = await db.collection('organizers').findOne({
-        _id: userLogin.activeOrganizerId,
-        "regionalOrganizerInfo.isApproved": true
-    });
+    // CALBEAF-152: approval flags live on userLogin.regionalOrganizerInfo, not on the
+    // organizer doc itself. Earlier code queried organizers for a non-existent
+    // regionalOrganizerInfo.isApproved field — always false.
+    const userOrgInfo = userLogin.regionalOrganizerInfo;
+    if (!userOrgInfo.isApproved || !userOrgInfo.isEnabled || !userOrgInfo.isActive) {
+        return { approved: false, reason: 'User organizer association is not approved/enabled/active' };
+    }
 
+    const organizer = await db.collection('organizers').findOne({ _id: organizerId });
     if (!organizer) {
-        return { approved: false, reason: 'Organizer not found or not approved' };
+        return { approved: false, reason: 'Organizer record not found' };
     }
 
     return {
@@ -205,8 +217,12 @@ async function spotlightsHandler(request, context) {
             };
         }
 
-        // Validate spotlight type
-        const validTypes = ['dj', 'instructor', 'performer', 'band'];
+        // CALBEAF-148/153: validTypes aligned with FE renderer + TIEMPO-388/438 schema.
+        // 'band' dropped (orphan).
+        // 'canceled' added per TIEMPO-438 SL UX rework: SL writes per-occurrence
+        // canceled into instanceOverrides (recurring) or master spotlights[] (one-off).
+        // Renderer treats canceled-spotlight OR event.isCanceled as canceled (additive).
+        const validTypes = ['dj', 'instructor', 'performer', 'orchestra', 'note', 'canceled'];
         if (!validTypes.includes(spotlight.type.toLowerCase())) {
             return {
                 status: 400,
