@@ -38,20 +38,20 @@ function truncate(s, n = 160) {
 }
 
 // =============================================================================
-// Per-segment + per-source TT blurbs (placeholder copy — swap in seoBlurbs.js or here)
+// Per-segment + per-source blurbs — awaiting final copy from Sarah/Quinn
 // =============================================================================
 const BLURBS = {
     RO: {
-        milonga: 'A milonga is a tango social dance event where dancers gather to enjoy traditional Argentine tango music and dancing. This event is organized and curated by a registered TangoTiempo organizer.',
-        practica: 'A practica is a tango practice session — less formal than a milonga, with dancers refining technique and trying new patterns. Hosted by a TangoTiempo organizer.',
-        travelworthy: 'This is a multi-day, travel-worthy tango event — festivals, marathons, encuentros — designed for dancers traveling from out of town. Organized by a TangoTiempo registered organizer.',
-        beginner: 'This event is marked as a beginner-only event by the organizer — a welcoming space for those new to Argentine tango.',
+        milonga:      'A milonga is a social Argentine tango dance — an evening where the community gathers to connect through music and movement. This event is listed directly by a TangoTiempo organizer. TangoTiempo is a free global calendar for the Argentine tango community.',
+        practica:     'A practica is an informal Argentine tango practice session — a relaxed space to work on technique, explore new figures, and grow as a dancer. This event is posted by a TangoTiempo organizer. TangoTiempo is a free global calendar connecting tango dancers everywhere.',
+        travelworthy: 'This is a travelworthy tango event — a multi-day festival, marathon, or encuentro that draws dancers from across the region or around the world. Posted by a TangoTiempo organizer as a destination event worth planning a trip for. TangoTiempo is a free global tango calendar helping you find the best events near you and far from home.',
+        beginner:     'This event is explicitly beginner-friendly — a welcoming space for anyone new to Argentine tango, from first-timers to those still finding their footing. Posted by a TangoTiempo organizer who has marked it as appropriate for beginners. TangoTiempo is a free global tango calendar for dancers at every level.',
     },
     AI: {
-        milonga: 'A milonga is a tango social dance event. This listing was automatically discovered from external sources and curated for the TangoTiempo community.',
-        practica: 'A practica is a tango practice session. This listing was automatically discovered from external sources and added to TangoTiempo.',
-        travelworthy: 'This multi-day tango event was discovered from external sources — likely a festival, marathon, or encuentro — and is recommended for traveling tango dancers.',
-        beginner: 'This beginner-friendly tango event was identified from external sources. New dancers welcome.',
+        milonga:      'A milonga is a social Argentine tango dance where the community gathers to dance and connect. TangoTiempo discovered and aggregated this event from public sources — confirm details with the organizer before attending. TangoTiempo is a free global calendar for the Argentine tango community worldwide.',
+        practica:     'A practica is an informal Argentine tango practice session where dancers work on technique in a low-pressure, community setting. TangoTiempo discovered and aggregated this event from public sources — confirm details with the organizer. TangoTiempo is a free global calendar connecting tango dancers everywhere.',
+        travelworthy: 'This tango festival, marathon, or encuentro has been identified by TangoTiempo as travelworthy — an event that draws dancers beyond the local community and is worth the journey. Discovered and aggregated from public sources — verify details with the organizer before booking travel. TangoTiempo is a free global calendar helping dancers find events worth the trip.',
+        beginner:     'This event has been identified as beginner-friendly — a welcoming entry point for those new to Argentine tango. TangoTiempo discovered and aggregated this event from public sources; we encourage beginners to contact the organizer to confirm it\'s the right fit. TangoTiempo is a free global tango calendar for dancers at every stage of the journey.',
     },
 };
 
@@ -136,6 +136,18 @@ function renderJsonLd(event, segment, source, occurrenceDate, seoUrl, niche) {
         url: seoUrl,
         eventStatus: 'https://schema.org/EventScheduled',
         eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+        organizer: {
+            '@type': 'Organization',
+            name: 'TangoTiempo',
+            url: `https://${niche.domain}`,
+        },
+        offers: {
+            '@type': 'Offer',
+            price: '0',
+            priceCurrency: 'USD',
+            availability: 'https://schema.org/InStock',
+            url: `https://${niche.domain}`,
+        },
     };
 
     if (event.venueName || event.masteredCityName || event.venueCityName) {
@@ -151,10 +163,10 @@ function renderJsonLd(event, segment, source, occurrenceDate, seoUrl, niche) {
     }
 
     if (source === 'RO' && (event.ownerOrganizerName || event.organizerName)) {
-        schema.organizer = {
-            '@type': 'Organization',
-            name: escapeJsonString(event.ownerOrganizerName || event.organizerName),
-        };
+        schema.organizer = [
+            { '@type': 'Organization', name: 'TangoTiempo', url: `https://${niche.domain}` },
+            { '@type': 'Organization', name: escapeJsonString(event.ownerOrganizerName || event.organizerName) },
+        ];
     }
 
     if (source === 'RO' && event.eventImage) {
@@ -205,6 +217,10 @@ function renderSeoPage(event, options) {
         ? `<meta property="og:image" content="${escapeHtml(event.eventImage)}">`
         : '';
 
+    const aiBadge = source === 'AI'
+        ? `<p class="ai-badge">AI-Discovered — aggregated from public sources by TangoTiempo</p>`
+        : '';
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -221,8 +237,13 @@ ${ogImage}
 ${renderJsonLd(event, segment, source, occurrenceDate, seoUrl, niche)}
 </head>
 <body>
+<header class="tt-header">
+  <a href="https://${escapeHtml(niche.domain)}">${escapeHtml(niche.displayName)}</a>
+  <span class="tt-tagline">Free tango calendar for the world</span>
+</header>
 <main>
 <h1>${escapeHtml(event.title)}</h1>
+${aiBadge}
 ${renderDateBlock(event, occurrenceDate)}
 ${renderLocationBlock(event)}
 ${renderImageBlock(event, source)}
@@ -231,11 +252,11 @@ ${renderDescriptionBlock(event)}
 <section class="tt-blurb">
 <p>${escapeHtml(blurb)}</p>
 </section>
-<p class="cta"><a href="${escapeHtml(ttUrl)}">View this event on ${escapeHtml(niche.displayName)} →</a></p>
+<p class="cta"><a href="${escapeHtml(ttUrl)}">View &amp; register on ${escapeHtml(niche.displayName)} →</a></p>
 ${renderSourceBlock(event, source)}
 </main>
 <footer>
-<p><small>Part of <a href="https://${escapeHtml(niche.domain)}">${escapeHtml(niche.displayName)}</a>'s calendar of ${escapeHtml(segment)} events.</small></p>
+<p><a href="https://${escapeHtml(niche.domain)}">${escapeHtml(niche.displayName)}</a> — Free tango calendar for the world. <a href="https://${escapeHtml(niche.domain)}/${escapeHtml(segment)}">More ${escapeHtml(segment)} events →</a></p>
 </footer>
 </body>
 </html>`;
