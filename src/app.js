@@ -114,8 +114,9 @@ require('./functions/Admin_DataHealth');
 require('./functions/Backup_MongoDB');
 require('./functions/Backup_Firebase');
 
-// SEO - Sitemap URL generation
+// SEO - Sitemap URL generation + nightly content build (CALBEAF-157)
 require('./functions/Sitemap_GetUrls');
+require('./functions/SEO_BuildContent');
 
 // Outreach Onboarding - CALBEAF-95
 require('./functions/Outreach_GenerateLink');

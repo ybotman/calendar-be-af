@@ -79,6 +79,10 @@
     {
       "name": "Outreach",
       "description": "Organizer outreach onboarding - token generation, resolution, and funnel tracking (CALBEAF-95)"
+    },
+    {
+      "name": "SEO",
+      "description": "SEO content build — nightly cron renders event pages per segment and writes to Cloudflare R2 (CALBEAF-157)"
     }
   ],
   "paths": {
@@ -3450,6 +3454,39 @@
             "content": { "application/json": { "schema": { "type": "object", "properties": { "tracked": { "type": "boolean" } } } } }
           },
           "400": { "description": "Validation error (token_required or invalid_event)" }
+        }
+      }
+    },
+    "/api/admin/seo/preview": {
+      "get": {
+        "summary": "Preview SEO page for an event",
+        "description": "Returns rendered HTML for a specific event+segment+source. Used for copy iteration without running the full cron. Requires Azure function key.",
+        "tags": ["SEO"],
+        "operationId": "seoPreview",
+        "security": [{ "functionKey": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "query", "required": true, "schema": { "type": "string" }, "description": "MongoDB ObjectId of the event" },
+          { "name": "segment", "in": "query", "schema": { "type": "string", "enum": ["milonga","practica","travelworthy","beginner"] }, "description": "SEO segment" },
+          { "name": "source", "in": "query", "schema": { "type": "string", "enum": ["RO","AI"] }, "description": "Event source variant" },
+          { "name": "appId", "in": "query", "schema": { "type": "string" }, "description": "Application ID (default: 1)" },
+          { "name": "occurrenceDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "YYYY-MM-DD for recurring event occurrence" }
+        ],
+        "responses": {
+          "200": { "description": "Rendered HTML page", "content": { "text/html": { "schema": { "type": "string" } } } },
+          "400": { "description": "Missing or invalid parameters" },
+          "404": { "description": "Event not found" }
+        }
+      }
+    },
+    "/api/admin/seo/build": {
+      "post": {
+        "summary": "Manually trigger SEO content build",
+        "description": "Runs the same logic as the nightly timer cron. Returns immediately after triggering. Requires Azure function key.",
+        "tags": ["SEO"],
+        "operationId": "seoBuildManual",
+        "security": [{ "functionKey": [] }],
+        "responses": {
+          "200": { "description": "Build triggered", "content": { "application/json": { "schema": { "type": "object", "properties": { "triggered": { "type": "boolean" }, "timestamp": { "type": "string", "format": "date-time" } } } } } }
         }
       }
     },
