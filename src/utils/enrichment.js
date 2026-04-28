@@ -337,6 +337,13 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     const categoryName = await resolveCategoryName(db, eventDoc.categoryFirstId, appId);
     const categoryAllowed = categoryName && eligibleBeginnerCategories.has(categoryName);
 
+    // CALBEAF-156: organizer-set forBeginners is authoritative on user-created events.
+    // For user events (isDiscovered !== true), skip the classifier and trust the value
+    // the organizer sent — their toggle is the source of truth. AI-found events
+    // (isDiscovered === true) keep classifier semantics. beginnerFriendly classifier
+    // logic is unchanged regardless of isDiscovered.
+    const isAiFound = eventDoc.isDiscovered === true;
+
     if (!classifierEligible) {
         report.skipped.push({ field: 'forBeginners/beginnerFriendly', reason: `appId=${appId} outside Tango niche` });
     } else if (!categoryAllowed) {
@@ -345,24 +352,28 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
         // "not beginner even if there is a class beforehand; milonga has to be clear-clear-clear
         // on its own text" — Toby 2026-04-18.
         const strictFriendly = matchesFriendlyOnlyStrict(eventDoc.title, eventDoc.description);
-        const finalForBeg = applyOverride(false, eventDoc.forBeginnersOverride);
+        const finalForBeg = isAiFound
+            ? applyOverride(false, eventDoc.forBeginnersOverride)
+            : !!eventDoc.forBeginners; // user-sent value wins
         const finalFriendly = applyOverride(strictFriendly, eventDoc.beginnerFriendlyOverride);
         if (eventDoc.forBeginners !== finalForBeg) {
             eventDoc.forBeginners = finalForBeg;
-            report.actions.push({ field: 'forBeginners', source: 'category-gate', value: finalForBeg, reason: `category=${categoryName}` });
+            report.actions.push({ field: 'forBeginners', source: isAiFound ? 'category-gate' : 'organizer-set', value: finalForBeg, reason: `category=${categoryName}` });
         }
         if (eventDoc.beginnerFriendly !== finalFriendly) {
             eventDoc.beginnerFriendly = finalFriendly;
             report.actions.push({ field: 'beginnerFriendly', source: 'strict-friendly', value: finalFriendly, reason: `category=${categoryName}` });
         }
     } else {
-        // Eligible (Class / Workshop): full classifier, always recompute (DayWorkshop deprecated CALBEAF-154)
+        // Eligible (Class / Workshop): full classifier on AI-found; trust organizer on user-created.
         const computed = classifyBeginner(eventDoc.title, eventDoc.description);
-        const finalForBeg = applyOverride(computed.forBeginners, eventDoc.forBeginnersOverride);
+        const finalForBeg = isAiFound
+            ? applyOverride(computed.forBeginners, eventDoc.forBeginnersOverride)
+            : !!eventDoc.forBeginners; // user-sent value wins
         const finalFriendly = applyOverride(computed.beginnerFriendly || finalForBeg, eventDoc.beginnerFriendlyOverride);
         if (eventDoc.forBeginners !== finalForBeg) {
             eventDoc.forBeginners = finalForBeg;
-            report.actions.push({ field: 'forBeginners', source: 'classifier', value: finalForBeg });
+            report.actions.push({ field: 'forBeginners', source: isAiFound ? 'classifier' : 'organizer-set', value: finalForBeg });
         }
         if (eventDoc.beginnerFriendly !== finalFriendly) {
             eventDoc.beginnerFriendly = finalFriendly;
