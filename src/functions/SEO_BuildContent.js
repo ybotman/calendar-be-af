@@ -220,7 +220,7 @@ app.timer('SEO_BuildContent', {
 app.http('SEO_Preview', {
     methods: ['GET'],
     authLevel: 'function',
-    route: 'admin/seo/preview',
+    route: 'ops/seo/preview',
     handler: async (request, context) => {
         const eventId    = request.query.get('eventId');
         const segment    = request.query.get('segment') || 'milonga';
@@ -289,7 +289,7 @@ app.http('SEO_Preview', {
 app.http('SEO_BuildContent_Manual', {
     methods: ['POST'],
     authLevel: 'function',
-    route: 'admin/seo/build',
+    route: 'ops/seo/build',
     handler: async (request, context) => {
         context.log('SEO_BuildContent_Manual: manually triggered');
         await seoContentBuildHandler(context);

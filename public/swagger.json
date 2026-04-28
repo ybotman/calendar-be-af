@@ -3457,7 +3457,7 @@
         }
       }
     },
-    "/api/admin/seo/preview": {
+    "/api/ops/seo/preview": {
       "get": {
         "summary": "Preview SEO page for an event",
         "description": "Returns rendered HTML for a specific event+segment+source. Used for copy iteration without running the full cron. Requires Azure function key.",
@@ -3478,7 +3478,7 @@
         }
       }
     },
-    "/api/admin/seo/build": {
+    "/api/ops/seo/build": {
       "post": {
         "summary": "Manually trigger SEO content build",
         "description": "Runs the same logic as the nightly timer cron. Returns immediately after triggering. Requires Azure function key.",
