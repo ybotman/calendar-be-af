@@ -257,24 +257,33 @@ async function seoCityPageHandler(request, context) {
 
         const organizerDocs = orgObjectIds.length > 0
             ? await db.collection('organizers').find(
-                { _id: { $in: orgObjectIds }, isVisible: { $ne: false } },
+                // wantRender filter: skip organizers who haven't opted into FE rendering —
+                // their /organizers/{shortName} pages can't render and city-page links would 404.
+                { _id: { $in: orgObjectIds }, isVisible: { $ne: false }, wantRender: { $ne: false } },
                 { projection: { organizerName: 1, shortName: 1, images: { $slice: 1 } } }
               ).toArray()
             : [];
 
         const orgDocMap = new Map(organizerDocs.map(o => [o._id.toString(), o]));
 
-        const organizerCount = orgEventAgg.length;
-        const topOrganizers = orgEventAgg.map(a => {
-            const org = orgDocMap.get(a._id.toString()) || {};
-            return {
-                organizerId: a._id.toString(),
-                name:        org.organizerName || org.shortName || '',
-                shortName:   org.shortName || '',
-                eventCount:  a.eventCount,
-                imageUrl:    org.images?.[0]?.originalUrl || null   // field is originalUrl on organizer docs
-            };
-        }).filter(o => o.name);
+        // Build topOrganizers by joining the event-side aggregation with the renderable
+        // organizer docs. Drop entries with no matching doc (filtered out by wantRender).
+        const topOrganizers = orgEventAgg
+            .map(a => {
+                const org = orgDocMap.get(a._id.toString());
+                if (!org) return null;
+                return {
+                    organizerId: a._id.toString(),
+                    name:        org.organizerName || org.shortName || '',
+                    shortName:   org.shortName || '',
+                    eventCount:  a.eventCount,
+                    imageUrl:    org.images?.[0]?.originalUrl || null
+                };
+            })
+            .filter(o => o && o.name);
+
+        // organizerCount reflects the renderable list (drives both display + mode)
+        const organizerCount = topOrganizers.length;
 
         // --- 4. Adaptive mode ---
         const mode = organizerCount < ORGANIZER_ACQUISITION_THRESHOLD
