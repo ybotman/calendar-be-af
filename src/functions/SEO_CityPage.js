@@ -104,31 +104,63 @@ async function seoCityPageHandler(request, context) {
         await mongoClient.connect();
         const db = mongoClient.db();
 
-        // --- 1. Resolve city from masteredcities by slug match ---
-        // Slug is computed (not stored), so we fetch and filter in JS.
-        // masteredcities count is small (~200-500) so this is fast.
-        const allCities = await db.collection('masteredcities')
-            .find({ appId }, { projection: { cityName: 1, masteredRegionId: 1, location: 1 } })
+        // --- 1. Resolve city from masteredcities by citySlug + parent disambiguation ---
+        // parentSlug accepts EITHER state slug (US, e.g. "massachusetts") OR country slug
+        // (e.g. "united-states"). Multiple matches are disambiguated by event count.
+        // Critical for Portland (OR vs ME) — without this, the first masteredcity wins silently.
+        const candidates = await db.collection('masteredcities')
+            .find({ appId },
+                { projection: { cityName: 1, masteredRegionId: 1, location: 1,
+                                stateName: 1, stateCode: 1, countryCode: 1 } })
             .toArray();
 
-        const cityDoc = allCities.find(c =>
-            toSlug(c.cityName) === citySlug
+        // Country lookup for non-US parent slug matching
+        const countries = await db.collection('masteredcountries')
+            .find({ appId }, { projection: { countryName: 1, countryCode: 1 } })
+            .toArray();
+        const countryNameByCode = new Map(
+            countries.map(c => [c.countryCode || '', c.countryName])
         );
-        if (!cityDoc) {
-            return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'City not found' }) };
+
+        // Filter candidates by citySlug, then by parentSlug matching either state or country
+        const slugMatches = candidates.filter(c => toSlug(c.cityName) === citySlug);
+        const parentMatches = slugMatches.filter(c => {
+            const isUS = c.countryCode === 'US';
+            const stateSlugForCity   = c.stateName ? toSlug(c.stateName) : null;
+            const countryName        = countryNameByCode.get(c.countryCode || '');
+            const countrySlugForCity = countryName ? toSlug(countryName) : null;
+            // Match against either parent type — supports both /tango/[state]/[city] and /tango/[country]/[city]
+            return (isUS && stateSlugForCity === regionSlug) || countrySlugForCity === regionSlug;
+        });
+
+        if (parentMatches.length === 0) {
+            return { status: 404, headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'City not found in that parent (state/country)' }) };
         }
 
-        // Resolve region for the slug check
+        // Disambiguate when multiple candidates (e.g. Portland under "united-states" matches both OR and ME)
+        // by selecting the one with the most upcoming events.
+        let cityDoc = parentMatches[0];
+        if (parentMatches.length > 1) {
+            const nowForCount = new Date();
+            const counts = await Promise.all(parentMatches.map(c =>
+                db.collection('events').countDocuments({
+                    appId, masteredCityId: c._id,
+                    startDate: { $gte: nowForCount }
+                })
+            ));
+            const winnerIdx = counts.reduce((bestIdx, n, i) => n > counts[bestIdx] ? i : bestIdx, 0);
+            cityDoc = parentMatches[winnerIdx];
+            context.log(`SEO_CityPage: ${parentMatches.length} candidates for ${regionSlug}/${citySlug}, picked ${cityDoc.cityName} (${counts[winnerIdx]} events)`);
+        }
+
+        // Look up region doc for response shape (legacy regionName field)
         const regionDoc = cityDoc.masteredRegionId
             ? await db.collection('masteredregions').findOne(
                 { _id: new ObjectId(cityDoc.masteredRegionId.toString()) },
                 { projection: { regionName: 1 } }
               )
             : null;
-
-        if (regionDoc && toSlug(regionDoc.regionName) !== regionSlug) {
-            return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'City not found in that region' }) };
-        }
 
         const cityId = cityDoc._id;
         const lat = cityDoc.location?.coordinates?.[1] ?? null;
