@@ -136,14 +136,24 @@ async function seoGeoSummaryHandler(request, context) {
         ).toArray();
         const cityMeta = new Map(cityDocs.map(d => [d._id.toString(), d]));
 
+        // Country lookup — fallback when event-doc masteredCountryName isn't denormalized
+        // (affects 13 international cities on PROD: Berlin, Milan, Naples, etc.)
+        const countries = await db.collection('masteredcountries')
+            .find({ appId }, { projection: { countryName: 1, countryCode: 1 } })
+            .toArray();
+        const countryNameByCode = new Map(
+            countries.map(c => [c.countryCode || '', c.countryName])
+        );
+
         // Build city list — determine parentSlug (state for US, country for intl)
+        // Country fallback chain: event countryName → masteredcountries lookup by code
         let cities = cityAgg.map(c => {
             const id = c._id ? c._id.toString() : null;
             const meta = id ? (cityMeta.get(id) || {}) : {};
             const countryCode  = meta.countryCode || null;
             const stateName    = meta.stateName || null;
             const stateCode    = meta.stateCode || null;
-            const countryName  = c.countryName || null;
+            const countryName  = c.countryName || countryNameByCode.get(countryCode) || null;
             const countrySlug  = toSlug(countryName);
             const isUS         = countryCode === 'US';
             const parentName   = isUS && stateName ? stateName : countryName;
@@ -169,7 +179,9 @@ async function seoGeoSummaryHandler(request, context) {
                     .filter(cat => cat.name)
                     .sort((a, b) => b.count - a.count)
             };
-        }).filter(c => c.cityId);
+        }).filter(c => c.cityId && c.parentSlug);
+        // Defensive: drop any city with empty parentSlug — these would produce
+        // /tango//{city} URLs that break Vercel's Next.js generateStaticParams.
 
         if (filterParentSlug) cities = cities.filter(c => c.parentSlug === filterParentSlug);
         if (filterCitySlug)   cities = cities.filter(c => c.citySlug   === filterCitySlug);
