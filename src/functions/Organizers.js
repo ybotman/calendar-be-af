@@ -393,6 +393,11 @@ async function organizersCreateHandler(request, context) {
             firebaseUserId: body.firebaseUserId || null,
             linkedUserLogin: body.linkedUserLogin || null,
             images: body.images || [],
+            // CALBEAF-168: discovery provenance fields (additive, optional)
+            // Allowlist these explicitly — matches Venues_Create.
+            isDiscovered:     body.isDiscovered === true,
+            discoverySource:  typeof body.discoverySource === 'string' ? body.discoverySource : null,
+            discoveryBatchId: typeof body.discoveryBatchId === 'string' ? body.discoveryBatchId : null,
             createdAt: new Date(),
             updatedAt: new Date()
         };

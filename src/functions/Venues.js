@@ -476,6 +476,11 @@ async function venuesCreateHandler(request, context) {
             country: body.country || 'US',
             isActive: body.isActive !== undefined ? body.isActive : true,
             isApproved: body.isApproved !== undefined ? body.isApproved : false,
+            // CALBEAF-168: discovery provenance fields (additive, optional)
+            // Allowlist these explicitly — do NOT use schema strict:false.
+            isDiscovered:     body.isDiscovered === true,
+            discoverySource:  typeof body.discoverySource === 'string' ? body.discoverySource : null,
+            discoveryBatchId: typeof body.discoveryBatchId === 'string' ? body.discoveryBatchId : null,
             createdAt: new Date(),
             updatedAt: new Date()
         };
