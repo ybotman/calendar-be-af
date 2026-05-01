@@ -203,7 +203,8 @@ function renderSeoPage(event, options) {
         ? `${seoBase}/${segment}/${source}/${event._id}-${occIso}.html`
         : `${seoBase}/${segment}/${source}/${event._id}.html`;
 
-    const ttUrl = `https://${niche.domain}/events/${event._id}${occIso ? `?date=${occIso}` : ''}`;
+    // TT route is /event/{id} (singular) — confirmed in tangotiempo.com/src/app/event/[id]/page.js
+    const ttUrl = `https://${niche.domain}/event/${event._id}${occIso ? `?date=${occIso}` : ''}`;
 
     const blurb = BLURBS[source][segment] || '';
     const datePretty = occurrenceDate
