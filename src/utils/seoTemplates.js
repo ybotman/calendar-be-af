@@ -89,8 +89,11 @@ function renderDateBlock(event, occurrenceDate) {
     if (!date) return '';
     const d = date instanceof Date ? date : new Date(date);
     if (isNaN(d.getTime())) return '';
+    // Use event.venueTimezone so local-evening events don't roll to next UTC day
+    // (e.g. 9pm EDT May 1 was rendering as "May 2" because UTC).
+    const tz = event.venueTimezone || 'UTC';
     const dateStr = d.toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: tz
     });
     return `<section class="event-date"><p><strong>Date:</strong> ${escapeHtml(dateStr)}</p></section>`;
 }
@@ -207,9 +210,11 @@ function renderSeoPage(event, options) {
     const ttUrl = `https://${niche.domain}/event/${event._id}${occIso ? `?date=${occIso}` : ''}`;
 
     const blurb = BLURBS[source][segment] || '';
+    // TZ-aware: render in venue local time so 9pm-EDT events don't roll to next UTC day
+    const dateTz = event.venueTimezone || 'UTC';
     const datePretty = occurrenceDate
-        ? (occurrenceDate instanceof Date ? occurrenceDate : new Date(occurrenceDate)).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-        : (event.startDate ? new Date(event.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
+        ? (occurrenceDate instanceof Date ? occurrenceDate : new Date(occurrenceDate)).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: dateTz })
+        : (event.startDate ? new Date(event.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: dateTz }) : '');
 
     const titleTag = `${event.title}${datePretty ? ` — ${datePretty}` : ''} | ${niche.displayName}`;
     const metaDesc = truncate(event.description || `${event.title} — ${segment} on ${niche.displayName}`, 160);

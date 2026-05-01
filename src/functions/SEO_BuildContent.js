@@ -175,7 +175,7 @@ async function processSegment(db, niche, segment, catMap, context, opts = {}) {
                 _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
                 recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
                 forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
-                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
+                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1, venueTimezone: 1,
                 seoLastBuiltAt: 1,
             }})
             .sort({ seoLastBuiltAt: 1 })   // oldest / never-built first
@@ -186,7 +186,7 @@ async function processSegment(db, niche, segment, catMap, context, opts = {}) {
                 _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
                 recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
                 forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
-                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
+                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1, venueTimezone: 1,
                 seoLastBuiltAt: 1,
             }});
     }
@@ -355,7 +355,7 @@ app.http('SEO_Preview', {
                     _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
                     recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
                     forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
-                    masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
+                    masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1, venueTimezone: 1,
                 }}
             );
 
