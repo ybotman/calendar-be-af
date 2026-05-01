@@ -203,7 +203,8 @@ async function eventsGetHandler(request, context) {
 
     // CALBEAF-132: travelWorthy scrape-guard
     // Referer check — reject requests with no/wrong Referer when travelWorthy=true
-    if (travelWorthy === 'true') {
+    // Bypass in local dev (NODE_ENV=development) so localhost frontends work
+    if (travelWorthy === 'true' && process.env.NODE_ENV !== 'development') {
         const referer = request.headers.get('referer') || request.headers.get('Referer') || '';
         const allowed = /^https?:\/\/([a-z0-9-]+\.)*tangotiempo\.com(\/|$)/i.test(referer);
         if (!allowed) {
