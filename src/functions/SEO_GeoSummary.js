@@ -15,7 +15,11 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { standardMiddleware } = require('../middleware');
 
 const CITY_MIN_EVENTS  = 3;
-const PARENT_MIN_CITIES = 2; // min qualifying cities for a parent (state/country) index page
+// CALBEAF-171: lowered from 2 → 1. Was excluding 29 single-city parents
+// (Massachusetts/Boston 238 events, Oregon/Portland 519 events, etc.) from parents[],
+// which caused FE /tango/[parent] soft-404s. The thin-content concern (1-city parent
+// index = redundant with the city page) is mild enough vs the 404 cost.
+const PARENT_MIN_CITIES = 1;
 
 const CLASSIFIER_LABELS = {
     travelWorthy: 'Travel-Worthy Tango Events',
