@@ -70,13 +70,20 @@ async function loadCategoryMap(db, appId) {
 /**
  * Build a MongoDB $or filter matching any of the 3 category slots for the
  * given list of category ObjectIds.
+ *
+ * NOTE: events store categoryFirstId/SecondId/ThirdId as STRINGS (verified
+ * 2026-05-01). The $in must include both string and ObjectId forms to be
+ * resilient to mixed-type data — ObjectId form preserves correctness if any
+ * future writes use Mongoose-cast types.
  */
 function categoryFilter(objIds) {
+    const stringIds = objIds.map(id => id.toString());
+    const dualIds = [...stringIds, ...objIds];
     return {
         $or: [
-            { categoryFirstId:  { $in: objIds } },
-            { categorySecondId: { $in: objIds } },
-            { categoryThirdId:  { $in: objIds } },
+            { categoryFirstId:  { $in: dualIds } },
+            { categorySecondId: { $in: dualIds } },
+            { categoryThirdId:  { $in: dualIds } },
         ],
     };
 }
@@ -127,14 +134,22 @@ async function processSegment(db, niche, segment, catMap, context, opts = {}) {
     }
 
     const now = new Date();
+    // NOTE: segmentFilter has its own $or (category match across 3 slots).
+    // Spreading it would OVERWRITE the time-window $or — combine both via $and
+    // so each $or applies independently. Also: events store empty string ''
+    // for recurrenceRule on non-recurring events, so $nin: [null, ''] is needed.
+    const andClauses = [
+        { $or: [
+            { endDate: { $gte: now } },
+            { recurrenceRule: { $exists: true, $nin: [null, ''] } },
+        ]},
+        segmentFilter,
+    ];
+
     const baseQuery = {
         appId: niche.appId,
         isActive: true,
-        $or: [
-            { endDate: { $gte: now } },
-            { recurrenceRule: { $exists: true, $ne: null } },
-        ],
-        ...segmentFilter,
+        $and: andClauses,
     };
 
     // Mode-specific filters
@@ -151,10 +166,10 @@ async function processSegment(db, niche, segment, catMap, context, opts = {}) {
     let cursor;
     if (mode === 'trickle') {
         const horizon = new Date(Date.now() - REBUILD_AFTER_HOURS * 3600 * 1000);
-        baseQuery.$and = [{ $or: [
+        andClauses.push({ $or: [
             { seoLastBuiltAt: { $exists: false } },
             { seoLastBuiltAt: { $lt: horizon } }
-        ]}];
+        ]});
         cursor = db.collection('events')
             .find(baseQuery, { projection: {
                 _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
