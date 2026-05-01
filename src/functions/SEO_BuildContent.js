@@ -1,15 +1,15 @@
 // src/functions/SEO_BuildContent.js
-// CALBEAF-157 Phase 3+4 — Nightly SEO content build cron + preview endpoint.
+// CALBEAF-157 Phase 3+4 — SEO content build cron + manual triggers.
+// CALBEAF-169 — Trickle pattern: state-tracked chunked builds replacing single-shot nightly.
 //
-// Timer: runs nightly at 3 AM UTC for each configured niche.
-// For each segment × event, renders HTML via seoTemplates and writes to R2
-// via r2Client (guarded by SEO_WRITES_ENABLED and R2 credentials).
+// Timer: runs every 30 min between 00:00–06:00 UTC, processes batches of stale events.
+// Manual: POST /api/ops/seo/build with mode={event,city,segment,trickle,all}
+//
+// State tracking: events.seoLastBuiltAt is stamped after successful R2 write.
+// Trickle mode picks events with stale or missing seoLastBuiltAt.
 //
 // Kill switch: SEO_WRITES_ENABLED env var must be 'true' on PROD.
 // TEST will skip writes (no flag set) but log the build normally.
-//
-// Segments: milonga, practica, travelworthy, beginner
-// Sources: RO (organizer-set events), AI (isDiscovered events)
 
 'use strict';
 
@@ -35,6 +35,21 @@ const SEGMENT_CATEGORIES = {
 const RRULE_WEEKS = 6;
 const RRULE_HORIZON_MS = RRULE_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
+// CALBEAF-169 trickle pattern config
+const TRICKLE_BATCH_PER_SEGMENT = 25;       // ~100 events per invocation across 4 segments
+const REBUILD_AFTER_HOURS       = 23;       // re-render an event ~once per 24h
+
+// Slugify (matches SEO_CityPage / SEO_GeoSummary — needed for citySlug resolution)
+function toSlug(name) {
+    if (!name) return '';
+    return name
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 /**
@@ -55,13 +70,20 @@ async function loadCategoryMap(db, appId) {
 /**
  * Build a MongoDB $or filter matching any of the 3 category slots for the
  * given list of category ObjectIds.
+ *
+ * NOTE: events store categoryFirstId/SecondId/ThirdId as STRINGS (verified
+ * 2026-05-01). The $in must include both string and ObjectId forms to be
+ * resilient to mixed-type data — ObjectId form preserves correctness if any
+ * future writes use Mongoose-cast types.
  */
 function categoryFilter(objIds) {
+    const stringIds = objIds.map(id => id.toString());
+    const dualIds = [...stringIds, ...objIds];
     return {
         $or: [
-            { categoryFirstId:  { $in: objIds } },
-            { categorySecondId: { $in: objIds } },
-            { categoryThirdId:  { $in: objIds } },
+            { categoryFirstId:  { $in: dualIds } },
+            { categorySecondId: { $in: dualIds } },
+            { categoryThirdId:  { $in: dualIds } },
         ],
     };
 }
@@ -87,10 +109,17 @@ function expandOccurrences(event) {
  * Process one segment for one niche.
  * Returns { rendered, written, skipped, errors }.
  */
-async function processSegment(db, niche, segment, catMap, context) {
+async function processSegment(db, niche, segment, catMap, context, opts = {}) {
+    const { mode = 'all', eventId, masteredCityId, segment: targetSegment } = opts;
+
+    // Mode='segment' filter — skip non-matching segments
+    if (mode === 'segment' && targetSegment && targetSegment !== segment) {
+        return { rendered: 0, written: 0, skipped: 0, errors: 0 };
+    }
+
     let rendered = 0, written = 0, skipped = 0, errors = 0;
 
-    // Build query
+    // Build segment category filter
     let segmentFilter = {};
     if (segment === 'beginner') {
         segmentFilter = { forBeginners: true };
@@ -105,30 +134,70 @@ async function processSegment(db, niche, segment, catMap, context) {
     }
 
     const now = new Date();
-    const query = {
+    // NOTE: segmentFilter has its own $or (category match across 3 slots).
+    // Spreading it would OVERWRITE the time-window $or — combine both via $and
+    // so each $or applies independently. Also: events store empty string ''
+    // for recurrenceRule on non-recurring events, so $nin: [null, ''] is needed.
+    const andClauses = [
+        { $or: [
+            { endDate: { $gte: now } },
+            { recurrenceRule: { $exists: true, $nin: [null, ''] } },
+        ]},
+        segmentFilter,
+    ];
+
+    const baseQuery = {
         appId: niche.appId,
         isActive: true,
-        $or: [
-            { endDate: { $gte: now } },
-            { recurrenceRule: { $exists: true, $ne: null } },
-        ],
-        ...segmentFilter,
+        $and: andClauses,
     };
 
-    const events = await db.collection('events')
-        .find(query, { projection: {
-            _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
-            recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
-            forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
-            masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
-        }})
-        .toArray();
+    // Mode-specific filters
+    if (mode === 'event' && eventId) {
+        try { baseQuery._id = new ObjectId(eventId); }
+        catch { context.log(`SEO_BuildContent: invalid eventId ${eventId}`); return { rendered, written, skipped, errors }; }
+    }
+    if ((mode === 'city' || mode === 'trickle' || mode === 'event') && masteredCityId) {
+        try { baseQuery.masteredCityId = new ObjectId(masteredCityId); }
+        catch { context.log(`SEO_BuildContent: invalid masteredCityId ${masteredCityId}`); return { rendered, written, skipped, errors }; }
+    }
 
-    context.log(`SEO_BuildContent: segment=${segment} niche=${niche.slug} — ${events.length} events`);
+    // Trickle mode — only events with stale seoLastBuiltAt (or never built)
+    let cursor;
+    if (mode === 'trickle') {
+        const horizon = new Date(Date.now() - REBUILD_AFTER_HOURS * 3600 * 1000);
+        andClauses.push({ $or: [
+            { seoLastBuiltAt: { $exists: false } },
+            { seoLastBuiltAt: { $lt: horizon } }
+        ]});
+        cursor = db.collection('events')
+            .find(baseQuery, { projection: {
+                _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
+                recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
+                forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
+                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
+                seoLastBuiltAt: 1,
+            }})
+            .sort({ seoLastBuiltAt: 1 })   // oldest / never-built first
+            .limit(TRICKLE_BATCH_PER_SEGMENT);
+    } else {
+        cursor = db.collection('events')
+            .find(baseQuery, { projection: {
+                _id: 1, title: 1, description: 1, startDate: 1, endDate: 1,
+                recurrenceRule: 1, eventImage: 1, source: 1, isDiscovered: 1,
+                forBeginners: 1, venueName: 1, masteredCityName: 1, venueCityName: 1,
+                masteredCountryName: 1, ownerOrganizerName: 1, organizerName: 1,
+                seoLastBuiltAt: 1,
+            }});
+    }
+
+    const events = await cursor.toArray();
+    context.log(`SEO_BuildContent: mode=${mode} segment=${segment} niche=${niche.slug} — ${events.length} events`);
 
     for (const event of events) {
         const source = event.isDiscovered ? 'AI' : 'RO';
         const occurrences = expandOccurrences(event);
+        let writtenForThisEvent = 0;
 
         for (const occurrenceDate of occurrences) {
             try {
@@ -146,6 +215,7 @@ async function processSegment(db, niche, segment, catMap, context) {
                 const result = await putHtml(niche.slug, key, html);
                 if (result.written) {
                     written++;
+                    writtenForThisEvent++;
                 } else {
                     skipped++;
                     if (skipped <= 1) {
@@ -158,6 +228,19 @@ async function processSegment(db, niche, segment, catMap, context) {
                 context.log(`SEO_BuildContent ERROR event=${event._id} segment=${segment}: ${err.message}`);
             }
         }
+
+        // CALBEAF-169: stamp seoLastBuiltAt only after at least one successful write
+        // so trickle mode picks this event up next cycle if all writes failed.
+        if (writtenForThisEvent > 0) {
+            try {
+                await db.collection('events').updateOne(
+                    { _id: event._id },
+                    { $set: { seoLastBuiltAt: new Date() } }
+                );
+            } catch (err) {
+                context.log(`SEO_BuildContent: failed to stamp seoLastBuiltAt for ${event._id}: ${err.message}`);
+            }
+        }
     }
 
     return { rendered, written, skipped, errors };
@@ -165,14 +248,15 @@ async function processSegment(db, niche, segment, catMap, context) {
 
 // ─── main build handler ──────────────────────────────────────────────────────
 
-async function seoContentBuildHandler(context) {
+async function seoContentBuildHandler(context, opts = {}) {
     const startTs = Date.now();
-    context.log(`SEO_BuildContent: starting build — SEO_WRITES_ENABLED=${SEO_WRITES_ENABLED}`);
+    const mode = opts.mode || 'all';
+    context.log(`SEO_BuildContent: starting build mode=${mode} — SEO_WRITES_ENABLED=${SEO_WRITES_ENABLED}`);
 
     const mongoUri = process.env.MONGODB_URI;
     if (!mongoUri) {
         context.log('SEO_BuildContent: MONGODB_URI not set — aborting');
-        return;
+        return { mode, niches: [], elapsed: 0, error: 'MONGODB_URI not set' };
     }
 
     const summary = [];
@@ -185,12 +269,28 @@ async function seoContentBuildHandler(context) {
             const dbName = mongoUri.match(/\/([^/?]+)(\?|$)/)?.[1] || 'TangoTiempoProd';
             const db = mongoClient.db(dbName);
 
+            // Resolve citySlug → masteredCityId once per niche if needed
+            const resolvedOpts = { ...opts };
+            if ((mode === 'city' || mode === 'event') && opts.citySlug && !opts.masteredCityId) {
+                const cities = await db.collection('masteredcities')
+                    .find({ appId: niche.appId }, { projection: { cityName: 1 } })
+                    .toArray();
+                const match = cities.find(c => toSlug(c.cityName) === opts.citySlug);
+                if (match) {
+                    resolvedOpts.masteredCityId = match._id.toString();
+                    context.log(`SEO_BuildContent: resolved citySlug=${opts.citySlug} → ${match.cityName} (${match._id})`);
+                } else {
+                    context.log(`SEO_BuildContent: citySlug=${opts.citySlug} not found in niche=${niche.slug} — skipping`);
+                    continue;
+                }
+            }
+
             const catMap = await loadCategoryMap(db, niche.appId);
             context.log(`SEO_BuildContent: niche=${niche.slug} appId=${niche.appId} — ${Object.keys(catMap).length} categories loaded`);
 
             const segments = ['milonga', 'practica', 'travelworthy', 'beginner'];
             for (const segment of segments) {
-                const stats = await processSegment(db, niche, segment, catMap, context);
+                const stats = await processSegment(db, niche, segment, catMap, context, resolvedOpts);
                 summary.push({ niche: niche.slug, segment, ...stats });
                 context.log(`SEO_BuildContent: ${niche.slug}/${segment} — rendered=${stats.rendered} written=${stats.written} skipped=${stats.skipped} errors=${stats.errors}`);
             }
@@ -203,14 +303,17 @@ async function seoContentBuildHandler(context) {
     }
 
     const elapsed = Math.round((Date.now() - startTs) / 1000);
-    context.log(`SEO_BuildContent: done in ${elapsed}s — ${JSON.stringify(summary)}`);
+    context.log(`SEO_BuildContent: done mode=${mode} in ${elapsed}s — ${JSON.stringify(summary)}`);
+    return { mode, niches: summary, elapsed };
 }
 
-// ─── timer trigger (nightly 3 AM UTC) ───────────────────────────────────────
+// ─── timer trigger (CALBEAF-169 trickle: every 30 min during 00:00–06:00 UTC) ─
 
 app.timer('SEO_BuildContent', {
-    schedule: '0 0 3 * * *',
-    handler: seoContentBuildHandler,
+    schedule: '0 */30 0-5 * * *',
+    handler: async (myTimer, context) => {
+        await seoContentBuildHandler(context, { mode: 'trickle' });
+    },
 });
 
 // ─── HTTP preview endpoint ───────────────────────────────────────────────────
@@ -291,12 +394,23 @@ app.http('SEO_BuildContent_Manual', {
     authLevel: 'function',
     route: 'ops/seo/build',
     handler: async (request, context) => {
-        context.log('SEO_BuildContent_Manual: manually triggered');
-        await seoContentBuildHandler(context);
+        const opts = {
+            mode:            request.query.get('mode') || 'all',
+            eventId:         request.query.get('eventId') || undefined,
+            citySlug:        request.query.get('citySlug') || undefined,
+            masteredCityId:  request.query.get('masteredCityId') || undefined,
+            segment:         request.query.get('segment') || undefined,
+        };
+        context.log(`SEO_BuildContent_Manual: triggered with opts=${JSON.stringify(opts)}`);
+        const result = await seoContentBuildHandler(context, opts);
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ triggered: true, timestamp: new Date().toISOString() }),
+            body: JSON.stringify({
+                triggered: true,
+                timestamp: new Date().toISOString(),
+                ...result
+            }),
         };
     },
 });
