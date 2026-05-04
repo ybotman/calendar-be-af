@@ -9,6 +9,8 @@ const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = requi
 // CALBEAF-110: classifyAndEnrichEvent superseded by runDataQualityPipeline (Phase 6 wiring).
 // Old import retained as no-op reference until eventClassification.js is fully retired.
 const { runDataQualityPipeline } = require('../utils/enrichment');
+// CALBEAF-171: BE defense-in-depth — reject Events_Create/Update without categoryFirstId.
+const { validateCategoryFirstIdPresence } = require('../utils/eventCategoryValidation');
 
 // CALBEAF-173: parentSlug resolver for parent-scoped events query.
 // parentSlug is NOT denormalized on masteredcities (verified TEST 0/272, PROD 0/272 on
@@ -1016,6 +1018,22 @@ async function eventsCreateHandler(request, context) {
             };
         }
 
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId must be present on create.
+        // Prevents headless events from any API caller (FE Save Anyway, Porter loaders,
+        // niche-harvest, partner integrations, direct API testing).
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'create');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         // Parse and validate dates
         const parsedStartDate = new Date(requestBody.startDate);
         if (isNaN(parsedStartDate.getTime())) {
@@ -1235,6 +1253,21 @@ async function eventsUpdateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
+
+        // CALBEAF-171: BE defense-in-depth — if categoryFirstId is being set on update,
+        // it must not be cleared to null/empty. Absence (undefined) is fine — partial update.
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'update');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;
