@@ -299,6 +299,15 @@ Path: `~/MyDocs/AppDev/MasterCalendar/calendar-be-af/docs/E2E-TESTING-REFERENCE.
 Vault mount (post Herald-execution per Gotan §A.1): `_GHOST_CALBEAF_DOCS/E2E-TESTING-REFERENCE.md`
 Cite by relative path from `MasterCalendar/` for cross-project references.
 
+### §18.4 Cadence norms (inherited from TT v0.5/v0.7 protocol)
+
+Adopted from Sarah's TT exemplar protocol (offer 2026-05-07T20:36Z; symmetric value):
+
+- **Same-day-turnaround on §0.X content updates:** when Phase D corpus spawns surface new contract traps or endpoint changes, the §0/§11/§15 update lands in the same spawn-evidence window — not deferred to retro. Empirical baseline (Sarah TT): 5 versions in <1 hour during Sprint 4 motion 5; calendar-be-af aims for the same cadence on contract-evidence updates.
+- **Codify-at-standby-gap:** when standby-gaps appear between motions (e.g., awaiting spawn verdict, awaiting CR), use the gap to codify accumulated session lessons into the doc. Don't wait for a retro window — codify-in-flight prevents context-loss across sessions.
+
+**Cross-reference:** `feedback_code_fault_uc_readiness_gate.md` v2 (Quinn framework-folded 2026-05-07T20:35Z) defines the 4-rule recommender-side pre-flight, including the lane-attribution-check (rule 4) that catches FE/BE misattribution. **Apply before classifying any CALBEAF candidate as `expected-RED:fulton`** — symmetric risk for FE-side actual fix surface on a CALBEAF-filed ticket.
+
 ---
 
 ## §19 Change Log
@@ -306,6 +315,7 @@ Cite by relative path from `MasterCalendar/` for cross-project references.
 | Version | Date | Author | Scope |
 |---|---|---|---|
 | v0.1 | 2026-05-07 | Fulton | Initial commission per Charter v5 §DoR criterion #11 + Gotan B.2 BE/API template + Sarah TT v0.2 exemplar shape. Seed content for §0 + §11 + §15 + §17; full enumeration deferred to v0.2+. CALBEAF-83 fix landed and folded into §0.1 (contract trap) + §0.3 (test partition note) + §12 (side-effects) + §16 (UC reference). |
+| v0.1.1 | 2026-05-07 | Fulton | §18.4 cadence norms inherited from TT v0.5/v0.7 (same-day-turnaround + codify-at-standby-gap, per Sarah offer 20:36Z). Cross-reference to 4-rule recommender-side pre-flight (Quinn framework-folded `feedback_code_fault_uc_readiness_gate.md` v2). No content change to §0/§11/§15. |
 
 **Pending v0.2 expansions:**
 - §11 full endpoint taxonomy (table for every handler in `src/functions/`)
