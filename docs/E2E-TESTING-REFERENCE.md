@@ -11,7 +11,7 @@ permanence: long-term
 template: B.2-be-api
 template_source: Collab/handoffs/gotan/2026-05-07-vault-bless-and-per-app-e2e-doctype.md
 exemplar: tangotiempo.com/docs/E2E-TESTING-REFERENCE.md
-version: 0.2.2
+version: 0.2.3
 ---
 
 # calendar-be-af (Azure Functions BE) — E2E Testing Reference
@@ -207,22 +207,56 @@ This document is the canonical owner for test-mutator endpoint contracts; FE ref
 
 **Manifest source-of-truth:** `calendar-be-af-test-mutators/baseline/manifest.json` (manifest v1.1, commit `b14afdc` per Sarah's TT v0.2 ref).
 
-**Mutator inventory (per Sarah's TT exemplar references; v0.1 stub — full enumeration v0.2):**
+**Mutator inventory** (with API contracts; partial v0.2.3; full enumeration as gaps surface):
 
-| Mutator | Purpose | Pattern |
-|---|---|---|
-| `reset-test-user` | Reset Pattern A persistent user (`tango.tiempo.test@gmail.com` at appId=99) to baseline | Pattern A teardown |
-| `reset-orphans` | Sweep orphan records at appId=99 | Pattern A teardown |
-| `delete-test-user-by-correlation` | Delete Pattern B users by `_testCorrelationId` (ADR-0017 in pipeline; my lane) | Pattern B teardown |
-| `elevate-test-user-role` | Apply role changes per role-elevation-matrix.md (must honor TIEMPO-443 invariant — bundle SL with RO) | Both patterns |
+| Mutator | Purpose | Pattern | Required body fields |
+|---|---|---|---|
+| `reset-test-user` | Reset Pattern A persistent user (`tango.tiempo.test@gmail.com` at appId=99) to baseline | Pattern A teardown | (TBD — fold when next consumed) |
+| `reset-orphans` | Sweep orphan records at appId=99 | Pattern A teardown | (TBD) |
+| `delete-test-user-by-correlation` | Delete Pattern B users by `_testCorrelationId` (ADR-0017 in pipeline; my lane) | Pattern B teardown | (TBD — ADR-0017 will fold contract) |
+| **`elevate-test-user-role`** | Apply role changes per `role-elevation-matrix.md` (MUST honor TIEMPO-443 invariant — bundle SL with RO on RegionalOrganizer elevation) | Both patterns | **`firebaseUserId`** (target user UID), **`correlationId`** (`'preset-baseline'` for Pattern A; per-spawn correlation for Pattern B), **`targetRole`** (short-code: `NU`/`SL`/`RO`/`RA`/`SA`), **`appId`** |
 
-**Authoring rule:** any new test-mutator must:
+**`elevate-test-user-role` API contract (from UC-0020 escalation 2026-05-07T21:30Z; Gauge-discovered-via-source friction noted):**
+
+```
+POST <test-mutator-base-url>/elevate-test-user-role
+Content-Type: application/json
+
+{
+  "firebaseUserId": "<target user UID; mandatory>",
+  "correlationId": "preset-baseline" | "<UC_ID>-<ts>-<rand4hex>",
+  "targetRole": "NU" | "SL" | "RO" | "RA" | "SA",
+  "appId": "1" | "99"
+}
+```
+
+**Honors TIEMPO-443 invariant:** elevating to `RO` must result in `roleIds: [NU._id, SL._id, RO._id]` (full bundle, SET semantics REPLACES existing roleIds). Elevating to `RA` from RO preserves `regionalOrganizerInfo` and lands `roleIds: [NU._id, SL._id, RO._id, RA._id]` (admin-tier orthogonal to content tier per Sarah TT §2.2). Mutator MUST NOT short-circuit the bundle on RO elevation.
+
+**Authoring rule (extended):** any new test-mutator must:
 1. Land in `calendar-be-af-test-mutators/baseline/manifest.json` with version bump
 2. Be `appId`-scoped (compound dedup)
 3. Honor Pattern A/B partition rules (Pattern A → appId=99 fixture-keys; Pattern B → appId=1 + correlation markers)
 4. Be cited from this §15 within the same commit
+5. **Document the request body contract here at mutator-add time** (UC-0020 lesson 2026-05-07: Gauge had to read source to discover `elevate-test-user-role` body fields = sub-agent friction; same-arc documentation prevents this)
 
 ADR-0017 (`delete-test-user-by-correlation`) draft will land here when slot fires (pipeline post-S5).
+
+### §15.1 Pattern A browser-login credential persistence (Sprint 5 cross-team gap; Sprint 6 Phase 2 candidate)
+
+**UC-0020 surfaced (2026-05-07T21:30Z):** Pattern A persistent test user `tango.tiempo.test@gmail.com` at appId=99 has its password generated at mint-time by `bootstrap-e2e-user.js` but **not persisted** to any standard credential store. Result: any UC requiring actual browser login (vs mutator-only API operations) blocks on credential-not-available.
+
+**Two viable paths (Quinn arbiter ask 21:30Z):**
+
+- **(a) Persist generated password to `.env.test.local` (gitignored) or `keys.json`:** simpler, faster, Sprint 5-unblock; standard credential-handling pattern; risk = plaintext password on disk locally (acceptable for TEST-only Pattern A user; not for PROD)
+- **(b) Firebase custom-token injection:** Admin SDK mints custom token at spawn-time → injects into browser sessionStorage; credential-less browser auth; more substantive infra; Sprint 6 candidate per security maturity
+
+**Fulton recommendation (BE lane input):** path (a) for Sprint 5 unblock with persistence to `.env.test.local`. Reasoning:
+- `bootstrap-e2e-user.js` already generates the password; emit it to the persistence target at mint-time (one-line addition)
+- `.env.test.local` is the conventional gitignored env file; CI/CD pipelines and local devs both read it
+- Pattern A user is TEST-only (appId=99 partition); plaintext-on-disk risk is bounded
+- Path (b) is correct long-term but introduces Admin SDK injection surface that needs its own audit
+
+**Open: who owns `bootstrap-e2e-user.js`?** Per §15 ecosystem-canonical mapping, calendar-be-af is the §15 owner; bootstrap-e2e-user.js logically falls in `calendar-be-af-test-mutators/` repo. If that repo's owner is Quinn or Sarah's lane, this needs explicit lane assignment before Sprint 5 closes.
 
 ---
 
@@ -400,6 +434,7 @@ Adopted from Sarah's TT exemplar protocol (offer 2026-05-07T20:36Z; symmetric va
 | v0.2 | 2026-05-07 | Fulton | NEW §15.5 Merge Mechanisms + Per-App Guard Rails (BE) — mirror of Sarah TT §15.5 (`tangotiempo.com/docs/E2E-TESTING-REFERENCE.md` v0.8 commit `d874db7c`). 7 sub-sections: 3-layer guard-rail cake / Layer-1 PROD-context scoping / per-repo asymmetric table (BE has NO VM hook — key differentiator) / merge path table / Fulton 5-step CR-block protocol field-validated by CALBEAF-83+CALBEAF-183 same-day cycle / cross-persona pre-flight stats (Sarah+Fulton+Quinn three-layer codification) / Charter §B.X discovery-discipline meta-lesson. Minor version bump per §18.2 new-section rule. Standby-gap codification per §18.4. |
 | v0.2.1 | 2026-05-07 | Fulton | Structural fix per ADR-0014 v1.2 Constraint C (Archie 21:11Z arbiter call): §15.5 promoted from h3 (child of §15) to h2 (sibling of §15); §15.5.x sub-sections demoted h4→h3 to maintain hierarchy under §15.5. Loose-numbering convention note added at top of §15.5. Frontmatter `version` updated to track actual version. **Empirical-precedent note (Archie observation):** the operational-sense-of-§15.5-as-sibling was already in team use at v0.2 land 21:06Z, ~5 min BEFORE Constraint C formal codification 21:11Z. Codification followed practice; this v0.2.1 brings the markdown into tooling-compliance with the just-formalized convention. |
 | v0.2.2 | 2026-05-07 | Fulton | §0.1 CALBEAF-177 Phase 1 audit findings folded into trap entry: concrete field list (5 enforced — appId/title/startDate/endDate/categoryFirstId; 2 silently-optional gaps — venueID warn-only at `Events.js:947`, ownerOrganizerID silent → authorOrganizerID null). Phase 2 tightening defers to Sprint 6 per ticket defer-condition (caller-survey gating on Discovery-half re-engagement). **Out-of-scope structural finding flagged separately to Quinn:** DEVL is BEHIND TEST by 5+ commits including CALBEAF-171/172/173/168; `src/utils/eventCategoryValidation.js` exists on TEST but absent from DEVL. Branching divergence requires Quinn arbitration (Option A: TEST→DEVL backmerge recommended). |
+| v0.2.3 | 2026-05-07 | Fulton | §15 mutator inventory expanded with `elevate-test-user-role` API contract (per UC-0020 escalation 2026-05-07T21:30Z; Gauge-discovered-via-source friction). TIEMPO-443 invariant explicitly documented (RO elevation MUST bundle SL+NU). Authoring rule extended: rule 5 — same-arc body-contract documentation at mutator-add time. NEW §15.1 Pattern A browser-login credential persistence — UC-0020 cross-team gap surfaced; Fulton BE-lane recommendation: path (a) `.env.test.local` persistence for Sprint 5 unblock (path b Firebase custom-token injection = Sprint 6 candidate). Standby-gap codification per §18.4 (9th this Sprint 5 arc per Quinn 21:24Z citation). |
 
 **Pending v0.2 expansions:**
 - §11 full endpoint taxonomy (table for every handler in `src/functions/`)
