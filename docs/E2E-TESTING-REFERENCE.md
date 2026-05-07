@@ -224,6 +224,69 @@ This document is the canonical owner for test-mutator endpoint contracts; FE ref
 
 ADR-0017 (`delete-test-user-by-correlation`) draft will land here when slot fires (pipeline post-S5).
 
+### §15.5 Merge Mechanisms + Per-App Guard Rails (BE)
+
+**Mirror of Sarah's TT §15.5 (`tangotiempo.com/docs/E2E-TESTING-REFERENCE.md` v0.8, commit `d874db7c`).** Cross-app number-mirror: same section number across both docs for cross-persona reference. **Sarah's §15.5 is the canonical taxonomy**; this section is the calendar-be-af-specific enumeration.
+
+#### §15.5.1 Three-layer guard-rail cake
+
+| Layer | Mechanism | Calendar-be-af enforcement |
+|---|---|---|
+| **Layer 1** | Project rule | `gh pr merge` BANNED in any flag form per `MasterCalendar/CLAUDE.md` global rule (PROD-context concern: runs as Toby's gh auth, bypasses human-merge requirement). Local `git merge --no-ff` is the canonical merge mechanism. |
+| **Layer 2** | VM hook / branch-policy automation | **NONE for calendar-be-af.** No VM-side branch-protection hook; auto-deploy on TEST/PROD push happens via GitHub Actions (`test_calendarbeaf-test.yml`, `azure-functions-prod.yml`) — that's deploy automation, NOT merge gating. **This differentiates from TT FE which has a VM-hook merge guard.** |
+| **Layer 3** | Branching strategy | `MasterCalendar/docs/GIT-BRANCHING-STRATEGY.md` (T1/T2/T3 tiers + CR triggers). Auth/Security + DB schema + API contract changes = CR for TEST. PROD always requires explicit Toby approval. |
+
+#### §15.5.2 Layer-1 scoping note
+
+The `gh pr merge` ban is **PROD-context-scoped** per CLAUDE.md: "ANY flags … runs as Toby's CLI auth and bypasses the human-merge requirement." For DEVL-bound feature merges (autonomous per branching strategy), the safe mechanism is local `git merge --no-ff` + `git push origin DEVL`. PR ceremony in GitHub auto-closes when DEVL contains the commits.
+
+#### §15.5.3 Per-repo asymmetric guard table (calendar-be-af row)
+
+| Repo | Layer-1 (project rule) | Layer-2 (VM hook) | Layer-3 (branching strategy) | Auto-deploy |
+|---|---|---|---|---|
+| **calendar-be-af** (this) | `gh pr merge` BAN (PROD-context) | **NONE** | DEVL → TEST → PROD per `MasterCalendar/docs/GIT-BRANCHING-STRATEGY.md` | GitHub Actions on TEST/PROD push |
+| **tangotiempo.com** | `gh pr merge` BAN | **VM hook** (per Sarah TT §15.5.3) | sandbox/* → TEST per TT branching | Vercel auto-deploy by branch |
+
+The asymmetry matters: BE merges proceed entirely in local-git-land then push. There's no VM-side veto. Discipline = entirely on the human + persona side.
+
+#### §15.5.4 Path table for calendar-be-af merges
+
+| From | To | Mechanism | Approval |
+|---|---|---|---|
+| `feature/CALBEAF-XXX-*` | `DEVL` | local `git merge --no-ff` + `git push origin DEVL` | Autonomous on T2/T3; CR-trigger only |
+| `DEVL` | `TEST` | local `git merge DEVL` on TEST branch + `git push origin TEST` | **CR ask** for Auth/Security + DB schema + API contract changes; announce-only otherwise. Auto-deploy fires on push. |
+| `TEST` | `PROD` | local `git merge TEST` on PROD branch + `git push origin PROD` | **EXPLICIT TOBY APPROVAL ALWAYS** per `MasterCalendar/docs/PROD-DEPLOY-PROTECTION.md` |
+
+#### §15.5.5 What-Fulton-does-on-merge-block (5-step protocol)
+
+When a CR-trigger fires or merge gate engages:
+
+1. **Identify the CR trigger** (Auth flow / DB schema / API contract / Multi-file refactor / Env config / Dependency upgrade).
+2. **Compose CR ask** with: tier rationale, mitigations in place (regression tests, rollback path, empirical evidence), consumer-impact analysis (which of TT/HJ/CalOps/NTTT could be affected).
+3. **Send to Quinn** (E2E arbiter) + cc Number2 (sprint visibility) per state-transition broadcast discipline.
+4. **Standby for green light** — do not autonomous-push if T1 CORE or auth-flow + multi-consumer.
+5. **On approval, fire 5-step post-approval sequence:** local merge → push DEVL → merge TEST → push TEST (auto-deploys) → curl smoke verification → JIRA transition + signal.
+
+This protocol was field-validated twice on 2026-05-07 (CALBEAF-83 + CALBEAF-183 same-day cycle). Both got Quinn green-light on bounded-reversible reasoning + auto-pushed cleanly.
+
+#### §15.5.6 Cross-persona pre-flight stats (BE+FE combined)
+
+| Persona | Lane | Candidates surveyed | Stale-BACKLOG miss without 4-rule pre-flight |
+|---|---|---|---|
+| Sarah | TT FE | 14-15 | 3-4 (~25%) |
+| Fulton | calendar-be-af BE | 3 | 2 (~67%; small-N noise) |
+| **Combined** | — | **17-18** | **~29% miss rate** |
+
+Reference: my `feedback_recommender_pre_flight_4_rule.md` + Sarah's `feedback_e2e_doc_maintenance.md` (3-rule companion) + Quinn's `feedback_code_fault_uc_readiness_gate.md` v2 (framework). Three layers of codification — per-persona-instance (Sarah + Fulton) + framework-level (Quinn).
+
+#### §15.5.7 Discovery-discipline meta-lesson
+
+Per Sarah's TT §15.5.7 (Charter §B.X candidate): merge-gate-failures during a green-light cycle frequently surface guard-rail asymmetries the team hadn't enumerated. Field-validated catches this Sprint 5:
+- TT VM hook caught Sarah pushing without expected gate (TT-side Sprint 5 PR #357 cycle)
+- BE has no VM hook → all gating via human + branching strategy → CR ask for auth-flow contract changes is THE gate
+
+**Lesson:** when adopting per-app E2E-TESTING-REFERENCE.md, the §15.5 enumeration is required (per Charter §B.X candidate); no merge-mechanism column is empty. "None" is a valid value but must be explicit, not omitted.
+
 ---
 
 ## §16 Common UC Patterns (BE perspective)
@@ -330,6 +393,7 @@ Adopted from Sarah's TT exemplar protocol (offer 2026-05-07T20:36Z; symmetric va
 | v0.1.1 | 2026-05-07 | Fulton | §18.4 cadence norms inherited from TT v0.5/v0.7 (same-day-turnaround + codify-at-standby-gap, per Sarah offer 20:36Z). Cross-reference to 4-rule recommender-side pre-flight (Quinn framework-folded `feedback_code_fault_uc_readiness_gate.md` v2). No content change to §0/§11/§15. |
 | v0.1.2 | 2026-05-07 | Fulton | §0.1 trap added: CALBEAF-183 (UC-0018 / TIEMPO-364 mirror) — `includeAiGenerated=false` does NOT exclude `isDiscovered=true` events pre-fix. Empirical evidence cited (11,661 events at appId=1, all `isAiGenerated != true`). Post-fix extends to `isDiscovered: true` when caller hasn't explicitly set `discovered` filter. Same-commit-with-fix per §18.1+§18.4 cadence (first practical exercise of the rule). |
 | v0.1.3 | 2026-05-07 | Fulton | §0.1 trap added: `location.coordinates` field DOES NOT EXIST on events (UC-0018 secondary-finding source). §0.2 Events GET row enhanced with explicit geo-field naming + post-CALBEAF-183 filter behavior. NEW §0.2.1 Geo-field canonical names table (venueGeolocation 100% / masteredCityGeolocation ~66% / `location.coordinates` does-not-exist) + spec-authoring rule pointing to `Events.js:455-484` source-of-truth. Per Quinn §0.2 v0.2-enhancement candidate ratify 2026-05-07T21:01Z + §18.4 codify-at-standby-gap. |
+| v0.2 | 2026-05-07 | Fulton | NEW §15.5 Merge Mechanisms + Per-App Guard Rails (BE) — mirror of Sarah TT §15.5 (`tangotiempo.com/docs/E2E-TESTING-REFERENCE.md` v0.8 commit `d874db7c`). 7 sub-sections: 3-layer guard-rail cake / Layer-1 PROD-context scoping / per-repo asymmetric table (BE has NO VM hook — key differentiator) / merge path table / Fulton 5-step CR-block protocol field-validated by CALBEAF-83+CALBEAF-183 same-day cycle / cross-persona pre-flight stats (Sarah+Fulton+Quinn three-layer codification) / Charter §B.X discovery-discipline meta-lesson. Minor version bump per §18.2 new-section rule. Standby-gap codification per §18.4. |
 
 **Pending v0.2 expansions:**
 - §11 full endpoint taxonomy (table for every handler in `src/functions/`)
