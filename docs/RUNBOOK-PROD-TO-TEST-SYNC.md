@@ -1,3 +1,15 @@
+---
+date: 2026-03-10
+persona: fulton
+type: process
+state: live
+feature: env-sync
+keywords: [ops, database]
+appid: global
+audience: all
+permanence: long-term
+tags: [app/global, type/process]
+---
 # Runbook: PROD → TEST Sync + Classification Refresh
 
 **Owner:** Fulton (calendar-be-af)

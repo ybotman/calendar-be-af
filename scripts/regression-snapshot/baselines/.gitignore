@@ -1,0 +1,4 @@
+# Baseline JSONs contain PII (emails, firebaseUIDs, role lists). Keep local only.
+*.json
+*.txt
+!.gitignore

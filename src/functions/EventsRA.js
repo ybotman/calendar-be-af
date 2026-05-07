@@ -6,6 +6,8 @@ const { standardMiddleware } = require('../middleware');
 const { requireRegionalAdmin, checkRAPermission, forbiddenResponse } = require('../middleware/requireRegionalAdmin');
 const { unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { logEventActivity, getChanges, getIpAddress } = require('../utils/activityLog');
+// CALBEAF-171: BE defense-in-depth — reject EventsRA_Create/Update without categoryFirstId.
+const { validateCategoryFirstIdPresence } = require('../utils/eventCategoryValidation');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -65,16 +67,23 @@ async function eventsRACreateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
-        const {
-            title,
-            startDate,
-            endDate,
-            ownerOrganizerID,
-            venueID,
-            description,
-            cost,
-            appId = '1'
-        } = requestBody;
+
+        // CALBEAF-172: spread full body, omit BE-controlled fields. Mirrors EventsRA_Update.
+        // Previously this destructured only 8 fields, silently dropping categoryFirst,
+        // categoryFirstId, isRepeating, recurrenceRule, forBeginners, travelWorthy,
+        // eventImage, spotlights, shortTitle, etc. RA-created events had no category.
+        const userInput = { ...requestBody };
+        // BE-controlled fields the user cannot supply directly:
+        delete userInput.authorOrganizerID; // immutable creator audit trail (set below)
+        delete userInput.createdByRA;       // BE-built audit object
+        delete userInput.lastModifiedByRA;  // BE-built audit object
+        delete userInput._id;               // never accept a client-provided _id
+        delete userInput.createdAt;         // BE-controlled timestamp
+        delete userInput.updatedAt;         // BE-controlled timestamp
+        delete userInput.expiresAt;         // BE-controlled, computed below
+
+        // Pull required fields for validation + BE-controlled overrides
+        const { title, startDate, ownerOrganizerID, venueID, appId = '1' } = userInput;
 
         // Step 2: Validate required fields
         if (!title || !startDate || !ownerOrganizerID || !venueID) {
@@ -84,6 +93,20 @@ async function eventsRACreateHandler(request, context) {
                 body: JSON.stringify({
                     success: false,
                     message: 'Missing required fields: title, startDate, ownerOrganizerID, venueID',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId required on create.
+        const categoryCheck = validateCategoryFirstIdPresence(userInput, 'create');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    message: categoryCheck.error,
                     timestamp: new Date().toISOString()
                 })
             };
@@ -139,25 +162,25 @@ async function eventsRACreateHandler(request, context) {
             };
         }
 
-        // Step 6: Build event document with RA audit trail
+        // Step 6: Build event document — start with userInput, layer BE-controlled fields on top
         const ownerObjId = new ObjectId(ownerOrganizerID);
         const eventData = {
+            ...userInput,
+            // Required type coercion
             appId,
-            title,
             startDate: new Date(startDate),
-            endDate: endDate ? new Date(endDate) : undefined,
-            description: description || '',
-            cost: cost || '',
-            // Organizer info
+            endDate: userInput.endDate ? new Date(userInput.endDate) : undefined,
+            description: userInput.description || '',
+            cost: userInput.cost || '',
+            // BE-controlled organizer info (override even if client sent something)
             ownerOrganizerID: ownerObjId,
             authorOrganizerID: ownerObjId, // Immutable original creator
             ownerOrganizerName: organizer.fullName || organizer.name || 'Event Organizer',
             ownerOrganizerShortName: organizer.shortName || 'ORG',
-            // Venue info
+            // BE-controlled venue info (denormalized from authoritative venue doc)
             venueID: new ObjectId(venueID),
             locationName: venue.name,
-            venueTimezone: venue.timezone, // From venue document
-            // Location data from venue
+            venueTimezone: venue.timezone,
             masteredRegionId: venue.masteredRegionId,
             masteredDivisionId: venue.masteredDivisionId,
             masteredCityId: venue.masteredCityId,
@@ -168,11 +191,11 @@ async function eventsRACreateHandler(request, context) {
                 firebaseUserId: raUser.firebaseUserId,
                 timestamp: new Date()
             },
-            // Default values
-            isActive: true,
-            isAllDay: false,
-            isDiscovered: false,
-            isOwnerManaged: true,
+            // Defaults — only apply if user didn't supply (allow user override of, e.g., isAllDay)
+            isActive:        userInput.isActive        !== undefined ? userInput.isActive        : true,
+            isAllDay:        userInput.isAllDay        !== undefined ? userInput.isAllDay        : false,
+            isDiscovered:    userInput.isDiscovered    !== undefined ? userInput.isDiscovered    : false,
+            isOwnerManaged:  userInput.isOwnerManaged  !== undefined ? userInput.isOwnerManaged  : true,
             expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
             createdAt: new Date(),
             updatedAt: new Date()
@@ -260,6 +283,22 @@ async function eventsRAUpdateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
+
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId, if present in the update,
+        // must be non-null/non-empty (cannot clear an existing category).
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'update');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    message: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         const updateData = { ...requestBody };
 
         // Remove fields that RAs cannot update

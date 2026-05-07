@@ -1,12 +1,15 @@
-# MapCenter API - Frontend Integration Guide
-
-## Overview
-MapCenter API allows users to save and retrieve their preferred map center location (latitude, longitude, zoom) for the TangoTiempo map interface.
-
-**JIRA**: CALBEAF-48
-**Frontend Ticket**: TIEMPO-312
-**Status**: Ready for integration
-
+---
+date: 2025-11-10
+persona: fulton
+type: product
+state: live
+feature: geocoding-api
+keywords: [maps, location]
+appid: 1
+app: "[[APP-1]]"
+audience: all
+permanence: long-term
+tags: [app/tangotiempo, type/product, product/geocoding]
 ---
 
 ## Endpoints

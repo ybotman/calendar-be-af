@@ -9,6 +9,70 @@ const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = requi
 // CALBEAF-110: classifyAndEnrichEvent superseded by runDataQualityPipeline (Phase 6 wiring).
 // Old import retained as no-op reference until eventClassification.js is fully retired.
 const { runDataQualityPipeline } = require('../utils/enrichment');
+// CALBEAF-171: BE defense-in-depth — reject Events_Create/Update without categoryFirstId.
+const { validateCategoryFirstIdPresence } = require('../utils/eventCategoryValidation');
+
+// CALBEAF-173: parentSlug resolver for parent-scoped events query.
+// parentSlug is NOT denormalized on masteredcities (verified TEST 0/272, PROD 0/272 on
+// 2026-05-04 via scripts/verify-parentslug-masteredcities.js). Mirrors the per-request
+// compute pattern from SEO_GeoSummary.js + SEO_CityPage.js. A future Question/Delete/Simplify
+// ticket should consolidate the three local toSlug copies into a shared utility.
+function toSlug(name) {
+    if (!name) return '';
+    return name
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Resolve a parentSlug (state slug for US, country slug for international) to the
+ * list of masteredcity ObjectIds whose computed parentSlug matches.
+ *
+ * parentSlug = toSlug(stateName) for US cities, toSlug(countryName) for international.
+ * Mirrors SEO_GeoSummary.js compute logic exactly.
+ *
+ * @param {Db} db - MongoDB database handle
+ * @param {string} parentSlug - parent slug to resolve (e.g. "california", "australia")
+ * @returns {Promise<ObjectId[]>} city IDs whose parentSlug matches; [] when no match
+ *
+ * Fail-closed: returns [] (NOT all cities) when no match. Caller must short-circuit
+ * to empty events on [] — must NOT fall through to no-city-filter (which would return
+ * all events). Per Fulton's feedback_orphaned_hierarchy_join_pattern memory rule.
+ */
+async function resolveParentSlugToCityIds(db, parentSlug) {
+    if (!parentSlug) return [];
+
+    const cityDocs = await db.collection('masteredcities').find(
+        {},
+        { projection: { _id: 1, stateName: 1, countryCode: 1 } }
+    ).toArray();
+
+    // Country lookup table for non-US cities (parentSlug is toSlug(countryName) for intl).
+    // Matches SEO_GeoSummary.js fallback chain for masteredCountryName.
+    const countries = await db.collection('masteredcountries').find(
+        {},
+        { projection: { countryCode: 1, countryName: 1 } }
+    ).toArray();
+    const countryNameByCode = new Map(
+        countries.map(c => [c.countryCode || '', c.countryName])
+    );
+
+    const matchedIds = [];
+    for (const city of cityDocs) {
+        const isUS = city.countryCode === 'US';
+        const parentName = isUS && city.stateName
+            ? city.stateName
+            : countryNameByCode.get(city.countryCode || '') || null;
+        if (!parentName) continue;
+        if (toSlug(parentName) === parentSlug) {
+            matchedIds.push(city._id);
+        }
+    }
+    return matchedIds;
+}
 
 // CALBEAF-112: Series-as-singletons FTPNTD Layer 2 heuristic.
 // Detect if an organizer is submitting a same-title non-recurring event after
@@ -101,6 +165,10 @@ function convertIdFields(data) {
  * - masteredDivisionName: Filter by division name (string equality)
  * - masteredCityName: Filter by city name (string equality)
  * - cityIds: Filter by city ObjectIds (comma-separated or single)
+ * - parentSlug: CALBEAF-173 — filter to events in cities under one parent (state slug
+ *   for US, country slug for international, e.g. "california", "australia"). Resolves
+ *   to a set of cityIds and applies the same masteredCityId $in filter as cityIds.
+ *   Fail-closed: returns empty events if parentSlug doesn't match any city.
  * - organizerId: Filter by organizer ownership (matches owner, granted, or alternate)
  * - authorOrganizerId: Filter by original event creator (immutable field)
  * - useGeoSearch: Enable geo search ("true") — requires lat, lng
@@ -150,6 +218,9 @@ async function eventsGetHandler(request, context) {
     // Multi-city filter
     const cityIds = request.query.get('cityIds');
 
+    // CALBEAF-173: parent-scoped events filter (resolved via masteredcities lookup)
+    const parentSlug = request.query.get('parentSlug');
+
     // Organizer ownership filter (for RO filtering their own events)
     const organizerId = request.query.get('organizerId');
     // Author organizer filter (original creator - immutable)
@@ -180,6 +251,7 @@ async function eventsGetHandler(request, context) {
         masteredDivisionName,
         masteredCityName,
         cityIds,
+        parentSlug,
         organizerId,
         authorOrganizerId,
         useGeoSearch,
@@ -201,12 +273,34 @@ async function eventsGetHandler(request, context) {
         };
     }
 
+    // CALBEAF-132: travelWorthy scrape-guard
+    // Referer check — reject requests with no/wrong Referer when travelWorthy=true
+    // Bypass in local dev (NODE_ENV=development) so localhost frontends work
+    if (travelWorthy === 'true' && process.env.NODE_ENV !== 'development') {
+        const referer = request.headers.get('referer') || request.headers.get('Referer') || '';
+        const allowed = /^https?:\/\/([a-z0-9-]+\.)*tangotiempo\.com(\/|$)/i.test(referer);
+        if (!allowed) {
+            context.log('CALBEAF-132: travelWorthy request blocked — invalid Referer', { referer });
+            return {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Forbidden' })
+            };
+        }
+    }
+
     let mongoClient;
 
     try {
         // Parse and validate pagination parameters
         const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.min(500, Math.max(1, parseInt(limit) || 100));
+        // CALBEAF-146: travelWorthy page cap raised 100→500 to fit /explore (~308 events
+        // today, growing). Best-effort scrape deterrent only — Referer check (above) is
+        // the real guard; the cap is bypassable via pagination. Other endpoints keep their
+        // smaller limits since travelWorthy is the heaviest /explore use case.
+        const TRAVEL_WORTHY_LIMIT = 500;
+        const globalLimit = travelWorthy === 'true' ? TRAVEL_WORTHY_LIMIT : 500;
+        const limitNum = Math.min(globalLimit, Math.max(1, parseInt(limit) || 100));
         const skip = (pageNum - 1) * limitNum;
 
         // CALBEAF-65 v1.13.9: Match Express date calculation EXACTLY
@@ -310,6 +404,20 @@ async function eventsGetHandler(request, context) {
         }
         if (forBeginners) {
             baseFilter.forBeginners = forBeginners === 'true';
+        }
+
+        // CALBEAF-156: ?view=main|beginner|all visibility split
+        // - main: exclude organizer-explicit beginner-only events (forBeginners=true AND
+        //   isDiscovered !== true). AI-found beginner events stay visible in main.
+        // - beginner: include events where forBeginners=true (organizer + AI-found alike).
+        // - all (or unset): no view-based filter.
+        const view = request.query.get('view');
+        if (view === 'main') {
+            baseFilter.$nor = (baseFilter.$nor || []).concat([
+                { forBeginners: true, isDiscovered: { $ne: true } }
+            ]);
+        } else if (view === 'beginner') {
+            baseFilter.forBeginners = true;
         }
 
         // Collection for $and conditions (like calendar-be's andConditions array)
@@ -420,6 +528,49 @@ async function eventsGetHandler(request, context) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: 'Invalid cityIds format — expected ObjectId strings' })
                 };
+            }
+        }
+
+        // CALBEAF-173: parentSlug → cityIds resolution.
+        // Run AFTER cityIds so that combining ?parentSlug=...&cityIds=... intersects
+        // the two sets (caller-provided cityIds wins narrowing).
+        // Fail-closed: empty resolution short-circuits to empty result set per Fulton's
+        // orphan-hierarchy rule — must NOT fall through to "no city filter" (would leak
+        // country-wide events, the very bug Track A hotfixed).
+        if (parentSlug) {
+            const resolvedCityIds = await resolveParentSlugToCityIds(db, parentSlug);
+            context.log(`CALBEAF-173: parentSlug="${parentSlug}" resolved to ${resolvedCityIds.length} cityIds`);
+
+            if (resolvedCityIds.length === 0) {
+                // Unknown parentSlug or zero matching cities → 200 + empty (NOT 404).
+                // URL semantically resolves to "no events," not "endpoint not found."
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        events: [],
+                        pagination: { total: 0, page: 1, limit: parseInt(limit) || 100, pages: 0 }
+                    })
+                };
+            }
+
+            if (baseFilter.masteredCityId && Array.isArray(baseFilter.masteredCityId.$in)) {
+                // cityIds also provided — intersect the two sets
+                const cityIdsSet = new Set(baseFilter.masteredCityId.$in.map(id => id.toString()));
+                const intersected = resolvedCityIds.filter(id => cityIdsSet.has(id.toString()));
+                if (intersected.length === 0) {
+                    return {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            events: [],
+                            pagination: { total: 0, page: 1, limit: parseInt(limit) || 100, pages: 0 }
+                        })
+                    };
+                }
+                baseFilter.masteredCityId = { $in: intersected };
+            } else {
+                baseFilter.masteredCityId = { $in: resolvedCityIds };
             }
         }
 
@@ -876,6 +1027,22 @@ async function eventsCreateHandler(request, context) {
             };
         }
 
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId must be present on create.
+        // Prevents headless events from any API caller (FE Save Anyway, Porter loaders,
+        // niche-harvest, partner integrations, direct API testing).
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'create');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         // Parse and validate dates
         const parsedStartDate = new Date(requestBody.startDate);
         if (isNaN(parsedStartDate.getTime())) {
@@ -1095,6 +1262,21 @@ async function eventsUpdateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
+
+        // CALBEAF-171: BE defense-in-depth — if categoryFirstId is being set on update,
+        // it must not be cleared to null/empty. Absence (undefined) is fine — partial update.
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'update');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;

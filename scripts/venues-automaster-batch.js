@@ -50,7 +50,7 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
     console.log(`=== Venues_AutoMaster batch — ${MODE} ===`);
     console.log(`Target: ${PROD_MODE ? 'PROD (TangoTiempoProd)' : 'TEST (TangoTiempoTest)'}. PROD is fenced unless --env=prod.`);
     if (APPLY) {
-        if (!TRACK_A_CLEARED) {
+        if (!TRACK_A_CLEARED && !RECLASSIFY_MANUAL) {
             console.error('');
             console.error('❌  --apply requires --track-a-cleared flag.');
             console.error('❌  AIDI Track A (Porter loader || "US" strip + 8-row country re-resolve) MUST');
@@ -59,10 +59,16 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
             console.error('');
             console.error('   If AIDI has confirmed Track A clear, re-run with both flags:');
             console.error('   node scripts/venues-automaster-batch.js --apply --track-a-cleared');
+            console.error('');
+            console.error('   To bypass Track A and re-classify corpus-gap-review venues anyway:');
+            console.error('   node scripts/venues-automaster-batch.js --apply --reclassify-manual');
             process.exit(2);
         }
         console.log('');
-        console.log('⚠️  --apply --track-a-cleared mode selected.');
+        if (RECLASSIFY_MANUAL) {
+            console.log('⚠️  --reclassify-manual: corpus-gap-review venues will be re-evaluated.');
+            console.log('⚠️  Track A gate bypassed — ~13 bad-coord venues may receive incorrect US mastering.');
+        }
         console.log('⚠️  This WRITES to TEST Mongo (TangoTiempoTest). PROD remains fenced.');
         console.log('⚠️  Writes: per-bucket rules per doc Q3.5 hierarchy-aware model.');
         console.log('⚠️  Idempotent: venues with masteringStatus already set will be skipped.');
@@ -236,7 +242,7 @@ const MODE = APPLY ? 'APPLY' : 'DRY_RUN';
         'mastered',                    // CALBEAF-114 legacy AUTO_HIGH writes (61 venues)
         'mastered_by_automaster',       // this spec's AUTO_HIGH terminal
         'country_only_by_automaster',   // this spec's AUTO_MEDIUM terminal (until future Tier-2 corpus-add re-eval)
-        'corpus-gap-review',            // parked; re-eval only on corpus expansion
+        ...(!RECLASSIFY_MANUAL ? ['corpus-gap-review'] : []),  // re-eval on corpus expansion (--reclassify-manual bypasses)
         'name-conflict-review',         // human-adjudication parked
     ];
 

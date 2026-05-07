@@ -23,11 +23,12 @@ const path = require('path');
 const { runDataQualityPipeline } = require('../src/utils/enrichment');
 
 function parseArgs() {
-    const args = { dryRun: true, knowProd: false, sampleSize: 30, output: null, appId: '1', forceRecompute: false };
+    const args = { dryRun: true, knowProd: false, envProd: false, sampleSize: 30, output: null, appId: '1', forceRecompute: false };
     for (const arg of process.argv.slice(2)) {
         if (arg === '--apply') args.dryRun = false;
         else if (arg === '--dry-run') args.dryRun = true;
         else if (arg === '--i-know-prod') args.knowProd = true;
+        else if (arg === '--env=prod') { args.envProd = true; args.knowProd = true; }
         else if (arg === '--force-recompute') args.forceRecompute = true;
         else if (arg.startsWith('--sample-size=')) args.sampleSize = parseInt(arg.split('=')[1], 10);
         else if (arg.startsWith('--output=')) args.output = arg.split('=')[1];
@@ -36,18 +37,19 @@ function parseArgs() {
     return args;
 }
 
-function loadUri() {
-    const uri = process.env.MONGODB_URI_TEST
+function loadUri(envProd) {
+    const key = envProd ? 'MONGODB_URI_PROD' : 'MONGODB_URI_TEST';
+    const uri = process.env[key]
         || (function () {
             try {
                 const settings = require('../local.settings.json');
-                return settings.Values.MONGODB_URI_TEST;
+                return settings.Values[key];
             } catch {
                 return null;
             }
         })();
     if (!uri) {
-        console.error('ERROR: MONGODB_URI_TEST not configured');
+        console.error(`ERROR: ${key} not configured`);
         process.exit(1);
     }
     return uri;
@@ -93,7 +95,7 @@ function diff(before, after) {
 
 async function main() {
     const args = parseArgs();
-    const uri = loadUri();
+    const uri = loadUri(args.envProd);
 
     if (uri.toLowerCase().includes('prod') && !args.knowProd) {
         console.error('ERROR: URI looks like PROD. Refusing per CALBEAF-110 PROD STAY-OUT.');

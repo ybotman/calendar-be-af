@@ -1,3 +1,15 @@
+---
+date: 2026-02-01
+persona: fulton
+type: process
+state: live
+feature: api-contract
+keywords: [frontend-integration]
+appid: 1
+audience: all
+permanence: long-term
+tags: [app/tango, type/process]
+---
 # Frontend Integration Guide - Azure Functions Status Dashboard
 
 **For:** Calops Frontend LLM
