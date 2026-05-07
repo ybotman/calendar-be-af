@@ -40,6 +40,7 @@ Gauge's 30-second scan-before-author entry point for BE-targeted UCs.
 | **Hostname `calendarbe-test-<hex>.eastus-01.azurewebsites.net`** | Old `calendar-be` (Express; **decommissioned**) — different app entirely. Easy to confuse by name. | Use canonical `https://calendarbeaf-test.azurewebsites.net` per `docs/CANONICAL-URLS.md` |
 | **Same email + new firebaseUserId at same appId returns 201** | Pre-CALBEAF-83-fix BEHAVIOR. Post-fix returns **200** with rotated UID + old UID in `alternateFirebaseUserIds`. | Assert 200 (not 201) post-fix; assert `alternateFirebaseUserIds` contains old UID. See `src/functions/UserLogins.js:362-401`. |
 | **`includeAiGenerated=false` does NOT exclude `isDiscovered=true` events** | Pre-CALBEAF-183-fix BEHAVIOR. Filter only checked `isAiGenerated: true`; discovery-pipeline events have `isDiscovered: true` but `isAiGenerated: null/false` (empirical: 11,661 events at appId=1, all with `isAiGenerated != true`), so they leaked through. Post-fix extends to `isDiscovered: true` when caller hasn't explicitly set the `discovered` filter. | When `includeAiGenerated=false`, assert `isDiscovered=true` events ARE EXCLUDED. To request discovered events explicitly, set `discovered=true` (overrides). See `src/functions/Events.js:288-301`. |
+| **`location.coordinates` field DOES NOT EXIST on events** | Spec-authoring trap. Probe (TangoTiempoTest 2026-05-07): 0/11,661 discovered events have `location.coordinates`; 100% have `venueGeolocation.coordinates`; ~66% have `masteredCityGeolocation.coordinates`. Asserting on `location.coordinates` produces false-positive bug findings (e.g., UC-0018 secondary-finding "124 no-coord events" was field-path mismatch, not a bug). | Use **`venueGeolocation.coordinates`** (canonical, 100% populated on discovered events) or **`masteredCityGeolocation.coordinates`** (denormalized fallback, ~66% populated). NEVER reference `location.coordinates`. See §0.2 geo-field row + `src/functions/Events.js:455-484` for which field the BE actually queries based on `useCity` param. |
 | **`required: true` in swagger ≠ enforced** | Some fields (CALBEAF-177 audit pending) are declared required but silently optional. | Don't trust swagger for required-field assertions; test explicit POST-without-field → expect rejection, observe accept-and-mangle |
 | **`firebaseUserInfo.email` from request body** | Body-provided value persists ONLY if Firebase admin SDK `getUser()` throws; otherwise admin SDK overwrites it. In tests, mock `getFirebaseAdmin` to throw to preserve body value. | See `src/functions/UserLogins.js:384-396` for the try/catch pattern |
 | **Cross-appId data leak** | Some endpoints accept `appId` query param; mis-scoped queries can leak across tenants. CALBEAF-173 fixed parent-scoped events; other endpoints under audit. | Always scope test reads by `appId`; never trust default `'1'` to mean test isolation |
@@ -55,12 +56,22 @@ Top-N most-touched endpoints in UC corpus. Full inventory in `public/swagger.jso
 | **UserLogins** | POST | `/api/userlogins` | `src/functions/UserLogins.js:312` | Email-lane dedup at `:362-401` (CALBEAF-83) |
 | **UserLogins** | GET | `/api/userlogins/firebase/{firebaseId}` | `src/functions/UserLogins.js:27` | Alternates fallback at `:67-72` |
 | **UserLogins** | GET | `/api/userlogins/all` | `src/functions/UserLogins.js` | Filterable by appId, email |
-| **Events** | GET | `/api/events` | `src/functions/Events_Get.js` | Parent-scoped query landed v1.33.0 (CALBEAF-173) |
+| **Events** | GET | `/api/events` | `src/functions/Events.js:123` (handler) | Parent-scoped query v1.33.0 (CALBEAF-173). `includeAiGenerated=false` excludes both `isAiGenerated:true` AND `isDiscovered:true` post-CALBEAF-183 (`Events.js:288-301`). Geo via `venueGeolocation` default or `masteredCityGeolocation` when `useCity=true` (`Events.js:455-484`). |
 | **Events** | POST | `/api/events` | `src/functions/Events_Create.js` | `categoryFirstId` required (CALBEAF-171 v1.34.0) |
 | **EventsRA** | POST | `/api/eventsRA` | `src/functions/EventsRA_Create.js` | RegionalAdmin write path; body-parity with Events_Create per CALBEAF-172 |
 | **Events_BulkEnrich** | POST | `/api/events/bulk-enrich` | `src/functions/Events_BulkEnrich.js` | D-architecture; CALBEAF-110 |
 | **Venues** | POST | `/api/venues` | `src/functions/Venues_Create.js` | Geocoding side-effect on save |
 | **Roles** | GET | `/api/roles` | `src/functions/Roles.js` | Per-appId; canonical roleNames + roleNameCodes |
+
+### §0.2.1 Geo-field canonical names (read this before any geo-related spec assertion)
+
+| Field | Used by BE? | Population (empirical 2026-05-07) | Notes |
+|---|---|---|---|
+| **`venueGeolocation`** (`{type:'Point', coordinates:[lng,lat]}`) | **YES — canonical** | 11,661/11,661 discovered events (100%) | Default `$geoWithin` field when `useGeoSearch=true`. Per-venue precision. |
+| **`masteredCityGeolocation`** (`{type:'Point', coordinates:[lng,lat]}`) | **YES — fallback** | 7,722/11,661 discovered events (~66%) | Used when query param `useCity=true`. City-level precision (less precise but more frequently populated). |
+| **`location.coordinates`** | **NO — does not exist** | 0/11,661 (field is not on event documents) | **Do not assert on this path.** Asserting on it produces false-positive bug findings (UC-0018 secondary-finding 2026-05-07 was a field-path mismatch). |
+
+**Spec authoring rule:** validate any geo-field name against this table BEFORE writing assertions. The BE handler at `src/functions/Events.js:455-484` is source-of-truth for which field the geo-radius query targets based on the `useCity` param.
 
 ### §0.3 Test partition / marker note
 
@@ -318,6 +329,7 @@ Adopted from Sarah's TT exemplar protocol (offer 2026-05-07T20:36Z; symmetric va
 | v0.1 | 2026-05-07 | Fulton | Initial commission per Charter v5 §DoR criterion #11 + Gotan B.2 BE/API template + Sarah TT v0.2 exemplar shape. Seed content for §0 + §11 + §15 + §17; full enumeration deferred to v0.2+. CALBEAF-83 fix landed and folded into §0.1 (contract trap) + §0.3 (test partition note) + §12 (side-effects) + §16 (UC reference). |
 | v0.1.1 | 2026-05-07 | Fulton | §18.4 cadence norms inherited from TT v0.5/v0.7 (same-day-turnaround + codify-at-standby-gap, per Sarah offer 20:36Z). Cross-reference to 4-rule recommender-side pre-flight (Quinn framework-folded `feedback_code_fault_uc_readiness_gate.md` v2). No content change to §0/§11/§15. |
 | v0.1.2 | 2026-05-07 | Fulton | §0.1 trap added: CALBEAF-183 (UC-0018 / TIEMPO-364 mirror) — `includeAiGenerated=false` does NOT exclude `isDiscovered=true` events pre-fix. Empirical evidence cited (11,661 events at appId=1, all `isAiGenerated != true`). Post-fix extends to `isDiscovered: true` when caller hasn't explicitly set `discovered` filter. Same-commit-with-fix per §18.1+§18.4 cadence (first practical exercise of the rule). |
+| v0.1.3 | 2026-05-07 | Fulton | §0.1 trap added: `location.coordinates` field DOES NOT EXIST on events (UC-0018 secondary-finding source). §0.2 Events GET row enhanced with explicit geo-field naming + post-CALBEAF-183 filter behavior. NEW §0.2.1 Geo-field canonical names table (venueGeolocation 100% / masteredCityGeolocation ~66% / `location.coordinates` does-not-exist) + spec-authoring rule pointing to `Events.js:455-484` source-of-truth. Per Quinn §0.2 v0.2-enhancement candidate ratify 2026-05-07T21:01Z + §18.4 codify-at-standby-gap. |
 
 **Pending v0.2 expansions:**
 - §11 full endpoint taxonomy (table for every handler in `src/functions/`)
