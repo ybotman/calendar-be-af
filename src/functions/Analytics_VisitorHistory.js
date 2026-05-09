@@ -105,11 +105,15 @@ async function visitorHistoryHandler(request, context) {
         }
 
         // appId filter (note: old records may have null)
-        // CALBEAF-184: appId is always 1-99 string-managed across collections;
-        // coerce to String() to match DB strict-equality (parseInt would yield
-        // a number that never matches a string-typed appId).
+        // CALBEAF-184: VisitorTrackingHistory writer-layer asymmetry — UNLIKE
+        // MapCenterHistory + UserLoginHistory which write appId as string,
+        // VisitorTrackingHistory currently writes appId as NUMBER. PROD
+        // empirical 2026-05-09: 7,855/8,718 docs with appId:1 NUMBER, 0 string.
+        // Tolerant $in match both shapes until writer-side migration aligns
+        // with Toby standing rule "appId always 1-99 string-managed" (separate
+        // CALBEAF-* ticket for writer audit + migration; Phase 2 follow-on).
         if (appId) {
-            query.appId = String(appId);
+            query.appId = { $in: [String(appId), Number(appId)] };
         }
 
         // deviceType filter
