@@ -82,18 +82,19 @@ beforeEach(() => {
     dbHolder.capturedQuery = null;
 });
 
+// Group 1 — string-only writers (MapCenterHistory + UserLoginHistory)
+// PROD empirical 2026-05-09: appId stored as string; String() coerce matches.
 describe.each([
     ['MapCenterHistory', () => handlers.map],
     ['LoginHistory', () => handlers.login],
-    ['VisitorHistory', () => handlers.visitor],
-])('Analytics_%s — CALBEAF-184 appId String() coercion', (name, getHandler) => {
+])('Analytics_%s — CALBEAF-184 String() coerce (writer is string)', (name, getHandler) => {
     test('appId="1" coerces to string "1" in query (not number 1)', async () => {
         await getHandler()(mockGetRequest({ appId: '1' }), mockContext());
         expect(dbHolder.capturedQuery.appId).toBe('1');
         expect(typeof dbHolder.capturedQuery.appId).toBe('string');
     });
 
-    test('appId="99" (test-partition value) coerces to string "99"', async () => {
+    test('appId="99" coerces to string "99"', async () => {
         await getHandler()(mockGetRequest({ appId: '99' }), mockContext());
         expect(dbHolder.capturedQuery.appId).toBe('99');
         expect(typeof dbHolder.capturedQuery.appId).toBe('string');
@@ -106,6 +107,33 @@ describe.each([
 
     test('appId="" empty → no appId filter (falsy skip)', async () => {
         await getHandler()(mockGetRequest({ appId: '' }), mockContext());
+        expect(dbHolder.capturedQuery.appId).toBeUndefined();
+    });
+});
+
+// Group 2 — tolerant $in on VisitorHistory (writer is currently NUMBER per
+// PROD probe 2026-05-09: VisitorTrackingHistory has 7855/8718 docs with
+// appId:1 number; 0 with string). Tolerant $in matches both shapes until
+// writer-side migration aligns with Toby standing rule (separate Phase 2
+// CALBEAF-* ticket for writer audit).
+describe('Analytics_VisitorHistory — CALBEAF-184 tolerant $in (writer is number; transitional)', () => {
+    test('appId="1" → query.appId is { $in: ["1", 1] } (matches both string + number writers)', async () => {
+        await handlers.visitor(mockGetRequest({ appId: '1' }), mockContext());
+        expect(dbHolder.capturedQuery.appId).toEqual({ $in: ['1', 1] });
+    });
+
+    test('appId="99" → query.appId is { $in: ["99", 99] }', async () => {
+        await handlers.visitor(mockGetRequest({ appId: '99' }), mockContext());
+        expect(dbHolder.capturedQuery.appId).toEqual({ $in: ['99', 99] });
+    });
+
+    test('appId omitted → no appId filter applied', async () => {
+        await handlers.visitor(mockGetRequest({}), mockContext());
+        expect(dbHolder.capturedQuery.appId).toBeUndefined();
+    });
+
+    test('appId="" empty → no appId filter (falsy skip)', async () => {
+        await handlers.visitor(mockGetRequest({ appId: '' }), mockContext());
         expect(dbHolder.capturedQuery.appId).toBeUndefined();
     });
 });
