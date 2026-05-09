@@ -105,8 +105,11 @@ async function loginHistoryHandler(request, context) {
         }
 
         // appId filter
+        // CALBEAF-184: appId is always 1-99 string-managed across collections;
+        // coerce to String() to match DB strict-equality (parseInt would yield
+        // a number that never matches a string-typed appId).
         if (appId) {
-            query.appId = parseInt(appId, 10);
+            query.appId = String(appId);
         }
 
         // deviceType filter
@@ -215,7 +218,7 @@ async function loginHistoryHandler(request, context) {
                 },
                 filters: {
                     range,
-                    appId: appId ? parseInt(appId, 10) : null,
+                    appId: appId ? String(appId) : null,
                     deviceType: deviceType || null
                 },
                 timestamp: new Date().toISOString()

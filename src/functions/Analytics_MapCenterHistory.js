@@ -104,8 +104,13 @@ async function mapCenterHistoryHandler(request, context) {
         }
 
         // appId filter
+        // CALBEAF-184: DB stores appId as string (e.g., "1", "2"). parseInt coerces
+        // the query-string value to a number, but Mongo strict-equality means
+        // {appId: 1} never matches {appId: "1"}. Empirical (PROD 2026-05-09):
+        // 1881/1881 MapCenterHistory docs have appId:"1" string; find({appId:1}) → 0.
+        // Toby-confirmed: appId is always 1-99 string-managed across all collections.
         if (appId) {
-            query.appId = parseInt(appId, 10);
+            query.appId = String(appId);
         }
 
         // deviceType filter
@@ -214,7 +219,7 @@ async function mapCenterHistoryHandler(request, context) {
                 },
                 filters: {
                     range,
-                    appId: appId ? parseInt(appId, 10) : null,
+                    appId: appId ? String(appId) : null,
                     deviceType: deviceType || null
                 },
                 timestamp: new Date().toISOString()
