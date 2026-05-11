@@ -11,7 +11,7 @@ permanence: long-term
 template: B.2-be-api
 template_source: Collab/handoffs/gotan/2026-05-07-vault-bless-and-per-app-e2e-doctype.md
 exemplar: tangotiempo.com/docs/E2E-TESTING-REFERENCE.md
-version: 0.2.4
+version: 0.2.5
 ---
 
 # calendar-be-af (Azure Functions BE) — E2E Testing Reference
@@ -73,6 +73,8 @@ Top-N most-touched endpoints in UC corpus. Full inventory in `public/swagger.jso
 | **`location.coordinates`** | **NO — does not exist** | 0/11,661 (field is not on event documents) | **Do not assert on this path.** Asserting on it produces false-positive bug findings (UC-0018 secondary-finding 2026-05-07 was a field-path mismatch). |
 
 **Spec authoring rule:** validate any geo-field name against this table BEFORE writing assertions. The BE handler at `src/functions/Events.js:455-484` is source-of-truth for which field the geo-radius query targets based on the `useCity` param.
+
+**Canonical BASE_URL source-of-truth for Gauge spec authoring** (per Quinn framework Layer-2 fix 2026-05-11; UC-0021/0022 URL-typo class avoidance): `e2e-calendar-framework/config/template-vars.yaml` `TEST_BASE_URL_BE` field is the framework-side canonical; **this** `docs/CANONICAL-URLS.md` is the BE-side authoritative reference. Hard-coded URL constants in spec files are the gap that produced the `calendarbeuf` (missing 'a') typo across UC-0021/0022 retry-1 attempts. Spec authoring should read from `template-vars.yaml`, not hard-code; Gauge SAD URL-constant-enforcement is the framework-side complement.
 
 ### §0.3 Test partition / marker note
 
@@ -437,6 +439,7 @@ Adopted from Sarah's TT exemplar protocol (offer 2026-05-07T20:36Z; symmetric va
 | v0.2.2 | 2026-05-07 | Fulton | §0.1 CALBEAF-177 Phase 1 audit findings folded into trap entry: concrete field list (5 enforced — appId/title/startDate/endDate/categoryFirstId; 2 silently-optional gaps — venueID warn-only at `Events.js:947`, ownerOrganizerID silent → authorOrganizerID null). Phase 2 tightening defers to Sprint 6 per ticket defer-condition (caller-survey gating on Discovery-half re-engagement). **Out-of-scope structural finding flagged separately to Quinn:** DEVL is BEHIND TEST by 5+ commits including CALBEAF-171/172/173/168; `src/utils/eventCategoryValidation.js` exists on TEST but absent from DEVL. Branching divergence requires Quinn arbitration (Option A: TEST→DEVL backmerge recommended). |
 | v0.2.3 | 2026-05-07 | Fulton | §15 mutator inventory expanded with `elevate-test-user-role` API contract (per UC-0020 escalation 2026-05-07T21:30Z; Gauge-discovered-via-source friction). TIEMPO-443 invariant explicitly documented (RO elevation MUST bundle SL+NU). Authoring rule extended: rule 5 — same-arc body-contract documentation at mutator-add time. NEW §15.1 Pattern A browser-login credential persistence — UC-0020 cross-team gap surfaced; Fulton BE-lane recommendation: path (a) `.env.test.local` persistence for Sprint 5 unblock (path b Firebase custom-token injection = Sprint 6 candidate). Standby-gap codification per §18.4 (9th this Sprint 5 arc per Quinn 21:24Z citation). |
 | v0.2.4 | 2026-05-10 | Fulton | §0.1 CALBEAF-184 trap fold (catch-up per Herald §6.3-rule-2 enforcement check 18:50Z). Documents Analytics endpoint appId filter type-coerce asymmetry: MapCenterHistory + UserLoginHistory writers store STRING (parseInt coercion = 0 matches); VisitorTrackingHistory writer stores NUMBER (uniform String() would regress). Canonical String() pattern + transitional tolerant $in pattern both cited with src:line refs. Process lesson cross-referenced: `feedback_verify_actual_collection_target.md` (collection-name distinction VisitorTrackingHistory vs VisitorTrackingHistory2). PROD push for CALBEAF-184 already landed via surgical hotfix PR #33 (cherry-pick `52c272d5`+`a924d220` onto origin/PROD); doc-update lands separately on DEVL here because HDTS-DOCS-STANDARD §18.1 hotfix-class edge case (PR off PROD branch where doc didn't yet exist; v1.3 amendment candidate per Herald). |
+| v0.2.5 | 2026-05-11 | Fulton | §0.2.1 add Canonical BASE_URL source-of-truth note (per Quinn framework Layer-2 fix 13:30Z) — `template-vars.yaml TEST_BASE_URL_BE` is the framework-side canonical; `docs/CANONICAL-URLS.md` is the BE-side authoritative; spec authoring should read from config not hard-code (UC-0021/0022 `calendarbeuf` typo class avoidance). Standby-gap codification autonomous per Quinn 13:30Z greenlight. |
 
 **Pending v0.2 expansions:**
 - §11 full endpoint taxonomy (table for every handler in `src/functions/`)
