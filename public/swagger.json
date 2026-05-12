@@ -720,12 +720,6 @@
             "schema": { "type": "string" }
           },
           {
-            "name": "parentSlug",
-            "in": "query",
-            "description": "CALBEAF-173: filter to events in cities under one parent (state slug for US, country slug for international, e.g. 'california', 'australia'). Resolves to a set of cityIds and applies the same masteredCityId $in filter as cityIds. Fail-closed: returns empty events if parentSlug doesn't match any city.",
-            "schema": { "type": "string" }
-          },
-          {
             "name": "limit",
             "in": "query",
             "description": "Results per page (default: 100, max: 500)",
