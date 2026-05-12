@@ -360,6 +360,43 @@ async function userLoginsCreateHandler(request, context) {
             };
         }
 
+        // CALBEAF-83: Email-lane dedup. If a user re-registers with the same email
+        // but a different Firebase UID (deleted account + recreated), update the
+        // existing record instead of duplicating. Old UID lands in alternateFirebaseUserIds,
+        // which the GET-by-firebaseId handler already falls back to.
+        const newEmail = otherFields.firebaseUserInfo?.email;
+        if (newEmail) {
+            const existingByEmail = await userLoginsCollection.findOne({
+                'firebaseUserInfo.email': newEmail,
+                appId
+            });
+            if (existingByEmail) {
+                const oldFirebaseUserId = existingByEmail.firebaseUserId;
+                await userLoginsCollection.updateOne(
+                    { _id: existingByEmail._id },
+                    {
+                        $set: {
+                            firebaseUserId,
+                            firebaseUserInfo: otherFields.firebaseUserInfo,
+                            updatedAt: new Date()
+                        },
+                        $addToSet: { alternateFirebaseUserIds: oldFirebaseUserId }
+                    }
+                );
+                const updated = await userLoginsCollection.findOne({ _id: existingByEmail._id });
+                context.log(`[USERLOGIN UPDATE via email] firebaseUserId rotated: ${oldFirebaseUserId} -> ${firebaseUserId}, email: ${newEmail}, appId: ${appId}, userId: ${existingByEmail._id}`);
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: true,
+                        data: updated,
+                        message: `Updated existing user for email '${newEmail}': firebaseUserId rotated, old UID preserved in alternateFirebaseUserIds`
+                    })
+                };
+            }
+        }
+
         // Look up the NamedUser role to assign by default
         const namedUserRole = await rolesCollection.findOne({
             roleName: 'NamedUser',
