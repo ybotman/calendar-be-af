@@ -380,17 +380,8 @@ async function eventsGetHandler(request, context) {
         // CALBEAF-74 item 6: includeAiGenerated — Express never implemented this filter
         // but both frontends send it. We implement it properly: exclude AI-generated events
         // by default unless explicitly included.
-        //
-        // CALBEAF-183 (UC-0018 / TIEMPO-364 mirror): includeAiGenerated also covers
-        // AI-discovered events. Empirical (2026-05-07): 11,661 discovered events exist
-        // with isAiGenerated=null/false, so the isAiGenerated filter alone passes them
-        // all through. Extend to isDiscovered when caller hasn't explicitly opted into
-        // discovered events via the `discovered` filter.
         if (includeAiGenerated !== 'true') {
             baseFilter.isAiGenerated = { $ne: true };
-            if (!discovered) {
-                baseFilter.isDiscovered = { $ne: true };
-            }
         }
 
         // CALBEAF-109: Classification filters
