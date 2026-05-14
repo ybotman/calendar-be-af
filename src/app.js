@@ -40,6 +40,7 @@ require('./functions/Analytics_LoginHistory');
 require('./functions/Analytics_VisitorHistory');
 require('./functions/Analytics_MapCenterHistory');
 require('./functions/Analytics_EventActivity');
+require('./functions/Analytics_UserLocationDistribution');
 
 // User Profile & Onboarding - TIEMPO-329 Phase 2/3
 require('./functions/User_FCMToken');
