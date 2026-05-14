@@ -2,6 +2,13 @@ name: Keep PROD Azure Functions Warm
 
 # Ping every 15 minutes to prevent cold starts
 # Azure Functions deallocate after ~20 minutes of inactivity
+#
+# CALBEAF-187 (Window 2 Phase 3): Extended from 2 → 7 endpoints to mitigate
+# cold-start tail latency on substrate-wide hot paths. Set covers:
+#  - Mongo-touching warmth (events default + health/mongodb)
+#  - SEO landing pages for /tango/[state]/[city] (TT SEO substrate)
+#  - Geo + general health (existing pre-187)
+#  - Cloudflare info passthrough
 on:
   schedule:
     # Every 15 minutes: "*/15 * * * *"
@@ -41,19 +48,109 @@ jobs:
             exit 1
           fi
 
-      - name: Ping PROD - Health Check (Optional)
+      - name: Ping PROD - Health Basic
         continue-on-error: true
         run: |
           echo "🏥 Checking PROD health endpoint..."
 
-          # If you have a health endpoint, ping it too
           curl -X GET \
             https://calendarbeaf-prod.azurewebsites.net/api/health \
             --max-time 10 \
             --silent \
             --show-error || echo "⚠️ Health endpoint not available (this is OK)"
 
+      # CALBEAF-187: events default — Mongo-touching warmth (TT default month query)
+      - name: Ping PROD - Events Default (Mongo warmth)
+        continue-on-error: true
+        run: |
+          echo "📅 Pinging PROD events default (Mongo connection warmth)..."
+
+          response=$(curl -X GET \
+            "https://calendarbeaf-prod.azurewebsites.net/api/events?appId=1&limit=1" \
+            --max-time 30 \
+            --silent \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --show-error)
+
+          http_code=$(echo "$response" | grep "HTTP_STATUS" | cut -d':' -f2)
+          echo "Response Code: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✅ Events default warm (Mongo pool exercised)"
+          else
+            echo "⚠️ Events default returned non-200: $http_code"
+          fi
+
+      # CALBEAF-187: explicit Mongo connection health probe
+      - name: Ping PROD - Health MongoDB
+        continue-on-error: true
+        run: |
+          echo "🗄️ Checking PROD Mongo health..."
+
+          curl -X GET \
+            https://calendarbeaf-prod.azurewebsites.net/api/health/mongodb \
+            --max-time 15 \
+            --silent \
+            --show-error || echo "⚠️ Mongo health endpoint not available"
+
+      # CALBEAF-187: Cloudflare info passthrough warmth
+      - name: Ping PROD - Cloudflare Info
+        continue-on-error: true
+        run: |
+          echo "☁️ Pinging PROD Cloudflare info..."
+
+          curl -X GET \
+            https://calendarbeaf-prod.azurewebsites.net/api/cloudflare/info \
+            --max-time 15 \
+            --silent \
+            --show-error || echo "⚠️ Cloudflare info endpoint not available"
+
+      # CALBEAF-187: SEO landing page warmth (Boston/MA = TT primary hotspot)
+      - name: Ping PROD - SEO City Page (Boston/MA)
+        continue-on-error: true
+        run: |
+          echo "🌐 Pinging PROD SEO city page (boston/massachusetts)..."
+
+          response=$(curl -X GET \
+            "https://calendarbeaf-prod.azurewebsites.net/api/seo/city-page?appId=1&parentSlug=massachusetts&citySlug=boston" \
+            --max-time 30 \
+            --silent \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --show-error)
+
+          http_code=$(echo "$response" | grep "HTTP_STATUS" | cut -d':' -f2)
+          echo "Response Code: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✅ SEO city page warm"
+          else
+            echo "⚠️ SEO city page returned non-200: $http_code"
+          fi
+
+      # CALBEAF-187: SEO geo summary warmth — feeds Sarah's generateStaticParams
+      - name: Ping PROD - SEO Geo Summary
+        continue-on-error: true
+        run: |
+          echo "🗺️ Pinging PROD SEO geo summary..."
+
+          response=$(curl -X GET \
+            "https://calendarbeaf-prod.azurewebsites.net/api/seo/geo-summary?appId=1" \
+            --max-time 30 \
+            --silent \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --show-error)
+
+          http_code=$(echo "$response" | grep "HTTP_STATUS" | cut -d':' -f2)
+          echo "Response Code: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✅ SEO geo summary warm"
+          else
+            echo "⚠️ SEO geo summary returned non-200: $http_code"
+          fi
+
       - name: Log Keep-Alive Success
         run: |
           echo "✅ Keep-alive ping completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Endpoints exercised: geo + health + events + mongodb-health + cloudflare + seo-city-page + seo-geo-summary"
           echo "Next ping in ~15 minutes"
