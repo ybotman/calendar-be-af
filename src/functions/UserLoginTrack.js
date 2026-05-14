@@ -111,6 +111,12 @@ async function loginTrackHandler(request, context) {
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
         const appId = requestBody.appId || '1'; // Application ID (1=TangoTiempo, 2=HarmonyJunction)
 
+        // CALBEAF-191: physical user location from CF edge headers forwarded by FE.
+        // Stored on both UserLoginHistory (event log) and userlogins profile (lastKnownLocation).
+        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
+            ? requestBody.userLocation
+            : null;
+
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
         const google_browser_long = requestBody.google_browser_long || null;
@@ -275,6 +281,7 @@ async function loginTrackHandler(request, context) {
 
             ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
             geoSource: historyGeoSource, // Track which geolocation source was used
+            userLocation: userLocation, // CALBEAF-191: physical CF edge location forwarded by FE
             createdAt: new Date()
         };
 
@@ -410,6 +417,30 @@ async function loginTrackHandler(request, context) {
             analyticsUpdate,
             { upsert: true }
         );
+
+        // CALBEAF-191: Persist lastKnownLocation on user profile (userlogins doc).
+        // Only writes when userLocation present in POST body — never clears an existing value.
+        if (userLocation) {
+            await usersCollection.updateOne(
+                { firebaseUserId: firebaseUid, appId },
+                {
+                    $set: {
+                        lastKnownLocation: {
+                            city: userLocation.city || null,
+                            lat: userLocation.lat || null,
+                            lng: userLocation.lng || null,
+                            country: userLocation.country || null,
+                            region: userLocation.region || null,
+                            source: userLocation.source || null,
+                            confidence: userLocation.confidence ?? null,
+                            updatedAt: loginTime
+                        },
+                        updatedAt: new Date()
+                    }
+                }
+            );
+            context.log(`lastKnownLocation updated for user: ${firebaseUid} → ${userLocation.city}, ${userLocation.country}`);
+        }
 
         context.log(`Analytics updated for user: ${firebaseUid}`);
 
