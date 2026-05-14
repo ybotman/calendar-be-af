@@ -1,5 +1,13 @@
 // src/functions/Geo_GoogleGeolocate.js
-// Domain: Geo - Google Geolocation API (WiFi/Cell Tower Positioning)
+// Domain: Geo - IP-based geolocation via ipinfo.io (endpoint name preserved for backwards compat)
+//
+// CALBEAF-189 (2026-05-14): Backing impl swapped from Google Geolocation API → ipinfo.io.
+// Google Geolocation API geolocates the TCP-level requestor IP, which from a server-side
+// proxy is always the Azure egress IP (38.98/-77.56 Northern Virginia) — making it useless
+// for user-location signals. Spec offers no way to pass an explicit user IP to Google.
+// ipinfo.io accepts an explicit IP and is forwarded the real CF-Connecting-IP header.
+// Endpoint URL `/api/geo/google-geolocate` + response shape preserved so FE/analytics
+// stack doesn't notice. Rename to /api/geo/ip-geolocate deferred to Sprint-6+ ADR.
 const { app } = require('@azure/functions');
 const { standardMiddleware } = require('../middleware');
 
@@ -104,13 +112,18 @@ function cleanupCache() {
 
 // Get client IP from request headers
 function getClientIP(request) {
-    // Azure Functions / proxies set x-forwarded-for
+    // CALBEAF-189: prefer CF-Connecting-IP (Cloudflare's authoritative user IP) — same
+    // pattern as MapCenterTrack.js / VisitorTrack.js. Fall back to x-forwarded-for then
+    // x-real-ip for non-Cloudflare paths.
+    const cfIp = request.headers.get('CF-Connecting-IP') || request.headers.get('cf-connecting-ip');
+    if (cfIp) {
+        return cfIp.trim().split(':')[0];
+    }
     const forwarded = request.headers.get('x-forwarded-for');
     if (forwarded) {
         // Take first IP if multiple (client, proxy1, proxy2...)
         return forwarded.split(',')[0].trim().split(':')[0];
     }
-    // Fallback to x-real-ip or unknown
     return request.headers.get('x-real-ip') || 'unknown';
 }
 
@@ -327,77 +340,104 @@ async function geoGoogleGeolocateHandler(request, context) {
             };
         }
 
-        // Cache miss - will call Google API
+        // Cache miss - will call ipinfo.io (CALBEAF-189: was Google Geolocation API)
         cacheStats.misses++;
 
-        // Get Google API key from environment
-        const googleApiKey = process.env.GOOGLE_API_KEY;
-        if (!googleApiKey) {
-            context.log('ERROR: GOOGLE_API_KEY not configured');
+        // CALBEAF-189: must have a real user IP to geolocate. If clientIP is 'unknown'
+        // (no CF-Connecting-IP / x-forwarded-for / x-real-ip), we cannot resolve.
+        if (clientIP === 'unknown') {
+            context.log('Geo_GoogleGeolocate: clientIP unresolvable — no usable IP header');
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Unable to determine client IP for geolocation',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        const ipinfoToken = process.env.IPINFO_API_TOKEN;
+        if (!ipinfoToken) {
+            context.log('ERROR: IPINFO_API_TOKEN not configured');
             return {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     success: false,
-                    error: 'Google API key not configured',
+                    error: 'IP geolocation provider not configured',
                     timestamp: new Date().toISOString()
                 })
             };
         }
 
-        // Build request body for Google Geolocation API
-        // Default to considerIp: true if not specified
-        const geolocateBody = {
-            considerIp: requestBody.considerIp !== undefined ? requestBody.considerIp : true,
-            ...(requestBody.wifiAccessPoints && { wifiAccessPoints: requestBody.wifiAccessPoints }),
-            ...(requestBody.cellTowers && { cellTowers: requestBody.cellTowers })
-        };
-
-        context.log('Geo_GoogleGeolocate: Calling Google Geolocation API', {
-            considerIp: geolocateBody.considerIp,
+        context.log('Geo_GoogleGeolocate: Calling ipinfo.io with user IP', {
+            clientIP,
+            // wifi/cell hints are accepted in request body but ignored — ipinfo.io is IP-only.
             hasWifi: !!requestBody.wifiAccessPoints,
             hasCellTowers: !!requestBody.cellTowers
         });
 
-        // Call Google Geolocation API
-        const url = `https://www.googleapis.com/geolocation/v1/geolocate?key=${googleApiKey}`;
+        // Call ipinfo.io with explicit user IP (CF-Connecting-IP)
+        const url = `https://ipinfo.io/${encodeURIComponent(clientIP)}/json?token=${ipinfoToken}`;
         const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(geolocateBody),
+            method: 'GET',
             signal: AbortSignal.timeout(5000) // 5 second timeout
         });
 
-        // Check response status
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            context.log('Google Geolocation API error:', {
-                status: response.status,
-                error: errorData
-            });
-
+            const errorText = await response.text().catch(() => '');
+            context.log('ipinfo.io error:', { status: response.status, error: errorText.slice(0, 200) });
             return {
                 status: response.status,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     success: false,
-                    error: errorData.error?.message || 'Google Geolocation API error',
-                    details: errorData.error || null,
+                    error: `IP geolocation upstream error (status ${response.status})`,
                     timestamp: new Date().toISOString()
                 })
             };
         }
 
-        // Parse successful response
         const data = await response.json();
 
-        context.log('Geo_GoogleGeolocate: Location retrieved', {
+        // ipinfo.io returns loc as "lat,lng" string; parse into { lat, lng }
+        let location = null;
+        if (data.loc && typeof data.loc === 'string') {
+            const [latStr, lngStr] = data.loc.split(',');
+            const lat = parseFloat(latStr);
+            const lng = parseFloat(lngStr);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                location = { lat, lng };
+            }
+        }
+
+        if (!location) {
+            context.log('ipinfo.io returned no loc field', { clientIP, dataKeys: Object.keys(data) });
+            return {
+                status: 502,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'IP geolocation provider returned no location',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // ipinfo.io does not return accuracy; use 5km city-level default (reasonable for
+        // IP-based geolocation). Distinct from DEFAULT_ACCURACY=50km which is bot-tier.
+        const accuracy = 5000;
+
+        context.log('Geo_GoogleGeolocate: Location retrieved (ipinfo.io)', {
             clientIP,
-            lat: data.location?.lat,
-            lng: data.location?.lng,
-            accuracy: data.accuracy,
+            lat: location.lat,
+            lng: location.lng,
+            city: data.city,
+            region: data.region,
+            country: data.country,
+            accuracy,
             cacheStats: { hits: cacheStats.hits, misses: cacheStats.misses }
         });
 
@@ -405,20 +445,21 @@ async function geoGoogleGeolocateHandler(request, context) {
         // CACHE THE RESULT
         // ================================================================
         geoCache.set(clientIP, {
-            location: data.location,
-            accuracy: data.accuracy,
+            location,
+            accuracy,
             timestamp: Date.now()
         });
 
-        // Return success response
+        // Return success response — shape preserved for backwards compat (FE + analytics
+        // stack consume `data.location.lat/lng` and `data.accuracy` unchanged).
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: true,
                 data: {
-                    location: data.location,
-                    accuracy: data.accuracy,
+                    location,
+                    accuracy,
                     cached: false
                 },
                 timestamp: new Date().toISOString()
