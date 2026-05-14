@@ -131,6 +131,13 @@ async function mapCenterTrackHandler(request, context) {
         // (e.g. user-driven map-pan).
         const cascadeSource = requestBody.cascadeSource || null;
 
+        // CALBEAF-190: physical user location from CF edge headers (distinct from mapCenter
+        // which is what the user is VIEWING). Source of truth is CF-injected cf-ipcity/lat/lng
+        // forwarded by FE in POST body. Stored as-is; no geocoding needed.
+        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
+            ? requestBody.userLocation
+            : null;
+
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
         const google_browser_long = requestBody.google_browser_long || null;
@@ -246,6 +253,7 @@ async function mapCenterTrackHandler(request, context) {
             ...geoData, // Spread all geolocation data
             geoSource: geoSource, // Track which geolocation API was used (BE-derived from priority chain)
             cascadeSource: cascadeSource, // CALBEAF-188: FE-reported cascade tier that resolved this location
+            userLocation: userLocation, // CALBEAF-190: physical user location from CF edge headers (may differ from mapCenter)
             userAgent: userAgent,
             deviceType: deviceType,
             createdAt: new Date()
