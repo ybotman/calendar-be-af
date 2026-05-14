@@ -125,6 +125,12 @@ async function mapCenterTrackHandler(request, context) {
         const userTimezone = requestBody.timezone || null;
         const timezoneOffset = requestBody.timezoneOffset || null;
 
+        // CALBEAF-188: cascade-tier telemetry from FE (anon-cookie | browser-gps |
+        // google-api | cloudflare-country | default-fallback). Mirrors TIEMPO-457
+        // sessionStorage.locationCascadeSource. Null when FE doesn't tag the source
+        // (e.g. user-driven map-pan).
+        const cascadeSource = requestBody.cascadeSource || null;
+
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
         const google_browser_long = requestBody.google_browser_long || null;
@@ -238,7 +244,8 @@ async function mapCenterTrackHandler(request, context) {
             timezone: userTimezone,
             timezoneOffset: timezoneOffset,
             ...geoData, // Spread all geolocation data
-            geoSource: geoSource, // Track which geolocation API was used
+            geoSource: geoSource, // Track which geolocation API was used (BE-derived from priority chain)
+            cascadeSource: cascadeSource, // CALBEAF-188: FE-reported cascade tier that resolved this location
             userAgent: userAgent,
             deviceType: deviceType,
             createdAt: new Date()
