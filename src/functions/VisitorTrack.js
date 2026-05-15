@@ -56,6 +56,19 @@ function stripPortFromIP(ip) {
     return ip.split(':')[0].trim();
 }
 
+// CALBEAF-194: Canonical geo source enum — must match GEO-CAPTURE-STANDARDS.md
+const VALID_GEO_SOURCES = new Set(['CloudflareEdge','GoogleBrowser','GoogleGeolocation','ModalPick','IPInfoIO','Unknown']);
+
+// CALBEAF-194: Datacenter ASN set — confidence capped at 0.30 for these (VPNs/bots, not users)
+const DATACENTER_ASNS = new Set([16509, 15169, 8075, 14061, 24940, 16276, 63949, 20473]);
+
+// Parse ASN number from ipinfo org string e.g. "AS16509 Amazon.com, Inc." → 16509
+function extractAsn(orgString) {
+    if (!orgString) return null;
+    const match = orgString.match(/^AS(\d+)/);
+    return match ? parseInt(match[1], 10) : null;
+}
+
 // Helper: Calculate local time from UTC and timezone offset
 function getLocalTime(utcDate, timezoneOffsetMinutes) {
     if (timezoneOffsetMinutes === null) return null;
@@ -93,11 +106,36 @@ async function visitorTrackHandler(request, context) {
         const userTimezone = requestBody.timezone || null; // e.g., "America/New_York"
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
 
-        // TIEMPO-329: Accept visitor_id UUID from frontend cookie
+        // TIEMPO-329: Accept visitor_id UUID from frontend cookie (persistent, 365-day)
         const visitor_id = requestBody.visitor_id || null;
 
         // Application ID (1=TangoTiempo, 2=HarmonyJunction) - null for old records without appId
         const appId = requestBody.appId || null;
+
+        // CALBEAF-194: Session geo fields — added by FE after cascade resolves (once per day)
+        // userLocation contract: { lat: number, lng: number, city: string, country: string }
+        // TIEMPO-462 extends: + region, source, confidence, cascadeLevel
+        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
+            ? requestBody.userLocation : null;
+        const cascadeSource = requestBody.cascadeSource || null;
+        const cascadeLevel  = typeof requestBody.cascadeLevel === 'number' ? requestBody.cascadeLevel : null;
+        const userId        = typeof requestBody.userId === 'string' ? requestBody.userId : null;
+
+        // Typed extraction — typeof guards prevent silent null writes if FE shape changes
+        const cfLat        = typeof userLocation?.lat        === 'number' ? userLocation.lat        : null;
+        const cfLng        = typeof userLocation?.lng        === 'number' ? userLocation.lng        : null;
+        const cfCity       = typeof userLocation?.city       === 'string' ? userLocation.city       : null;
+        const cfCountry    = typeof userLocation?.country    === 'string' ? userLocation.country    : null;
+        const cfConfidence = typeof userLocation?.confidence === 'number' ? userLocation.confidence : null;
+        if (userLocation && !(cfLat && cfLng && cfCity)) {
+            context.log(`WARN CALBEAF-194: userLocation shape mismatch — lat=${userLocation.lat} lng=${userLocation.lng} city=${userLocation.city}`);
+        }
+
+        // Enum validation — coerce unknown cascadeSource to Unknown; WARN on mismatch
+        const sessionGeoSource = VALID_GEO_SOURCES.has(cascadeSource) ? cascadeSource : 'Unknown';
+        if (cascadeSource && !VALID_GEO_SOURCES.has(cascadeSource)) {
+            context.log(`WARN CALBEAF-194: invalid geoSource "${cascadeSource}" — coerced to Unknown`);
+        }
 
         // Extract 3-tier geolocation data from frontend
         const google_browser_lat = requestBody.google_browser_lat || null;
@@ -120,6 +158,10 @@ async function visitorTrackHandler(request, context) {
             userIp = '127.0.0.1';
             context.log('Using localhost IP fallback for development: 127.0.0.1');
         }
+
+        // CALBEAF-194: Private Relay detection — log for analytics; do NOT bypass (CF maps relay IPs to metro)
+        const cfIpOrganization = request.headers.get('cf-ip-organization') || '';
+        const isPrivateRelay = cfIpOrganization.toLowerCase().includes('icloud private relay');
 
         context.log(`VisitorTrack: Page: ${page}`);
 
@@ -233,6 +275,7 @@ async function visitorTrackHandler(request, context) {
                     geoData.ipinfo_country = data.country || null;
                     geoData.ipinfo_timezone = data.timezone || null;
                     geoData.ipinfo_postal = data.postal || null;
+                    geoData.ipinfo_org = data.org || null; // CALBEAF-194: ASN for datacenter detection
 
                     // ipinfo.io geolocation captured
                 } else {
@@ -375,6 +418,43 @@ async function visitorTrackHandler(request, context) {
         );
 
         context.log(`Analytics updated for IP: ${userIp}`);
+
+        // 3. UPSERT: Session geo analytics — once per visitorId per appId per day (CALBEAF-194)
+        // Fires whenever FE sends userLocation. city is nullable — Private Relay users (isPrivateRelay=true,
+        // city=null) are analytically valuable as the numerator for Dash's Private Relay % metric.
+        if (visitor_id && appId) {
+            // ASN-based datacenter downgrade — cap confidence at 0.30 for VPN/bot ASNs
+            const asn = extractAsn(geoData.ipinfo_org);
+            const isDatacenterAsn = asn !== null && DATACENTER_ASNS.has(asn);
+            let sessionConfidence = cfConfidence;
+            if (isDatacenterAsn && sessionConfidence !== null && sessionConfidence > 0.30) {
+                sessionConfidence = 0.30;
+                context.log(`CALBEAF-194: ASN ${asn} datacenter — confidence capped at 0.30`);
+            }
+
+            const sessionDate = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC, unambiguous dedup key
+            const sessionGeoCollection = db.collection('sessiongeoanalytics');
+            await sessionGeoCollection.updateOne(
+                { visitorId: visitor_id, appId: appId, sessionDate: sessionDate },
+                {
+                    $setOnInsert: { visitorId: visitor_id, appId: appId, sessionDate: sessionDate, createdAt: new Date() },
+                    $set: {
+                        userId: userId,
+                        city: cfCity,
+                        country: cfCountry,
+                        lat: cfLat,
+                        lng: cfLng,
+                        geoSource: sessionGeoSource,
+                        confidence: sessionConfidence,
+                        cascadeLevel: cascadeLevel,
+                        isPrivateRelay: isPrivateRelay,
+                        resolvedAt: visitTime
+                    }
+                },
+                { upsert: true }
+            );
+            context.log(`CALBEAF-194: sessiongeoanalytics upsert ${visitor_id}/${appId}/${sessionDate} — ${sessionGeoSource}${isPrivateRelay ? ' [PrivateRelay]' : ''}${isDatacenterAsn ? ` [datacenterASN:${asn}]` : ''}`);
+        }
 
         return {
             status: 200,
