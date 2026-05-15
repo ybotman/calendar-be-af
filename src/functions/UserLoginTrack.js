@@ -294,9 +294,9 @@ async function loginTrackHandler(request, context) {
         // CF geo arrives via FE POST body (userLocation) — Azure BE is not behind CF so headers
         // cannot be read server-side.
         //
-        // Typed contract for userLocation (must match FE UserLocationPayload interface):
-        //   { lat: number, lng: number, city: string, region: string, country: string,
-        //     source: string, confidence: number }
+        // Typed contract for userLocation (must match FE JSDoc @typedef in layout.js):
+        //   Current (v1.28.3): { lat: number, lng: number, city: string, country: string }
+        //   TIEMPO-462 extends: + source, confidence, cascadeLevel, region
         const cfLat        = typeof userLocation?.lat        === 'number' ? userLocation.lat        : null;
         const cfLng        = typeof userLocation?.lng        === 'number' ? userLocation.lng        : null;
         const cfCity       = typeof userLocation?.city       === 'string' ? userLocation.city       : null;
