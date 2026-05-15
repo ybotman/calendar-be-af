@@ -159,9 +159,9 @@ async function visitorTrackHandler(request, context) {
             context.log('Using localhost IP fallback for development: 127.0.0.1');
         }
 
-        // CALBEAF-194: Private Relay detection — log for analytics; do NOT bypass (CF maps relay IPs to metro)
-        const cfIpOrganization = request.headers.get('cf-ip-organization') || '';
-        const isPrivateRelay = cfIpOrganization.toLowerCase().includes('icloud private relay');
+        // CALBEAF-194: Private Relay flag — read from POST body (set by FE from /api/geo/cf-location response).
+        // Cannot read CF headers server-side: Azure BE is not behind Cloudflare (confirmed CALBEAF-189).
+        const isPrivateRelay = requestBody.isPrivateRelay === true;
 
         context.log(`VisitorTrack: Page: ${page}`);
 
