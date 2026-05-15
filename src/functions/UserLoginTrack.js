@@ -289,12 +289,21 @@ async function loginTrackHandler(request, context) {
         context.log(`Login event tracked: ${historyResult.insertedId}`);
 
         // 2. UPSERT: Aggregated analytics for dashboards and heatmaps
-        // Determine best available location (Priority: Browser > Google API > ipinfo)
+        // Determine best available location (Priority: Browser > Google API > CloudflareEdge > IPInfoIO)
+        // CALBEAF-193: CloudflareEdge added between GoogleGeolocation and IPInfoIO.
+        // CF geo arrives via FE POST body (userLocation) — Azure BE is not behind CF so headers
+        // cannot be read server-side. Typed extraction prevents duck-typed passthrough.
+        const cfLat     = typeof userLocation?.lat     === 'number' ? userLocation.lat     : null;
+        const cfLng     = typeof userLocation?.lng     === 'number' ? userLocation.lng     : null;
+        const cfCity    = typeof userLocation?.city    === 'string' ? userLocation.city    : null;
+        const cfRegion  = typeof userLocation?.region  === 'string' ? userLocation.region  : null;
+        const cfCountry = typeof userLocation?.country === 'string' ? userLocation.country : null;
+
         let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             bestLat = geoData.google_browser_lat;
             bestLong = geoData.google_browser_long;
-            bestCity = geoData.ipinfo_city; // Use ipinfo for city/region
+            bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
             geoSource = 'GoogleBrowser';
@@ -305,6 +314,13 @@ async function loginTrackHandler(request, context) {
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
             geoSource = 'GoogleGeolocation';
+        } else if (cfLat && cfLng) {
+            bestLat = cfLat;
+            bestLong = cfLng;
+            bestCity = cfCity;
+            bestRegion = cfRegion;
+            bestCountry = cfCountry;
+            geoSource = 'CloudflareEdge';
         } else {
             bestLat = geoData.ipinfo_lat;
             bestLong = geoData.ipinfo_long;
