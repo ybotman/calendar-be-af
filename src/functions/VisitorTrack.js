@@ -420,8 +420,9 @@ async function visitorTrackHandler(request, context) {
         context.log(`Analytics updated for IP: ${userIp}`);
 
         // 3. UPSERT: Session geo analytics — once per visitorId per appId per day (CALBEAF-194)
-        // Fires only when FE sends userLocation (after cascade resolves). Skipped for bot/no-location visits.
-        if (visitor_id && appId && cfCity) {
+        // Fires whenever FE sends userLocation. city is nullable — Private Relay users (isPrivateRelay=true,
+        // city=null) are analytically valuable as the numerator for Dash's Private Relay % metric.
+        if (visitor_id && appId) {
             // ASN-based datacenter downgrade — cap confidence at 0.30 for VPN/bot ASNs
             const asn = extractAsn(geoData.ipinfo_org);
             const isDatacenterAsn = asn !== null && DATACENTER_ASNS.has(asn);
