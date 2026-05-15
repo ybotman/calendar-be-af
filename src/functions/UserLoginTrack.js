@@ -292,20 +292,31 @@ async function loginTrackHandler(request, context) {
         // Determine best available location (Priority: Browser > Google API > CloudflareEdge > IPInfoIO)
         // CALBEAF-193: CloudflareEdge added between GoogleGeolocation and IPInfoIO.
         // CF geo arrives via FE POST body (userLocation) — Azure BE is not behind CF so headers
-        // cannot be read server-side. Typed extraction prevents duck-typed passthrough.
-        const cfLat     = typeof userLocation?.lat     === 'number' ? userLocation.lat     : null;
-        const cfLng     = typeof userLocation?.lng     === 'number' ? userLocation.lng     : null;
-        const cfCity    = typeof userLocation?.city    === 'string' ? userLocation.city    : null;
-        const cfRegion  = typeof userLocation?.region  === 'string' ? userLocation.region  : null;
-        const cfCountry = typeof userLocation?.country === 'string' ? userLocation.country : null;
+        // cannot be read server-side.
+        //
+        // Typed contract for userLocation (must match FE UserLocationPayload interface):
+        //   { lat: number, lng: number, city: string, region: string, country: string,
+        //     source: string, confidence: number }
+        const cfLat        = typeof userLocation?.lat        === 'number' ? userLocation.lat        : null;
+        const cfLng        = typeof userLocation?.lng        === 'number' ? userLocation.lng        : null;
+        const cfCity       = typeof userLocation?.city       === 'string' ? userLocation.city       : null;
+        const cfRegion     = typeof userLocation?.region     === 'string' ? userLocation.region     : null;
+        const cfCountry    = typeof userLocation?.country    === 'string' ? userLocation.country    : null;
+        const cfConfidence = typeof userLocation?.confidence === 'number' ? userLocation.confidence : null;
 
-        let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource;
+        // Loud warning: userLocation present but required fields missing — indicates FE contract drift
+        if (userLocation && !(cfLat && cfLng && cfCity)) {
+            context.log(`WARN CALBEAF-193: userLocation shape mismatch — lat=${userLocation.lat} lng=${userLocation.lng} city=${userLocation.city}; falling through to IPInfoIO`);
+        }
+
+        let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource, bestConfidence;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             bestLat = geoData.google_browser_lat;
             bestLong = geoData.google_browser_long;
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
+            bestConfidence = null;
             geoSource = 'GoogleBrowser';
         } else if (geoData.google_api_lat && geoData.google_api_long) {
             bestLat = geoData.google_api_lat;
@@ -313,13 +324,15 @@ async function loginTrackHandler(request, context) {
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
+            bestConfidence = null;
             geoSource = 'GoogleGeolocation';
-        } else if (cfLat && cfLng) {
+        } else if (cfLat && cfLng && cfCity) {
             bestLat = cfLat;
             bestLong = cfLng;
             bestCity = cfCity;
             bestRegion = cfRegion;
             bestCountry = cfCountry;
+            bestConfidence = cfConfidence;
             geoSource = 'CloudflareEdge';
         } else {
             bestLat = geoData.ipinfo_lat;
@@ -327,6 +340,7 @@ async function loginTrackHandler(request, context) {
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
+            bestConfidence = null;
             geoSource = 'IPInfoIO';
         }
 
@@ -350,6 +364,7 @@ async function loginTrackHandler(request, context) {
                     region: bestRegion,
                     country: bestCountry,
                     source: geoSource,
+                    confidence: bestConfidence,
                     updatedAt: loginTime
                 } : null,
                 // Store all geolocation sources
