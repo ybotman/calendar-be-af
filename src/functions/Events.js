@@ -9,6 +9,70 @@ const { logEventActivity, getChanges, getIpAddress, getUserEmailForLog } = requi
 // CALBEAF-110: classifyAndEnrichEvent superseded by runDataQualityPipeline (Phase 6 wiring).
 // Old import retained as no-op reference until eventClassification.js is fully retired.
 const { runDataQualityPipeline } = require('../utils/enrichment');
+// CALBEAF-171: BE defense-in-depth — reject Events_Create/Update without categoryFirstId.
+const { validateCategoryFirstIdPresence } = require('../utils/eventCategoryValidation');
+
+// CALBEAF-173: parentSlug resolver for parent-scoped events query.
+// parentSlug is NOT denormalized on masteredcities (verified TEST 0/272, PROD 0/272 on
+// 2026-05-04 via scripts/verify-parentslug-masteredcities.js). Mirrors the per-request
+// compute pattern from SEO_GeoSummary.js + SEO_CityPage.js. A future Question/Delete/Simplify
+// ticket should consolidate the three local toSlug copies into a shared utility.
+function toSlug(name) {
+    if (!name) return '';
+    return name
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Resolve a parentSlug (state slug for US, country slug for international) to the
+ * list of masteredcity ObjectIds whose computed parentSlug matches.
+ *
+ * parentSlug = toSlug(stateName) for US cities, toSlug(countryName) for international.
+ * Mirrors SEO_GeoSummary.js compute logic exactly.
+ *
+ * @param {Db} db - MongoDB database handle
+ * @param {string} parentSlug - parent slug to resolve (e.g. "california", "australia")
+ * @returns {Promise<ObjectId[]>} city IDs whose parentSlug matches; [] when no match
+ *
+ * Fail-closed: returns [] (NOT all cities) when no match. Caller must short-circuit
+ * to empty events on [] — must NOT fall through to no-city-filter (which would return
+ * all events). Per Fulton's feedback_orphaned_hierarchy_join_pattern memory rule.
+ */
+async function resolveParentSlugToCityIds(db, parentSlug) {
+    if (!parentSlug) return [];
+
+    const cityDocs = await db.collection('masteredcities').find(
+        {},
+        { projection: { _id: 1, stateName: 1, countryCode: 1 } }
+    ).toArray();
+
+    // Country lookup table for non-US cities (parentSlug is toSlug(countryName) for intl).
+    // Matches SEO_GeoSummary.js fallback chain for masteredCountryName.
+    const countries = await db.collection('masteredcountries').find(
+        {},
+        { projection: { countryCode: 1, countryName: 1 } }
+    ).toArray();
+    const countryNameByCode = new Map(
+        countries.map(c => [c.countryCode || '', c.countryName])
+    );
+
+    const matchedIds = [];
+    for (const city of cityDocs) {
+        const isUS = city.countryCode === 'US';
+        const parentName = isUS && city.stateName
+            ? city.stateName
+            : countryNameByCode.get(city.countryCode || '') || null;
+        if (!parentName) continue;
+        if (toSlug(parentName) === parentSlug) {
+            matchedIds.push(city._id);
+        }
+    }
+    return matchedIds;
+}
 
 // CALBEAF-173: parentSlug resolver for parent-scoped events query.
 // parentSlug is NOT denormalized on masteredcities (verified TEST 0/272, PROD 0/272 on
@@ -1016,6 +1080,22 @@ async function eventsCreateHandler(request, context) {
             };
         }
 
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId must be present on create.
+        // Prevents headless events from any API caller (FE Save Anyway, Porter loaders,
+        // niche-harvest, partner integrations, direct API testing).
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'create');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         // Parse and validate dates
         const parsedStartDate = new Date(requestBody.startDate);
         if (isNaN(parsedStartDate.getTime())) {
@@ -1235,6 +1315,21 @@ async function eventsUpdateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
+
+        // CALBEAF-171: BE defense-in-depth — if categoryFirstId is being set on update,
+        // it must not be cleared to null/empty. Absence (undefined) is fine — partial update.
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'update');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    error: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
 
         // Connect to MongoDB
         const mongoUri = process.env.MONGODB_URI;

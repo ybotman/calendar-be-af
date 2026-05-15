@@ -6,6 +6,8 @@ const { standardMiddleware } = require('../middleware');
 const { requireRegionalAdmin, checkRAPermission, forbiddenResponse } = require('../middleware/requireRegionalAdmin');
 const { unauthorizedResponse } = require('../middleware/firebaseAuth');
 const { logEventActivity, getChanges, getIpAddress } = require('../utils/activityLog');
+// CALBEAF-171: BE defense-in-depth — reject EventsRA_Create/Update without categoryFirstId.
+const { validateCategoryFirstIdPresence } = require('../utils/eventCategoryValidation');
 
 // ============================================
 // HELPER: Convert string IDs to ObjectId
@@ -91,6 +93,20 @@ async function eventsRACreateHandler(request, context) {
                 body: JSON.stringify({
                     success: false,
                     message: 'Missing required fields: title, startDate, ownerOrganizerID, venueID',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId required on create.
+        const categoryCheck = validateCategoryFirstIdPresence(userInput, 'create');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    message: categoryCheck.error,
                     timestamp: new Date().toISOString()
                 })
             };
@@ -267,6 +283,22 @@ async function eventsRAUpdateHandler(request, context) {
 
     try {
         const requestBody = await request.json();
+
+        // CALBEAF-171: BE defense-in-depth — categoryFirstId, if present in the update,
+        // must be non-null/non-empty (cannot clear an existing category).
+        const categoryCheck = validateCategoryFirstIdPresence(requestBody, 'update');
+        if (!categoryCheck.valid) {
+            return {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: false,
+                    message: categoryCheck.error,
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
         const updateData = { ...requestBody };
 
         // Remove fields that RAs cannot update

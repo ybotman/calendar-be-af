@@ -89,6 +89,49 @@ function validateCategoryDuration({ categoryFirst, categorySecond, categoryThird
     return { valid: errors.length === 0, errors };
 }
 
+/**
+ * CALBEAF-171 — Defense-in-depth: reject events without categoryFirstId.
+ *
+ * The user-visible bug surface: FE Save Anyway button bypassed required-field
+ * validation, allowing a PROD event to be created without a category. Effect:
+ * event invisible on city pages (no category bucket), excluded from SEO_BuildContent
+ * (no segment match), excluded from category counts. FE fix prevents user path
+ * going forward; this validator is BE-side defense for any future API caller
+ * (Porter loaders, niche-harvest, partner integrations, direct API testing) that
+ * could land headless events.
+ *
+ * @param {object} body - request body (raw, before ObjectId conversion)
+ * @param {'create'|'update'} mode
+ *   - 'create': categoryFirstId must be present + truthy + non-empty
+ *   - 'update': partial-update semantics. If categoryFirstId is undefined (not in
+ *     body), no-op — preserves existing value. If the field IS present, it must
+ *     be truthy and non-empty (cannot clear an existing value to null/empty).
+ * @returns {{ valid: boolean, error?: string }}
+ */
+function validateCategoryFirstIdPresence(body, mode) {
+    const value = body?.categoryFirstId;
+
+    if (mode === 'create') {
+        if (value === undefined || value === null) {
+            return { valid: false, error: 'categoryFirstId is required' };
+        }
+        if (typeof value === 'string' && value.trim() === '') {
+            return { valid: false, error: 'categoryFirstId is required' };
+        }
+        return { valid: true };
+    }
+
+    // mode === 'update' (partial)
+    if (value === undefined) return { valid: true };  // not being changed
+    if (value === null) {
+        return { valid: false, error: 'categoryFirstId cannot be cleared' };
+    }
+    if (typeof value === 'string' && value.trim() === '') {
+        return { valid: false, error: 'categoryFirstId cannot be cleared' };
+    }
+    return { valid: true };
+}
+
 module.exports = {
     SHORT_CATEGORIES,
     LONG_CATEGORIES,
@@ -99,4 +142,5 @@ module.exports = {
     HARD_MAX_HOURS,
     classifyCategory,
     validateCategoryDuration,
+    validateCategoryFirstIdPresence,
 };
