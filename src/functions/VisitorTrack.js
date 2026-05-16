@@ -117,7 +117,7 @@ async function visitorTrackHandler(request, context) {
         // TIEMPO-462 extends: + region, source, confidence, cascadeLevel
         const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
             ? requestBody.userLocation : null;
-        const cascadeSource = requestBody.cascadeSource || null;
+        const cascadeSource = requestBody.geoSource || null; // FE sends as `geoSource` (top-level, PascalCase GeoSourceEnum)
         const cascadeLevel  = typeof requestBody.cascadeLevel === 'number' ? requestBody.cascadeLevel : null;
         const userId        = typeof requestBody.userId === 'string' ? requestBody.userId : null;
 
