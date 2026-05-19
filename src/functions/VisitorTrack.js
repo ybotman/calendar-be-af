@@ -56,8 +56,18 @@ function stripPortFromIP(ip) {
     return ip.split(':')[0].trim();
 }
 
-// CALBEAF-194: Canonical geo source enum — must match GEO-CAPTURE-STANDARDS.md
+// CALBEAF-196: Canonical geo source enum — must match GEO-CAPTURE-STANDARDS.md
+// GoogleGeolocation retained for historical data validation; new writes never produce it.
 const VALID_GEO_SOURCES = new Set(['CloudflareEdge','GoogleBrowser','GoogleGeolocation','ModalPick','IPInfoIO','Unknown']);
+
+// Round to 2 decimal places — city-level precision only (targeting use; no street-level PII)
+const round2 = (n) => (n !== null && n !== undefined && Number.isFinite(n)) ? Math.round(n * 100) / 100 : null;
+
+// Derive confidence from L0-L5 cascade level (canonical table from GEO-CAPTURE-STANDARDS.md)
+const CASCADE_CONFIDENCE = [1.00, 0.95, 0.90, 0.65, 0.40, 0.95]; // L0-L5
+function confidenceFromCascadeLevel(level) {
+    return (typeof level === 'number' && level >= 0 && level <= 5) ? CASCADE_CONFIDENCE[level] : null;
+}
 
 // CALBEAF-194: Datacenter ASN set — confidence capped at 0.30 for these (VPNs/bots, not users)
 const DATACENTER_ASNS = new Set([16509, 15169, 8075, 14061, 24940, 16276, 63949, 20473]);
@@ -112,24 +122,24 @@ async function visitorTrackHandler(request, context) {
         // Application ID (1=TangoTiempo, 2=HarmonyJunction) - null for old records without appId
         const appId = requestBody.appId || null;
 
-        // CALBEAF-194: Session geo fields — added by FE after cascade resolves (once per day)
-        // userLocation contract: { lat: number, lng: number, city: string, country: string }
-        // TIEMPO-462 extends: + region, source, confidence, cascadeLevel
-        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
-            ? requestBody.userLocation : null;
+        // CALBEAF-196: Session geo fields — FE sends cfLocation after cascade resolves (once per day)
+        // cfLocation contract (Archie canonical, locked 2026-05-19): { city, country, lat, lng } — 4 fields only
+        const cfLocationRaw = (requestBody.cfLocation && typeof requestBody.cfLocation === 'object')
+            ? requestBody.cfLocation : null;
         const cascadeSource = requestBody.geoSource || null; // FE sends as `geoSource` (top-level, PascalCase GeoSourceEnum)
         const cascadeLevel  = typeof requestBody.cascadeLevel === 'number' ? requestBody.cascadeLevel : null;
         const userId        = typeof requestBody.userId === 'string' ? requestBody.userId : null;
 
-        // Typed extraction — typeof guards prevent silent null writes if FE shape changes
-        const cfLat        = typeof userLocation?.lat        === 'number' ? userLocation.lat        : null;
-        const cfLng        = typeof userLocation?.lng        === 'number' ? userLocation.lng        : null;
-        const cfCity       = typeof userLocation?.city       === 'string' ? userLocation.city       : null;
-        const cfCountry    = typeof userLocation?.country    === 'string' ? userLocation.country    : null;
-        const cfConfidence = typeof userLocation?.confidence === 'number' ? userLocation.confidence : null;
-        if (userLocation && !(cfLat && cfLng && cfCity)) {
-            context.log(`WARN CALBEAF-194: userLocation shape mismatch — lat=${userLocation.lat} lng=${userLocation.lng} city=${userLocation.city}`);
+        // Typed extraction with round2 — typeof guards prevent silent null writes if FE shape changes
+        const cfLat     = round2(typeof cfLocationRaw?.lat     === 'number' ? cfLocationRaw.lat     : null);
+        const cfLng     = round2(typeof cfLocationRaw?.lng     === 'number' ? cfLocationRaw.lng     : null);
+        const cfCity    = typeof cfLocationRaw?.city    === 'string' ? cfLocationRaw.city    : null;
+        const cfCountry = typeof cfLocationRaw?.country === 'string' ? cfLocationRaw.country : null;
+        if (cfLocationRaw && !(cfLat && cfLng && cfCity)) {
+            context.log(`WARN CALBEAF-196: cfLocation shape mismatch — lat=${cfLocationRaw.lat} lng=${cfLocationRaw.lng} city=${cfLocationRaw.city}`);
         }
+        // Confidence derived from cascade level (cfLocation no longer carries it — 4-field contract)
+        const cfConfidence = confidenceFromCascadeLevel(cascadeLevel);
 
         // Enum validation — coerce unknown cascadeSource to Unknown; WARN on mismatch
         const sessionGeoSource = VALID_GEO_SOURCES.has(cascadeSource) ? cascadeSource : 'Unknown';
@@ -137,12 +147,11 @@ async function visitorTrackHandler(request, context) {
             context.log(`WARN CALBEAF-194: invalid geoSource "${cascadeSource}" — coerced to Unknown`);
         }
 
-        // Extract 3-tier geolocation data from frontend
-        const google_browser_lat = requestBody.google_browser_lat || null;
-        const google_browser_long = requestBody.google_browser_long || null;
-        const google_browser_accuracy = requestBody.google_browser_accuracy || null;
-        const google_api_lat = requestBody.google_api_lat || null;
-        const google_api_long = requestBody.google_api_long || null
+        // CALBEAF-196: Browser GPS only (GoogleGeolocation/WiFi-cell tier retired)
+        // Accept both new name (browser_gps_*) and old name (google_browser_*) during FE transition window
+        const google_browser_lat      = requestBody.browser_gps_lat  || requestBody.google_browser_lat  || null;
+        const google_browser_long     = requestBody.browser_gps_long || requestBody.google_browser_long || null;
+        const google_browser_accuracy = requestBody.browser_gps_accuracy || requestBody.google_browser_accuracy || null;
 
         // Extract IP address from CloudFlare headers or X-Forwarded-For
         const rawIp = request.headers.get('CF-Connecting-IP')
@@ -242,14 +251,7 @@ async function visitorTrackHandler(request, context) {
             // Browser geolocation captured
         }
 
-        // Priority 2: Google API Geolocation (if provided by frontend)
-        if (google_api_lat && google_api_long) {
-            geoData.google_api_lat = google_api_lat;
-            geoData.google_api_long = google_api_long;
-            // Google API geolocation captured
-        }
-
-        // Priority 3: ipinfo.io Geolocation (fallback)
+        // Priority 2: ipinfo.io Geolocation (fallback) — GoogleGeolocation tier retired (CALBEAF-196)
         const ipinfoToken = process.env.IPINFO_API_TOKEN;
         if (ipinfoToken) {
             try {
@@ -303,13 +305,17 @@ async function visitorTrackHandler(request, context) {
         const dayOfWeekLocal = localTime?.dayOfWeek || null;
         const hourOfDayLocal = localTime?.hourOfDay || null;
 
+        // CALBEAF-196: asnType derivation — datacenter IPs (VPN/bot) vs residential
+        const asn = extractAsn(geoData.ipinfo_org);
+        const asnType = asn !== null ? (DATACENTER_ASNS.has(asn) ? 'datacenter' : 'residential') : null;
+
         // 1. INSERT: Raw visit event (immutable audit trail)
-        // Determine geoSource for history record
+        // CALBEAF-196: 4-tier chain: GoogleBrowser → CloudflareEdge → IPInfoIO
         let historyGeoSource = null;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             historyGeoSource = 'GoogleBrowser';
-        } else if (geoData.google_api_lat && geoData.google_api_long) {
-            historyGeoSource = 'GoogleGeolocation';
+        } else if (cfLat && cfLng && cfCity) {
+            historyGeoSource = 'CloudflareEdge';
         } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
             historyGeoSource = 'IPInfoIO';
         }
@@ -333,8 +339,10 @@ async function visitorTrackHandler(request, context) {
             timezone: userTimezone,
             timezoneOffset: timezoneOffset,
 
-            ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
-            geoSource: historyGeoSource, // Track which geolocation source was used
+            ...geoData, // ipinfo_* + google_browser_* fields
+            geoSource: historyGeoSource,
+            schemaVersion: 1, // CALBEAF-196
+            asnType: asnType, // CALBEAF-196: 'datacenter'|'residential'|null
             createdAt: new Date()
         };
 
@@ -342,22 +350,22 @@ async function visitorTrackHandler(request, context) {
         context.log(`Visit event tracked: ${historyResult.insertedId}`);
 
         // 2. UPSERT: Aggregated analytics for dashboards and heatmaps
-        // Determine best available location (Priority: Browser > Google API > ipinfo)
+        // CALBEAF-196: 4-tier chain: GoogleBrowser → CloudflareEdge → IPInfoIO
         let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             bestLat = geoData.google_browser_lat;
             bestLong = geoData.google_browser_long;
-            bestCity = geoData.ipinfo_city; // Use ipinfo for city/region
-            bestRegion = geoData.ipinfo_region;
-            bestCountry = geoData.ipinfo_country;
-            geoSource = 'GoogleBrowser';
-        } else if (geoData.google_api_lat && geoData.google_api_long) {
-            bestLat = geoData.google_api_lat;
-            bestLong = geoData.google_api_long;
             bestCity = geoData.ipinfo_city;
             bestRegion = geoData.ipinfo_region;
             bestCountry = geoData.ipinfo_country;
-            geoSource = 'GoogleGeolocation';
+            geoSource = 'GoogleBrowser';
+        } else if (cfLat && cfLng && cfCity) {
+            bestLat = cfLat;
+            bestLong = cfLng;
+            bestCity = cfCity;
+            bestRegion = geoData.ipinfo_region || null;
+            bestCountry = cfCountry;
+            geoSource = 'CloudflareEdge';
         } else {
             bestLat = geoData.ipinfo_lat;
             bestLong = geoData.ipinfo_long;

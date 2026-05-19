@@ -48,8 +48,18 @@ function getDeviceType(userAgent) {
 // Helper: Strip port from IP address
 function stripPortFromIP(ip) {
     if (!ip || ip === 'unknown') return ip;
-    // Remove port if present (e.g., "71.232.30.16:52525" → "71.232.30.16")
     return ip.split(':')[0].trim();
+}
+
+// CALBEAF-196: Round to 2dp — city-level precision only
+const round2 = (n) => (n !== null && n !== undefined && Number.isFinite(n)) ? Math.round(n * 100) / 100 : null;
+
+// CALBEAF-196: ASN datacenter detection (same set as VisitorTrack)
+const DATACENTER_ASNS = new Set([16509, 15169, 8075, 14061, 24940, 16276, 63949, 20473]);
+function extractAsn(orgString) {
+    if (!orgString) return null;
+    const match = orgString.match(/^AS(\d+)/);
+    return match ? parseInt(match[1], 10) : null;
 }
 
 async function mapCenterTrackHandler(request, context) {
@@ -125,25 +135,24 @@ async function mapCenterTrackHandler(request, context) {
         const userTimezone = requestBody.timezone || null;
         const timezoneOffset = requestBody.timezoneOffset || null;
 
-        // CALBEAF-188: cascade-tier telemetry from FE (anon-cookie | browser-gps |
-        // google-api | cloudflare-country | default-fallback). Mirrors TIEMPO-457
-        // sessionStorage.locationCascadeSource. Null when FE doesn't tag the source
-        // (e.g. user-driven map-pan).
+        // CALBEAF-196: cfLocation — physical user location (CF edge, distinct from mapCenter which is VIEWING)
+        // Canonical 4-field contract: { city, country, lat, lng } (Archie, locked 2026-05-19)
+        const cfLocationRaw = (requestBody.cfLocation && typeof requestBody.cfLocation === 'object')
+            ? requestBody.cfLocation : null;
+        const cfLat  = round2(typeof cfLocationRaw?.lat  === 'number' ? cfLocationRaw.lat  : null);
+        const cfLng  = round2(typeof cfLocationRaw?.lng  === 'number' ? cfLocationRaw.lng  : null);
+        const cfCity = typeof cfLocationRaw?.city === 'string' ? cfLocationRaw.city : null;
+        if (cfLocationRaw && !(cfLat && cfLng && cfCity)) {
+            context.log(`WARN CALBEAF-196: cfLocation shape mismatch — lat=${cfLocationRaw.lat} lng=${cfLocationRaw.lng} city=${cfLocationRaw.city}`);
+        }
+
+        // CALBEAF-188: FE-reported cascade tier (PascalCase enum, harmonized per TIEMPO-466)
         const cascadeSource = requestBody.cascadeSource || null;
 
-        // CALBEAF-190: physical user location from CF edge headers (distinct from mapCenter
-        // which is what the user is VIEWING). Source of truth is CF-injected cf-ipcity/lat/lng
-        // forwarded by FE in POST body. Stored as-is; no geocoding needed.
-        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
-            ? requestBody.userLocation
-            : null;
-
-        // Extract 3-tier geolocation data from frontend
-        const google_browser_lat = requestBody.google_browser_lat || null;
-        const google_browser_long = requestBody.google_browser_long || null;
-        const google_browser_accuracy = requestBody.google_browser_accuracy || null;
-        const google_api_lat = requestBody.google_api_lat || null;
-        const google_api_long = requestBody.google_api_long || null;
+        // CALBEAF-196: Browser GPS only — accept both new and old FE field names during transition
+        const google_browser_lat      = requestBody.browser_gps_lat  || requestBody.google_browser_lat  || null;
+        const google_browser_long     = requestBody.browser_gps_long || requestBody.google_browser_long || null;
+        const google_browser_accuracy = requestBody.browser_gps_accuracy || requestBody.google_browser_accuracy || null;
 
         // Extract IP address from CloudFlare headers or X-Forwarded-For
         const rawIp = request.headers.get('CF-Connecting-IP')
@@ -169,14 +178,7 @@ async function mapCenterTrackHandler(request, context) {
             // Browser geolocation captured
         }
 
-        // Priority 2: Google API Geolocation (if provided by frontend)
-        if (google_api_lat && google_api_long) {
-            geoData.google_api_lat = google_api_lat;
-            geoData.google_api_long = google_api_long;
-            // Google API geolocation captured
-        }
-
-        // Priority 3: ipinfo.io Geolocation (fallback)
+        // Priority 2: ipinfo.io Geolocation (fallback) — GoogleGeolocation tier retired (CALBEAF-196)
         const ipinfoToken = process.env.IPINFO_API_TOKEN;
         if (ipinfoToken && userIp !== 'unknown') {
             try {
@@ -202,8 +204,7 @@ async function mapCenterTrackHandler(request, context) {
                     geoData.ipinfo_country = data.country || null;
                     geoData.ipinfo_timezone = data.timezone || null;
                     geoData.ipinfo_postal = data.postal || null;
-
-                    // ipinfo.io geolocation captured
+                    geoData.ipinfo_org = data.org || null; // CALBEAF-196: ASN for asnType derivation
                 } else {
                     context.log(`ipinfo.io returned status: ${geoResponse.status}`);
                 }
@@ -228,12 +229,15 @@ async function mapCenterTrackHandler(request, context) {
         // Create tracking event
         const trackingTime = new Date();
 
-        // Determine geoSource
+        // CALBEAF-196: 4-tier chain: GoogleBrowser → CloudflareEdge → IPInfoIO
+        const asn = extractAsn(geoData.ipinfo_org);
+        const asnType = asn !== null ? (DATACENTER_ASNS.has(asn) ? 'datacenter' : 'residential') : null;
+
         let geoSource = null;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             geoSource = 'GoogleBrowser';
-        } else if (geoData.google_api_lat && geoData.google_api_long) {
-            geoSource = 'GoogleGeolocation';
+        } else if (cfLat && cfLng && cfCity) {
+            geoSource = 'CloudflareEdge';
         } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
             geoSource = 'IPInfoIO';
         }
@@ -250,10 +254,12 @@ async function mapCenterTrackHandler(request, context) {
             page: page,
             timezone: userTimezone,
             timezoneOffset: timezoneOffset,
-            ...geoData, // Spread all geolocation data
-            geoSource: geoSource, // Track which geolocation API was used (BE-derived from priority chain)
-            cascadeSource: cascadeSource, // CALBEAF-188: FE-reported cascade tier that resolved this location
-            userLocation: userLocation, // CALBEAF-190: physical user location from CF edge headers (may differ from mapCenter)
+            ...geoData, // ipinfo_* + google_browser_* fields
+            geoSource: geoSource,
+            cascadeSource: cascadeSource, // CALBEAF-188: FE-reported cascade tier (PascalCase enum post-TIEMPO-466)
+            cfLocation: cfLocationRaw,    // CALBEAF-196: physical user location (CF edge)
+            schemaVersion: 1,             // CALBEAF-196
+            asnType: asnType,             // CALBEAF-196: 'datacenter'|'residential'|null
             userAgent: userAgent,
             deviceType: deviceType,
             createdAt: new Date()

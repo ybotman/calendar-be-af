@@ -111,18 +111,17 @@ async function loginTrackHandler(request, context) {
         const timezoneOffset = requestBody.timezoneOffset || null; // e.g., -240 (minutes from UTC)
         const appId = requestBody.appId || '1'; // Application ID (1=TangoTiempo, 2=HarmonyJunction)
 
-        // CALBEAF-191: physical user location from CF edge headers forwarded by FE.
+        // CALBEAF-196: cfLocation — physical user location (CF edge).
+        // Canonical 4-field contract: { city, country, lat, lng } (Archie, locked 2026-05-19)
         // Stored on both UserLoginHistory (event log) and userlogins profile (lastKnownLocation).
-        const userLocation = (requestBody.userLocation && typeof requestBody.userLocation === 'object')
-            ? requestBody.userLocation
+        const cfLocationRaw = (requestBody.cfLocation && typeof requestBody.cfLocation === 'object')
+            ? requestBody.cfLocation
             : null;
 
-        // Extract 3-tier geolocation data from frontend
-        const google_browser_lat = requestBody.google_browser_lat || null;
-        const google_browser_long = requestBody.google_browser_long || null;
-        const google_browser_accuracy = requestBody.google_browser_accuracy || null;
-        const google_api_lat = requestBody.google_api_lat || null;
-        const google_api_long = requestBody.google_api_long || null;
+        // CALBEAF-196: Browser GPS only — accept both new and old FE field names during transition
+        const google_browser_lat      = requestBody.browser_gps_lat  || requestBody.google_browser_lat  || null;
+        const google_browser_long     = requestBody.browser_gps_long || requestBody.google_browser_long || null;
+        const google_browser_accuracy = requestBody.browser_gps_accuracy || requestBody.google_browser_accuracy || null;
 
         // Extract IP address from CloudFlare headers or X-Forwarded-For
         const rawIp = request.headers.get('CF-Connecting-IP')
@@ -146,14 +145,7 @@ async function loginTrackHandler(request, context) {
             // Browser geolocation captured
         }
 
-        // Priority 2: Google API Geolocation (if provided by frontend)
-        if (google_api_lat && google_api_long) {
-            geoData.google_api_lat = google_api_lat;
-            geoData.google_api_long = google_api_long;
-            // Google API geolocation captured
-        }
-
-        // Priority 3: ipinfo.io Geolocation (fallback)
+        // Priority 2: ipinfo.io Geolocation (fallback) — GoogleGeolocation tier retired (CALBEAF-196)
         const ipinfoToken = process.env.IPINFO_API_TOKEN;
         if (ipinfoToken && userIp !== 'unknown') {
             try {
@@ -251,12 +243,12 @@ async function loginTrackHandler(request, context) {
         }
 
         // 1. INSERT: Raw login event (immutable audit trail)
-        // Determine geoSource for history record
+        // CALBEAF-196: 3-tier chain: GoogleBrowser → CloudflareEdge → IPInfoIO
         let historyGeoSource = null;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             historyGeoSource = 'GoogleBrowser';
-        } else if (geoData.google_api_lat && geoData.google_api_long) {
-            historyGeoSource = 'GoogleGeolocation';
+        } else if (cfLat && cfLng && cfCity) {
+            historyGeoSource = 'CloudflareEdge';
         } else if (geoData.ipinfo_lat || geoData.ipinfo_city) {
             historyGeoSource = 'IPInfoIO';
         }
@@ -279,9 +271,9 @@ async function loginTrackHandler(request, context) {
             timezone: userTimezone,
             timezoneOffset: timezoneOffset,
 
-            ...geoData, // Spread geo data (city, region, country, lat, lng, timezone from ipinfo)
-            geoSource: historyGeoSource, // Track which geolocation source was used
-            userLocation: userLocation, // CALBEAF-191: physical CF edge location forwarded by FE
+            ...geoData, // ipinfo_* + google_browser_* fields
+            geoSource: historyGeoSource,
+            cfLocation: cfLocationRaw, // CALBEAF-196: physical CF edge location (canonical 4-field)
             createdAt: new Date()
         };
 
@@ -289,26 +281,18 @@ async function loginTrackHandler(request, context) {
         context.log(`Login event tracked: ${historyResult.insertedId}`);
 
         // 2. UPSERT: Aggregated analytics for dashboards and heatmaps
-        // Determine best available location (Priority: Browser > Google API > CloudflareEdge > IPInfoIO)
-        // CALBEAF-193: CloudflareEdge added between GoogleGeolocation and IPInfoIO.
-        // CF geo arrives via FE POST body (userLocation) — Azure BE is not behind CF so headers
-        // cannot be read server-side.
-        //
-        // Typed contract for userLocation (must match FE JSDoc @typedef in layout.js):
-        //   Current (v1.28.3): { lat: number, lng: number, city: string, country: string }
-        //   TIEMPO-462 extends: + source, confidence, cascadeLevel, region
-        const cfLat        = typeof userLocation?.lat        === 'number' ? userLocation.lat        : null;
-        const cfLng        = typeof userLocation?.lng        === 'number' ? userLocation.lng        : null;
-        const cfCity       = typeof userLocation?.city       === 'string' ? userLocation.city       : null;
-        const cfRegion     = typeof userLocation?.region     === 'string' ? userLocation.region     : null;
-        const cfCountry    = typeof userLocation?.country    === 'string' ? userLocation.country    : null;
-        const cfConfidence = typeof userLocation?.confidence === 'number' ? userLocation.confidence : null;
+        // CALBEAF-196: 4-field cfLocation contract (city, country, lat, lng — no region/confidence)
+        // Typed guards prevent silent null writes if FE shape changes
+        const cfLat     = typeof cfLocationRaw?.lat     === 'number' ? cfLocationRaw.lat     : null;
+        const cfLng     = typeof cfLocationRaw?.lng     === 'number' ? cfLocationRaw.lng     : null;
+        const cfCity    = typeof cfLocationRaw?.city    === 'string' ? cfLocationRaw.city    : null;
+        const cfCountry = typeof cfLocationRaw?.country === 'string' ? cfLocationRaw.country : null;
 
-        // Loud warning: userLocation present but required fields missing — indicates FE contract drift
-        if (userLocation && !(cfLat && cfLng && cfCity)) {
-            context.log(`WARN CALBEAF-193: userLocation shape mismatch — lat=${userLocation.lat} lng=${userLocation.lng} city=${userLocation.city}; falling through to IPInfoIO`);
+        if (cfLocationRaw && !(cfLat && cfLng && cfCity)) {
+            context.log(`WARN CALBEAF-196: cfLocation shape mismatch — lat=${cfLocationRaw.lat} lng=${cfLocationRaw.lng} city=${cfLocationRaw.city}; falling through to IPInfoIO`);
         }
 
+        // CALBEAF-196: 3-tier chain: GoogleBrowser → CloudflareEdge → IPInfoIO (GoogleGeolocation retired)
         let bestLat, bestLong, bestCity, bestRegion, bestCountry, geoSource, bestConfidence;
         if (geoData.google_browser_lat && geoData.google_browser_long) {
             bestLat = geoData.google_browser_lat;
@@ -318,21 +302,13 @@ async function loginTrackHandler(request, context) {
             bestCountry = geoData.ipinfo_country;
             bestConfidence = null;
             geoSource = 'GoogleBrowser';
-        } else if (geoData.google_api_lat && geoData.google_api_long) {
-            bestLat = geoData.google_api_lat;
-            bestLong = geoData.google_api_long;
-            bestCity = geoData.ipinfo_city;
-            bestRegion = geoData.ipinfo_region;
-            bestCountry = geoData.ipinfo_country;
-            bestConfidence = null;
-            geoSource = 'GoogleGeolocation';
         } else if (cfLat && cfLng && cfCity) {
             bestLat = cfLat;
             bestLong = cfLng;
             bestCity = cfCity;
-            bestRegion = cfRegion;
+            bestRegion = geoData.ipinfo_region || null;
             bestCountry = cfCountry;
-            bestConfidence = cfConfidence;
+            bestConfidence = null;
             geoSource = 'CloudflareEdge';
         } else {
             bestLat = geoData.ipinfo_lat;
@@ -449,28 +425,26 @@ async function loginTrackHandler(request, context) {
             { upsert: true }
         );
 
-        // CALBEAF-191: Persist lastKnownLocation on user profile (userlogins doc).
-        // Only writes when userLocation present in POST body — never clears an existing value.
-        if (userLocation) {
+        // CALBEAF-196: Persist lastKnownLocation on user profile (userlogins doc).
+        // Only writes when cfLocation present in POST body — never clears an existing value.
+        if (cfLocationRaw && cfLat && cfLng && cfCity) {
             await usersCollection.updateOne(
                 { firebaseUserId: firebaseUid, appId },
                 {
                     $set: {
                         lastKnownLocation: {
-                            city: userLocation.city || null,
-                            lat: userLocation.lat || null,
-                            lng: userLocation.lng || null,
-                            country: userLocation.country || null,
-                            region: userLocation.region || null,
-                            source: userLocation.source || null,
-                            confidence: userLocation.confidence ?? null,
+                            city: cfCity,
+                            lat: cfLat,
+                            lng: cfLng,
+                            country: cfCountry || null,
+                            source: 'CloudflareEdge',
                             updatedAt: loginTime
                         },
                         updatedAt: new Date()
                     }
                 }
             );
-            context.log(`lastKnownLocation updated for user: ${firebaseUid} → ${userLocation.city}, ${userLocation.country}`);
+            context.log(`lastKnownLocation updated for user: ${firebaseUid} → ${cfCity}, ${cfCountry}`);
         }
 
         context.log(`Analytics updated for user: ${firebaseUid}`);

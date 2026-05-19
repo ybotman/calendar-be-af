@@ -92,7 +92,7 @@ require('./functions/EventsImageUpload');
 
 // Google Geo APIs - Geocoding and Timezone
 require('./functions/Geo');
-require('./functions/Geo_GoogleGeolocate');
+// Geo_GoogleGeolocate removed — CALBEAF-196 (ipinfo.io called directly in tracking writers; endpoint retired)
 require('./functions/Geo_EventDensity');
 
 // Cloudflare Info - Expose Cloudflare headers to frontend
