@@ -337,6 +337,25 @@ async function runDataQualityPipeline(eventDoc, db, options = {}) {
     const categoryName = await resolveCategoryName(db, eventDoc.categoryFirstId, appId);
     const categoryAllowed = categoryName && eligibleBeginnerCategories.has(categoryName);
 
+    // --- Category denorm (CALBEAF-201): persist categoryFirst STRING from categoryFirstId ---
+    // Root cause of the BTC-conversion "invisible on category-filtered views" defect
+    // (2026-07-01): masters carried categoryFirstId but a null categoryFirst string, so the
+    // category-laned FE dropped them. The pipeline resolved categoryName transiently (above)
+    // for beginner classification but never persisted it. Denormalize it here so EVERY write
+    // tier (CRUD / Tier-2 periodic / Tier-3 backfill) carries the display string. WARN-only
+    // when categoryFirstId is absent — the Events_Create handler already hard-rejects that on
+    // the user path (validateCategoryFirstIdPresence); this catches conversion/backfill paths.
+    if (eventDoc.categoryFirstId) {
+        if (!eventDoc.categoryFirst && categoryName) {
+            eventDoc.categoryFirst = categoryName;
+            report.actions.push({ field: 'categoryFirst', source: 'categoryFirstId-denorm', value: categoryName });
+        } else if (!categoryName) {
+            report.skipped.push({ field: 'categoryFirst', reason: `WARN: categoryFirstId ${eventDoc.categoryFirstId} did not resolve to a category name` });
+        }
+    } else {
+        report.skipped.push({ field: 'categoryFirst', reason: 'WARN: no categoryFirstId — event will be dropped by category-filtered views' });
+    }
+
     // CALBEAF-156: organizer-set forBeginners is authoritative on user-created events.
     // For user events (isDiscovered !== true), skip the classifier and trust the value
     // the organizer sent — their toggle is the source of truth. AI-found events
