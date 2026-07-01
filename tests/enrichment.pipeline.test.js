@@ -180,6 +180,38 @@ describe('runDataQualityPipeline — category gate', () => {
     });
 });
 
+// CALBEAF-201: category denorm — the pipeline must PERSIST categoryFirst string from
+// categoryFirstId (root cause of the 2026-07-01 BTC "invisible on category views" defect).
+describe('runDataQualityPipeline — categoryFirst denorm (CALBEAF-201)', () => {
+    test('categoryFirstId present, categoryFirst missing → denormalizes the string', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const event = baseEvent({ categoryFirstId: MILONGA_ID });
+        delete event.categoryFirst; // explicit: no display string on the way in
+        const { event: enriched, report } = await runDataQualityPipeline(event, standardDb());
+        expect(enriched.categoryFirst).toBe('Milonga');
+        expect(report.actions.find(a => a.field === 'categoryFirst' && a.source === 'categoryFirstId-denorm')).toBeDefined();
+    });
+
+    test('categoryFirst already set → preserved, no denorm action', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const event = baseEvent({ categoryFirstId: PRACTICA_ID, categoryFirst: 'Practica' });
+        const { event: enriched, report } = await runDataQualityPipeline(event, standardDb());
+        expect(enriched.categoryFirst).toBe('Practica');
+        expect(report.actions.find(a => a.field === 'categoryFirst')).toBeUndefined();
+    });
+
+    test('no categoryFirstId → WARN skip (event would be dropped by category views)', async () => {
+        const { runDataQualityPipeline } = require('../src/utils/enrichment');
+        const event = baseEvent();
+        delete event.categoryFirstId;
+        delete event.categoryFirst;
+        const { event: enriched, report } = await runDataQualityPipeline(event, standardDb());
+        expect(enriched.categoryFirst).toBeUndefined();
+        const warn = report.skipped.find(s => s.field === 'categoryFirst' && /no categoryFirstId/.test(s.reason));
+        expect(warn).toBeDefined();
+    });
+});
+
 describe('runDataQualityPipeline — override semantics', () => {
     test('forBeginnersOverride=true wins over computed false', async () => {
         const { runDataQualityPipeline } = require('../src/utils/enrichment');
